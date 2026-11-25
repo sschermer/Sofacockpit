@@ -1,6 +1,6 @@
 # Sofacockpit
 
-Sofacockpit ist eine geplante Android-App, die einen **TCL-Fernseher mit Google TV** und die **LG-Soundbar S95QR** in einer Fernbedienung zusammenführt. Die App richtet sich zunächst an den TCL 85C89L, der im Gerätemenü als 85C8L angezeigt wird.
+Sofacockpit ist eine Android-App, die einen **TCL-Fernseher mit Google TV** und die **LG-Soundbar S95QR** in einer Fernbedienung zusammenführt. Die App richtet sich zunächst an den TCL 85C89L, der im Gerätemenü als 85C8L angezeigt wird.
 
 ## Bedienkonzept
 
@@ -13,12 +13,12 @@ Die App öffnet den **Startbildschirm** in der Mitte. Von dort sind die beiden D
 
 ### Startbildschirm
 
-- **TV** mit Verbindungsstatus. Den Status antippen, um den Verbindungsdialog zu öffnen. Stumm- und Power-Symbole folgen in einer späteren Version.
-- **Streaming-Leiste** mit vier Beispiel-Schnellwahltasten und horizontalem Scrollen. TV-App-Start und Dienstoptionen sind noch nicht implementiert.
-- **Lautstärke** mit Schieberegler und Tasten für einzelne Schritte mit − und +; die TV-Steuerung dafür ist noch nicht integriert.
+- **TV** mit Verbindungsstatus. Den Status antippen, um den Verbindungsdialog zu öffnen. Bei bestätigter Verbindung erscheinen Stumm- und Power-Symbole; Farbe basiert auf tatsächlich gemeldetem Status.
+- **Streaming-Leiste** mit Netflix, Prime Video, Apple TV+, Disney+ und Dyn als Vorauswahl, vier sichtbaren Schnellwahltasten und horizontalem Scrollen. Plus öffnet den Dienstekatalog; langes Drücken bearbeitet, verschiebt oder entfernt einen Eintrag.
+- **Lautstärke** mit − und + für einzelne TV-Tastenschritte sowie einer Anzeige des tatsächlich gemeldeten Pegels, sofern verfügbar. Direktes Setzen eines absoluten Wertes ist noch nicht unterstützt.
 - **Soundbar** mit Ein/Aus, Night, DRC, Surround und Audioformat. Das Format wird aus der Soundbar-Meldung übernommen, nicht geschätzt.
 
-Wischen auf der Streaming-Leiste scrollt die Dienste. Ziehen am Lautstärkeregler ändert die Lautstärke. Ein horizontaler Wisch auf der übrigen Fläche wechselt die Seite.
+Wischen auf der Streaming-Leiste scrollt die Dienste. Der Lautstärkepegel ist zunächst nur eine Anzeige, kein absoluter Regler. Ein horizontaler Wisch auf der übrigen Fläche wechselt die Seite.
 
 ### Tonmaschine
 
@@ -30,11 +30,11 @@ Der rechte D-Pad-Bereich nutzt eine große, runde Navigation mit OK sowie Zurüc
 
 Die Steuerung ist für das lokale Heimnetz geplant. Für den Fernseher ist der **Android TV Remote Service (Remote Protocol v2)** mit Kopplungscode implementiert. Die Schnittstelle ist nicht als offizielle Drittanbieter-API dokumentiert; Kompatibilität mit zukünftigen Service-Versionen kann nicht garantiert werden. Für die Soundbar soll Sofacockpit auf der bereits erprobten lokalen Steuerung der Tonmaschine aufbauen.
 
-Das Android-Projekt verbindet die native Sofacockpit-Navigation mit dem Compose-Screen der Tonmaschine. Beim Öffnen ist der Startbildschirm in der Mitte sichtbar. Er zeigt auf der Tonmaschine-Seite und auf dem Startbildschirm denselben Verbindungszustand. Die Streaming-Leiste und der Lautstärkeregler behalten ihre eigenen Gesten. TV-Kopplung und grundlegende Navigation sind implementiert, aber am TCL noch nicht verifiziert. Streaming-App-Start, TV-Lautstärke, Stumm, Power und absolute Lautstärke folgen später.
+Das Android-Projekt verbindet die native Sofacockpit-Navigation mit dem Compose-Screen der Tonmaschine. Beim Öffnen ist der Startbildschirm in der Mitte sichtbar. Er zeigt auf der Tonmaschine-Seite und auf dem Startbildschirm denselben Verbindungszustand. Die Streaming-Leiste und der Lautstärkeregler behalten ihre eigenen Gesten. Der Nutzer hat die TV-Steuerverbindung und das Steuerkreuz mit v0.3.3 am TCL bestätigt. Seit v0.4.0 sind App-Link-Start, relative TV-Lautstärke, Stumm und Power implementiert; Gerätetests dieser neuen Funktionen stehen aus.
 
 Mit der offiziellen Google-TV-App wurden am TCL bereits die Navigation und die Weitergabe von Lautstärkebefehlen an die LG-Soundbar getestet. Dabei war das Handy per WLAN und der Fernseher per LAN im selben Heimnetz verbunden. Das ist kein Test von Sofacockpit.
 
-Die Soundbar-Seite verwendet den Android-Code aus der öffentlichen [Tonmaschine-Implementierung](https://github.com/sschermer/Soundbar-APP/tree/main/android). Die übernommenen Dateien behalten deren MIT-Lizenzhinweis in [TONMASCHINE_LICENSE.md](TONMASCHINE_LICENSE.md); Android-Abhängigkeiten und Hinweise sind in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) dokumentiert. Die Sofacockpit-Gerätetests stehen noch aus.
+Die Soundbar-Seite verwendet den Android-Code aus der öffentlichen [Tonmaschine-Implementierung](https://github.com/sschermer/Soundbar-APP/tree/main/android). Die übernommenen Dateien behalten deren MIT-Lizenzhinweis in [TONMASCHINE_LICENSE.md](TONMASCHINE_LICENSE.md); Android-Abhängigkeiten und Hinweise sind in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) dokumentiert. TV-Steuerkreuz am TCL bestätigt (v0.3.3); weitere TV- und Soundbar-Gerätetests stehen aus.
 
 Zu prüfen sind insbesondere das Aufwecken des TV nach längerem Standby, das direkte Starten der Streaming-Apps, das Auslesen des Audioformats und das Auslesen und Setzen eines absoluten Lautstärkewerts für den Schieberegler.
 
@@ -66,6 +66,15 @@ Beim zweiten Gerätetest funktionierte nach Freigabe des lokalen Netzwerks die G
 ### Fehlerbehebung in v0.3.3
 
 Der TCL akzeptiert seit v0.3.2 den Kopplungscode; die gespeicherte Kopplung und der anschließend erreichte Protokoll-Timeout belegen, dass der TLS-Verbindungsaufbau zur Steuerung gelang. Die alte Steuersitzung forderte nur PING und KEY an, wartete aber zwingend auf RemoteStart. Nach Abgleich mit [androidtvremote2/remote.py](https://github.com/tronikos/androidtvremote2/blob/main/src/androidtvremote2/remote.py) wird jetzt auch POWER (Bit 32) als Statusfunktion angefordert; RemoteStart liefert zugleich den Einschaltzustand und die Startbestätigung. Es werden keine Power-Befehle automatisch gesendet. Navigation wird weiterhin erst nach bestätigtem RemoteStart und KEY-Freigabe aktiviert. Bei fehlender Startbestätigung enthält der Fehler die angebotene und ausgehandelte Bitmaske, Nachrichtenanzahlen und empfangene Feldnummern, jedoch keine Nutzdaten, PINs oder Schlüssel. Regressionstests prüfen die POWER-Aushandlung, Start im Standby und dass Pings allein keine Verbindung bestätigen. Die Änderung muss am TCL verifiziert werden.
+
+### TV-Steuerung und Streaming (ab v0.4.0)
+
+- Der Nutzer hat die Steuerverbindung und das Steuerkreuz in v0.3.3 am TCL bestätigt. Die sichere Kopplung und Tonmaschine bleiben unverändert.
+- Remote v2 handelt zusätzlich VOLUME (64) und APP_LINK (512) aus. Power, Volume Up/Down und Volume Mute sind einzelne Android-Tastenbefehle. Power/Standby, Pegel und Stummschaltung werden nur anhand von TV-Meldungen angezeigt. Der Pegel ist vorerst eine reine Anzeige: keine erfundenen Werte und keine unbestätigte absolute Lautstärkeregelung. Nach tiefem Standby kann der TV unerreichbar werden.
+- Die fünf Standarddienste sind Netflix, Prime Video, Apple TV+, Disney+ und Dyn. Die Leiste scrollt horizontal. Ein kurzes Tippen sendet den App-Link, langes Drücken öffnet Bearbeiten, Verschieben oder Entfernen; die Plus-Taste öffnet den Katalog oder eine eigene App (Name plus Link/Paketname). Die Reihenfolge wird lokal gespeichert. Auch eine leere Liste bleibt leer. Entfernen betrifft nur die Schnellwahltaste, nicht die Installation auf dem TV.
+- Netflix, Prime Video, Apple TV und Disney+ verwenden dokumentierte Deep Links (siehe [Home Assistant Android TV Remote](https://www.home-assistant.io/integrations/androidtv_remote/) und [Deep-Link-Sammlung](https://community.home-assistant.io/t/android-tv-remote-app-links-deep-linking-guide/567921/)). Dyn nutzt versuchsweise den Paketnamen aus der [Play-Store-App](https://play.google.com/store/apps/details?id=sport.dyn.app.android.prod), umgewandelt in market://launch?id=… . Ob die TV-App dadurch direkt geöffnet wird, ist nicht bestätigt; möglicherweise öffnet sich lediglich der Store. Der Link ist bearbeitbar.
+- Remote v2 bietet keine bekannte Abfrage aller installierten TV-Apps. Der Katalog ist deshalb keine automatische Geräteliste. Eigene Apps lassen sich manuell über HTTPS, unterstützte App-URI-Schemata oder Paketnamen ergänzen. App-Links werden ausschließlich nach bewusstem Tippen gesendet. Der TV kann einen Link ignorieren oder einen Browser/Store öffnen. Der Client meldet den Versand, nicht den erfolgreichen Start; es gibt keine verlässliche Rückmeldung über nicht installierte Apps. Keine ADB-Freigabe, keine zusätzliche TV-App und keine neuen Bibliotheken.
+- Noch am Gerät zu testen: Power (auch Standby), Lautstärke +/− und Stumm samt Status, Start der fünf Dienste, Verwaltung der Schnellwahlliste. Keine dieser neuen Funktionen ist durch einen echten TV-Test bestätigt.
 
 ### Bauen
 

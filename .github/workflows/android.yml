@@ -54,7 +54,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v0.3.3-debug
+          name: Sofacockpit-Android-v0.4.0-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 90
@@ -64,9 +64,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create sofacockpit-v0.3.3 \
+          gh release create sofacockpit-v0.4.0 \
             app/build/outputs/apk/debug/app-debug.apk \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "Sofacockpit v0.3.3 (TV-Steuersitzung)" \
-            --notes "Kopplung am TCL erfolgreich bestätigt. Steuersitzung fordert jetzt neben PING und KEY auch POWER-Status an (RemoteStart), detaillierte feldbasierte Diagnose bei fehlender Startbestätigung. Vorherige Kopplung bleibt bei Update erhalten, sofern Signatur und App-Daten erhalten bleiben. Gerätetest der Steuerung steht aus."
+            --title "Sofacockpit v0.4.0 (TV-Steuerung und Streaming)" \
+            --notes "Steuerkreuz am TCL in v0.3.3 vom Nutzer bestätigt. Neue Power-, Stumm- und Lautstärketasten, gemeldeter Pegel und App-Link-Schnellwahl mit lokal bearbeitbarer Liste. Neue Funktionen am TV noch zu testen; Dyn über experimentellen Paketnamen-Start."

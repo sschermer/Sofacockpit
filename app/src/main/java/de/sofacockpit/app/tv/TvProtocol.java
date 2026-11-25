@@ -19,10 +19,10 @@ public final class TvProtocol {
     private TvProtocol() {}
     static final int MAX_FRAME = 256 * 1024;
     public static final int PAIR_PORT = 6467, REMOTE_PORT = 6466;
-    public static final int KEY_FEATURE = 2, PING_FEATURE = 1, POWER_FEATURE = 32;
-    // RemoteStart is the power/status notification and also the readiness signal.
-    // Request it even though no power-control buttons are implemented yet.
-    static final int REQUESTED_FEATURES = PING_FEATURE | KEY_FEATURE | POWER_FEATURE;
+    public static final int KEY_FEATURE = 2, PING_FEATURE = 1, POWER_FEATURE = 32,
+        VOLUME_FEATURE = 64, APP_LINK_FEATURE = 512;
+    // Negotiate only features that this client implements.
+    static final int REQUESTED_FEATURES = PING_FEATURE | KEY_FEATURE | POWER_FEATURE | VOLUME_FEATURE | APP_LINK_FEATURE;
 
     static byte[] concat(byte[]... items) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -145,17 +145,45 @@ public final class TvProtocol {
         return bytes(10, concat(number(1, code), number(2, 3)));
     }
 
+    /** Only explicit user-selected app links. Never send arbitrary Android intent URIs. */
+    public static String normalizeLaunchLink(String input) {
+        String value = input == null ? "" : input.trim();
+        String packagePattern = "[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+";
+        if (value.length() > 2048 || value.matches("(?s).*\\s.*"))
+            throw new IllegalArgumentException("Ungültiger oder zu langer App-Link.");
+        if (value.matches(packagePattern)) return "market://launch?id=" + value;
+        if (value.matches("market://launch\\?id=" + packagePattern)) return value;
+        if (value.startsWith("https://")) {
+            try {
+                java.net.URI uri = new java.net.URI(value);
+                if (uri.getHost() != null && uri.getUserInfo() == null) return value;
+            } catch (java.net.URISyntaxException ignored) {}
+        }
+        // App-specific schemes commonly used by Android TV. No file, intent or script links.
+        if (value.matches("(netflix|nflx|disneyplus|plex|spotify|waipu|zattoo|crunchyroll|viki|arte|twitch|vnd\\.youtube|vnd\\.youtube\\.launch)://[^\\s]*"))
+            return value;
+        throw new IllegalArgumentException("HTTPS-Link, unterstützten App-Link oder Android-Paketnamen eingeben.");
+    }
+    static byte[] appLink(String link) {
+        return bytes(90, string(1, normalizeLaunchLink(link)));
+    }
+
     /** The TV drives negotiation. Receiving remote_start (even when power is off)
      * after configure/active confirms a real remote session, not just an open socket. */
     static final class RemoteHandshake {
         private int features, advertisedFeatures;
         private int configureCount, activeCount, startCount, pingCount, otherCount;
         private boolean configured, activated, ready;
-        private Boolean powerOn;
+        private Boolean powerOn, muted;
+        private Integer volumeLevel, volumeMax;
         private final java.util.SortedSet<Integer> seenFields = new java.util.TreeSet<>();
         boolean ready() { return ready; }
         boolean supportsKeys() { return ready && (features & KEY_FEATURE) != 0; }
         Boolean powerOn() { return powerOn; }
+        boolean supportsApps() { return ready && (features & APP_LINK_FEATURE) != 0; }
+        Integer volumeLevel() { return ready ? volumeLevel : null; }
+        Integer volumeMax() { return ready ? volumeMax : null; }
+        Boolean muted() { return ready ? muted : null; }
         String diagnostics() {
             return "TV-Funktionen=" + advertisedFeatures + ", ausgehandelt=" + features +
                 "; Configure=" + configureCount + ", Active=" + activeCount +
@@ -170,6 +198,7 @@ public final class TvProtocol {
             if (m.has(1)) {
                 configureCount++;
                 configured = true; activated = false; ready = false; powerOn = null;
+                volumeLevel = null; volumeMax = null; muted = null;
                 advertisedFeatures = (int)m.child(1).integer(1, 0);
                 features = advertisedFeatures & REQUESTED_FEATURES;
                 byte[] info = concat(number(3, 1), string(4, "1"), string(5, "atvremote"), string(6, "1.0.0"));
@@ -192,6 +221,17 @@ public final class TvProtocol {
                 // Proto3 default false is a legitimate start notification for standby.
                 powerOn = m.child(40).integer(1, 0) != 0;
                 ready = true;
+                return null;
+            }
+            if (m.has(50) && configured && (features & VOLUME_FEATURE) != 0) {
+                Message volume = m.child(50);
+                long max = volume.integer(6, 0), level = volume.integer(7, 0);
+                if (max > 0 && max <= Integer.MAX_VALUE && level >= 0 && level <= max) {
+                    volumeMax = (int) max; volumeLevel = (int) level;
+                    muted = volume.integer(8, 0) != 0;
+                } else {
+                    volumeMax = null; volumeLevel = null; muted = null;
+                }
                 return null;
             }
             if (m.has(3) && m.child(3).integer(1, 0) != 0)

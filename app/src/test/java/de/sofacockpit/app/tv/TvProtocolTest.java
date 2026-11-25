@@ -33,10 +33,10 @@ public class TvProtocolTest {
     @Test public void negotiationAndPing() throws Exception {
         TvProtocol.RemoteHandshake h = new TvProtocol.RemoteHandshake();
         byte[] reply = h.accept(TvProtocol.bytes(1, TvProtocol.number(1, 511)));
-        assertEquals(35, TvProtocol.parse(reply).child(1).integer(1, -1));
+        assertEquals(99, TvProtocol.parse(reply).child(1).integer(1, -1));
         assertFalse(h.ready());
         reply = h.accept(TvProtocol.bytes(2, new byte[0]));
-        assertEquals(35, TvProtocol.parse(reply).child(2).integer(1, -1));
+        assertEquals(99, TvProtocol.parse(reply).child(2).integer(1, -1));
         assertFalse(h.ready());
         reply = h.accept(TvProtocol.bytes(8, TvProtocol.number(1, 123)));
         assertEquals(123, TvProtocol.parse(reply).child(9).integer(1, -1));
@@ -51,9 +51,9 @@ public class TvProtocolTest {
         // RemoteConfigure.code1 = 611 (PING|KEY|POWER|VOLUME|APP_LINK);
         // these bytes are independent of the encoder under test.
         byte[] reply = h.accept(new byte[]{0x0a, 0x03, 0x08, (byte)0xe3, 0x04});
-        assertEquals(35, TvProtocol.parse(reply).child(1).integer(1, -1));
+        assertEquals(611, TvProtocol.parse(reply).child(1).integer(1, -1));
         assertFalse(h.ready());
-        assertArrayEquals(new byte[]{0x12, 0x02, 0x08, 0x23},
+        assertArrayEquals(new byte[]{0x12, 0x03, 0x08, (byte)0xe3, 0x04},
             h.accept(new byte[]{0x12, 0x00}));
         assertFalse(h.ready());
         assertArrayEquals(new byte[]{0x4a, 0x02, 0x08, 0x7b},
@@ -63,7 +63,7 @@ public class TvProtocolTest {
         assertTrue(h.ready());
         assertTrue(h.supportsKeys());
         assertEquals(Boolean.TRUE, h.powerOn());
-        assertTrue(h.diagnostics().contains("TV-Funktionen=611, ausgehandelt=35"));
+        assertTrue(h.diagnostics().contains("TV-Funktionen=611, ausgehandelt=611"));
         assertTrue(h.diagnostics().contains("Configure=1, Active=1, Start=1, Ping=1"));
     }
     @Test public void pingAloneIsNotReadyAndDiagnosticShowsMissingStart() throws Exception {
@@ -84,6 +84,44 @@ public class TvProtocolTest {
         h.accept(TvProtocol.bytes(2, new byte[0]));
         h.accept(TvProtocol.bytes(40, new byte[0]));
         assertTrue(h.ready()); assertFalse(h.supportsKeys());
+    }
+    @Test public void appLinkWireAndInputValidation() throws Exception {
+        TvProtocol.Message msg = TvProtocol.parse(TvProtocol.appLink("netflix://"));
+        assertEquals("netflix://", new String(msg.child(90).messages.get(1), java.nio.charset.StandardCharsets.UTF_8));
+        assertEquals("market://launch?id=sport.dyn.app.android.prod",
+            TvProtocol.normalizeLaunchLink("sport.dyn.app.android.prod"));
+        assertEquals("https://tv.apple.com", TvProtocol.normalizeLaunchLink("https://tv.apple.com"));
+        for (String bad : new String[]{"", "javascript://foo", "intent://x", "file:///etc", "https://u:p@host", "https://a b"}) {
+            try { TvProtocol.normalizeLaunchLink(bad); fail(bad); }
+            catch (IllegalArgumentException expected) {}
+        }
+    }
+    @Test public void reportedVolumeAndCapabilities() throws Exception {
+        TvProtocol.RemoteHandshake h = new TvProtocol.RemoteHandshake();
+        h.accept(TvProtocol.bytes(1, TvProtocol.number(1, 611)));
+        h.accept(TvProtocol.bytes(2, new byte[0]));
+        assertFalse(h.supportsApps());
+        assertNull(h.volumeLevel());
+        h.accept(TvProtocol.bytes(50, TvProtocol.concat(TvProtocol.number(6, 100), TvProtocol.number(7, 27), TvProtocol.number(8, 1))));
+        assertNull(h.volumeLevel());
+        h.accept(TvProtocol.bytes(40, TvProtocol.number(1, 1)));
+        assertTrue(h.supportsApps());
+        assertEquals(Integer.valueOf(100), h.volumeMax());
+        assertEquals(Integer.valueOf(27), h.volumeLevel());
+        assertEquals(Boolean.TRUE, h.muted());
+        h.accept(TvProtocol.bytes(50, TvProtocol.number(6, 100)));
+        assertEquals(Integer.valueOf(0), h.volumeLevel());
+        assertEquals(Boolean.FALSE, h.muted());
+        h.accept(TvProtocol.bytes(40, new byte[0]));
+        assertEquals(Boolean.FALSE, h.powerOn());
+        h.accept(TvProtocol.bytes(1, TvProtocol.number(1, 35)));
+        assertFalse(h.supportsApps());
+        assertNull(h.volumeLevel());
+        h.accept(TvProtocol.bytes(2, new byte[0]));
+        h.accept(TvProtocol.bytes(40, new byte[0]));
+        assertFalse(h.supportsApps());
+        h.accept(TvProtocol.bytes(50, TvProtocol.number(6, 100)));
+        assertNull(h.volumeLevel());
     }
     @Test public void pairingProofAndInvalidCode() {
         RSAPublicKey client = key("80a1", "010001");

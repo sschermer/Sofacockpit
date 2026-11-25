@@ -3,6 +3,9 @@ package de.sofacockpit.app;
 import androidx.activity.ComponentActivity;
 import androidx.lifecycle.ViewModelProvider;
 import de.tonmaschine.android.MainViewModel;
+import android.app.AlertDialog;
+import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -20,6 +23,8 @@ import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.ProgressBar;
+import android.widget.EditText;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -37,7 +42,12 @@ public class MainActivity extends ComponentActivity {
     private MainViewModel soundbarModel;
     private TvRemoteClient tv;
     private TvConnectionDialog tvDialog;
-    private TextView tvHomeStatus, tvHomeDetail, tvRemoteStatus;
+    private TextView tvHomeStatus, tvHomeDetail, tvRemoteStatus, volumeValue;
+    private TvIconButton tvPower, tvMute;
+    private ProgressBar volumeLevel;
+    private LinearLayout streamRow;
+    private HorizontalScrollView streamScroll;
+    private StreamingShortcuts shortcuts;
     private final List<TextView> tvKeys = new ArrayList<>();
 
     @Override
@@ -46,6 +56,7 @@ public class MainActivity extends ComponentActivity {
         soundbarModel = new ViewModelProvider(this).get(MainViewModel.class);
         tv = new TvRemoteClient(this, this::renderTvState);
         tvDialog = new TvConnectionDialog(this, tv);
+        shortcuts = new StreamingShortcuts(this);
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         getWindow().getDecorView().setSystemUiVisibility(0);
@@ -108,49 +119,221 @@ public class MainActivity extends ComponentActivity {
         titleRow.setLayoutParams(titleLp);
 
         tvHomeStatus = deviceHeader(content, "FERNSEHER", "Nicht verbunden");
-        ((View) tvHomeStatus.getParent()).setOnClickListener(v -> tvDialog.open());
+        LinearLayout tvHeader = (LinearLayout) tvHomeStatus.getParent();
+        tvHeader.setOnClickListener(v -> tvDialog.open());
         tvHomeStatus.setTextColor(ACCENT);
         tvHomeStatus.setContentDescription("Fernseher verbinden");
+        tvMute = new TvIconButton(false, KeyEvent.KEYCODE_VOLUME_MUTE);
+        tvPower = new TvIconButton(true, KeyEvent.KEYCODE_POWER);
+        tvHeader.addView(tvMute, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        tvHeader.addView(tvPower, new LinearLayout.LayoutParams(dp(48), dp(48)));
         tvHomeDetail = label("", 12, MUTED);
         tvHomeDetail.setVisibility(View.GONE);
         tvHomeDetail.setOnClickListener(v -> tvDialog.open());
         content.addView(tvHomeDetail);
 
         LinearLayout streaming = section(content, "STREAMING");
-        HorizontalScrollView streamScroll = new HorizontalScrollView(this);
+        LinearLayout streamHeader = (LinearLayout) ((LinearLayout) streaming.getParent()).getChildAt(0);
+        View heading = streamHeader.getChildAt(0);
+        heading.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
+        TextView add = actionButton("+", "");
+        add.setContentDescription("Streaming-Dienst hinzufügen");
+        add.setOnClickListener(v -> addStreamingShortcut());
+        streamHeader.addView(add, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        streamScroll = new HorizontalScrollView(this);
         streamScroll.setHorizontalScrollBarEnabled(false);
         streamScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        LinearLayout streams = new LinearLayout(this);
-        streams.setOrientation(LinearLayout.HORIZONTAL);
-        String[] services = {"Netflix", "YouTube", "Prime", "Waipu"};
-        for (String service : services) {
-            TextView tile = actionButton(service, "Startet nicht");
-            LinearLayout.LayoutParams tileLp = new LinearLayout.LayoutParams(dp(112), dp(58));
-            tileLp.rightMargin = dp(10);
-            streams.addView(tile, tileLp);
-        }
-        streamScroll.addView(streams);
+        streamRow = new LinearLayout(this);
+        streamRow.setOrientation(LinearLayout.HORIZONTAL);
+        streamScroll.addView(streamRow);
         streaming.addView(streamScroll);
+        streamScroll.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> {
+            if (r-l != or-ol && r>l) sizeStreamingTiles();
+        });
+        renderStreamingShortcuts();
 
         LinearLayout volume = section(content, "LAUTSTÄRKE");
         LinearLayout volumeRow = new LinearLayout(this);
         volumeRow.setGravity(Gravity.CENTER_VERTICAL);
-        volumeRow.addView(actionButton("−", "Nicht verbunden"), new LinearLayout.LayoutParams(dp(54), dp(52)));
-        SeekBar seek = new SeekBar(this);
-        seek.setMax(100);
-        seek.setProgress(35);
-        seek.setEnabled(false);
-        LinearLayout.LayoutParams seekLp = new LinearLayout.LayoutParams(0, dp(52), 1);
-        seekLp.leftMargin = dp(8);
-        seekLp.rightMargin = dp(8);
-        volumeRow.addView(seek, seekLp);
-        volumeRow.addView(actionButton("+", "Nicht verbunden"), new LinearLayout.LayoutParams(dp(54), dp(52)));
+        TextView quieter = tvButton("−", KeyEvent.KEYCODE_VOLUME_DOWN);
+        quieter.setContentDescription("Leiser");
+        volumeRow.addView(quieter, new LinearLayout.LayoutParams(dp(54), dp(52)));
+        LinearLayout volumeReadout = new LinearLayout(this);
+        volumeReadout.setOrientation(LinearLayout.VERTICAL);
+        volumeReadout.setGravity(Gravity.CENTER);
+        volumeLevel = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        volumeLevel.setIndeterminate(false);
+        volumeLevel.setContentDescription("Vom TV gemeldeter Lautstärkepegel");
+        volumeReadout.addView(volumeLevel, new LinearLayout.LayoutParams(-1, dp(12)));
+        volumeValue = label("Pegel unbekannt", 12, MUTED);
+        volumeValue.setGravity(Gravity.CENTER);
+        volumeReadout.addView(volumeValue);
+        LinearLayout.LayoutParams volumeLp = new LinearLayout.LayoutParams(0, -2, 1);
+        volumeLp.leftMargin = dp(8);
+        volumeLp.rightMargin = dp(8);
+        volumeRow.addView(volumeReadout, volumeLp);
+        TextView louder = tvButton("+", KeyEvent.KEYCODE_VOLUME_UP);
+        louder.setContentDescription("Lauter");
+        volumeRow.addView(louder, new LinearLayout.LayoutParams(dp(54), dp(52)));
         volume.addView(volumeRow);
         LinearLayout.LayoutParams soundbarLp = new LinearLayout.LayoutParams(-1, -2);
         soundbarLp.topMargin = dp(2);
         soundbarLp.bottomMargin = dp(12);
         content.addView(SofacockpitComposeViewsKt.createSoundbarHomeComposeView(this, vm), soundbarLp);
         return scroll;
+    }
+
+    private void sizeStreamingTiles() {
+        int width = streamScroll.getWidth();
+        int tileWidth = width > 0 ? Math.max(dp(60), (width - 3 * dp(8)) / 4) : dp(80);
+        for (int i = 0; i < streamRow.getChildCount(); i++) {
+            View tile = streamRow.getChildAt(i);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(tileWidth, dp(58));
+            lp.rightMargin = i + 1 < streamRow.getChildCount() ? dp(8) : 0;
+            tile.setLayoutParams(lp);
+        }
+    }
+    private void renderStreamingShortcuts() {
+        streamRow.removeAllViews();
+        for (StreamingShortcuts.Entry entry : shortcuts.entries) {
+            TextView tile = actionButton(entry.name, "");
+            tile.setTextSize(12);
+            tile.setPadding(dp(3), 0, dp(3), 0);
+            tile.setContentDescription(entry.name + " starten; lange drücken zum Bearbeiten");
+            tile.setOnClickListener(v -> {
+                TvRemoteClient.State state = tv.state();
+                if (!state.connected() || !state.apps) {
+                    Toast.makeText(this, !state.connected() ? "Zuerst TV verbinden." :
+                        "TV meldet keine App-Link-Unterstützung.", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                tv.launchApp(entry.link, entry.name);
+                if (entry.link.startsWith("market://"))
+                    Toast.makeText(this, "Experimenteller App-Start; ggf. öffnet sich der Play Store.", Toast.LENGTH_LONG).show();
+            });
+            tile.setOnLongClickListener(v -> { shortcutOptions(entry); return true; });
+            streamRow.addView(tile);
+        }
+        if (shortcuts.entries.isEmpty()) {
+            TextView empty = actionButton("+", "");
+            empty.setContentDescription("Ersten Dienst hinzufügen");
+            empty.setOnClickListener(v -> addStreamingShortcut());
+            streamRow.addView(empty);
+        }
+        sizeStreamingTiles();
+    }
+    private void saveStreamingShortcuts() {
+        shortcuts.save();
+        renderStreamingShortcuts();
+    }
+    private void shortcutOptions(StreamingShortcuts.Entry entry) {
+        int index = shortcuts.entries.indexOf(entry);
+        if (index < 0) return;
+        List<String> labels = new ArrayList<>();
+        List<Runnable> actions = new ArrayList<>();
+        labels.add("Name / App-Link bearbeiten"); actions.add(() -> editStreamingShortcut(entry));
+        if (index > 0) {
+            labels.add("Nach links verschieben");
+            actions.add(() -> { java.util.Collections.swap(shortcuts.entries, index, index - 1); saveStreamingShortcuts(); });
+        }
+        if (index + 1 < shortcuts.entries.size()) {
+            labels.add("Nach rechts verschieben");
+            actions.add(() -> { java.util.Collections.swap(shortcuts.entries, index, index + 1); saveStreamingShortcuts(); });
+        }
+        labels.add("Aus Leiste entfernen");
+        actions.add(() -> { shortcuts.entries.remove(entry); saveStreamingShortcuts(); });
+        new AlertDialog.Builder(this).setTitle(entry.name)
+            .setItems(labels.toArray(new String[0]), (d, i) -> actions.get(i).run())
+            .setNegativeButton("Schließen", null).show();
+    }
+    private void addStreamingShortcut() {
+        if (shortcuts.entries.size() >= 50) {
+            Toast.makeText(this, "Maximal 50 Schnellwahltasten.", Toast.LENGTH_SHORT).show(); return;
+        }
+        List<StreamingShortcuts.Entry> choices = new ArrayList<>();
+        List<String> names = new ArrayList<>();
+        for (StreamingShortcuts.Entry entry : StreamingShortcuts.CATALOG) {
+            if (!shortcuts.contains(entry)) { choices.add(entry); names.add(entry.name); }
+        }
+        names.add("Eigene TV-App hinzufügen …");
+        new AlertDialog.Builder(this).setTitle("Dienst hinzufügen")
+            .setItems(names.toArray(new String[0]), (d, i) -> {
+                if (i == choices.size()) editStreamingShortcut(null);
+                else { shortcuts.entries.add(choices.get(i)); saveStreamingShortcuts(); }
+            })
+            .setNegativeButton("Schließen", null).show();
+    }
+    private void editStreamingShortcut(StreamingShortcuts.Entry old) {
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(20), dp(12), dp(20), dp(12));
+        form.addView(label("Name der auf dem TV installierten App", 13, TEXT));
+        EditText name = new EditText(this);
+        name.setSingleLine(true);
+        name.setHint("z. B. Dyn");
+        form.addView(name);
+        form.addView(label("App-Link oder Android-Paketname", 13, TEXT));
+        EditText link = new EditText(this);
+        link.setSingleLine(true);
+        link.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        link.setHint("https://… oder com.beispiel.app");
+        form.addView(link);
+        form.addView(label("Keine automatische App-Liste vom TV verfügbar. Paketnamen können nur den Play Store öffnen. Der TV muss den Link unterstützen.", 12, MUTED));
+        if (old != null) { name.setText(old.name); link.setText(old.link); }
+        AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle(old == null ? "Eigene TV-App" : "Dienst bearbeiten")
+            .setView(form).setNegativeButton("Abbrechen", null).setPositiveButton("Speichern", null).create();
+        dialog.show();
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            try {
+                StreamingShortcuts.Entry entry = new StreamingShortcuts.Entry(name.getText().toString(), link.getText().toString());
+                for (StreamingShortcuts.Entry other : shortcuts.entries) {
+                    if (other != old && (other.name.equalsIgnoreCase(entry.name) || other.link.equals(entry.link)))
+                        throw new IllegalArgumentException("Dieser Name oder Link ist bereits vorhanden.");
+                }
+                if (old == null) shortcuts.entries.add(entry);
+                else shortcuts.entries.set(shortcuts.entries.indexOf(old), entry);
+                saveStreamingShortcuts(); dialog.dismiss();
+            } catch (IllegalArgumentException ex) { link.setError(ex.getMessage()); }
+        });
+    }
+
+    private final class TvIconButton extends TextView {
+        private final boolean power;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        TvIconButton(boolean power, int key) {
+            super(MainActivity.this);
+            this.power = power;
+            setBackground(shape(SURFACE_ALT, 14));
+            setTextColor(TEXT);
+            setContentDescription(power ? "Fernseher ein oder aus" : "Stummschaltung");
+            setOnClickListener(v -> tv.sendKey(key));
+            tvKeys.add(this);
+        }
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            canvas.save();
+            canvas.translate(getWidth()/2f, getHeight()/2f);
+            float unit = dp(24)/24f;
+            canvas.scale(unit, unit);
+            paint.setColor(getCurrentTextColor());
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(2);
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+            if (power) {
+                canvas.drawArc(-8, -8, 8, 8, -45, 270, false, paint);
+                canvas.drawLine(0, -11, 0, 0, paint);
+            } else {
+                android.graphics.Path path = new android.graphics.Path();
+                path.moveTo(-11,-3); path.lineTo(-7,-3); path.lineTo(-2,-8);
+                path.lineTo(-2,8); path.lineTo(-7,3); path.lineTo(-11,3); path.close();
+                canvas.drawPath(path, paint);
+                canvas.drawLine(3,-4,10,4,paint);
+                canvas.drawLine(10,-4,3,4,paint);
+            }
+            canvas.restore();
+        }
     }
 
     private View page(String heading, String eyebrow, String description) {
@@ -263,7 +446,8 @@ public class MainActivity extends ComponentActivity {
         if (tvHomeStatus != null) {
             String shortStatus;
             switch (state.phase) {
-                case READY: shortStatus = "Verbunden"; break;
+                case READY: shortStatus = state.powerOn == null ? "Verbunden" :
+                    (state.powerOn ? "Ein" : "Standby"); break;
                 case CONNECTING: shortStatus = "Verbinde …"; break;
                 case PAIRING: shortStatus = "Kopple …"; break;
                 case CODE: shortStatus = "Code eingeben"; break;
@@ -288,6 +472,30 @@ public class MainActivity extends ComponentActivity {
         for (TextView key : tvKeys) {
             key.setEnabled(ready);
             key.setAlpha(ready ? 1f : .42f);
+        }
+        if (tvPower != null) {
+            tvPower.setVisibility(state.connected() ? View.VISIBLE : View.GONE);
+            tvPower.setTextColor(Boolean.TRUE.equals(state.powerOn) ? Color.rgb(66,215,146) : TEXT);
+            tvPower.setContentDescription(state.powerOn == null ? "Fernseher ein oder aus, Zustand unbekannt" :
+                (state.powerOn ? "Fernseher ausschalten" : "Fernseher einschalten"));
+            tvPower.invalidate();
+        }
+        if (tvMute != null) {
+            tvMute.setVisibility(state.connected() ? View.VISIBLE : View.GONE);
+            tvMute.setTextColor(Boolean.TRUE.equals(state.muted) ? Color.rgb(66,215,146) : TEXT);
+            tvMute.setContentDescription(state.muted == null ? "Stummschaltung, Zustand unbekannt" :
+                (state.muted ? "Stummschaltung aufheben" : "Stummschaltung einschalten"));
+            tvMute.invalidate();
+        }
+        if (volumeLevel != null) {
+            boolean reported = state.connected() && state.volumeLevel != null && state.volumeMax != null;
+            volumeLevel.setVisibility(reported ? View.VISIBLE : View.GONE);
+            if (reported) {
+                volumeLevel.setMax(state.volumeMax);
+                volumeLevel.setProgress(state.volumeLevel);
+                volumeValue.setText(state.volumeLevel + " / " + state.volumeMax +
+                    (Boolean.TRUE.equals(state.muted) ? " · Stumm" : ""));
+            } else volumeValue.setText("Pegel unbekannt");
         }
         if (tvDialog != null) tvDialog.render(state);
     }

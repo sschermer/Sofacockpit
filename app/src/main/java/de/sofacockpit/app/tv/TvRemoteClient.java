@@ -32,9 +32,26 @@ public final class TvRemoteClient implements AutoCloseable {
     public static final class State {
         public final Phase phase;
         public final String detail;
-        public final boolean keys;
+        public final boolean keys, apps;
+        public final Boolean powerOn, muted;
+        public final Integer volumeLevel, volumeMax;
         State(Phase phase, String detail, boolean keys) {
-            this.phase = phase; this.detail = detail; this.keys = keys;
+            this(phase, detail, keys, false, null, null, null, null);
+        }
+        State(Phase phase, String detail, boolean keys, boolean apps, Boolean powerOn,
+              Integer volumeLevel, Integer volumeMax, Boolean muted) {
+            this.phase = phase; this.detail = detail; this.keys = keys; this.apps = apps;
+            this.powerOn = powerOn; this.volumeLevel = volumeLevel; this.volumeMax = volumeMax; this.muted = muted;
+        }
+        State withDetail(String value) {
+            return new State(phase, value, keys, apps, powerOn, volumeLevel, volumeMax, muted);
+        }
+        boolean sameDeviceState(State other) {
+            return other != null && phase == other.phase && keys == other.keys && apps == other.apps &&
+                java.util.Objects.equals(powerOn, other.powerOn) &&
+                java.util.Objects.equals(volumeLevel, other.volumeLevel) &&
+                java.util.Objects.equals(volumeMax, other.volumeMax) &&
+                java.util.Objects.equals(muted, other.muted);
         }
         public boolean connected() { return phase == Phase.READY; }
     }
@@ -63,7 +80,10 @@ public final class TvRemoteClient implements AutoCloseable {
     public boolean busy() { return current != null; }
 
     private void update(Phase phase, String detail, boolean keys) {
-        state = new State(phase, detail, keys);
+        setState(new State(phase, detail, keys));
+    }
+    private void setState(State next) {
+        state = next;
         listener.onState(state);
     }
     private void publish(Session s, Phase phase, String detail, boolean keys) {
@@ -107,30 +127,53 @@ public final class TvRemoteClient implements AutoCloseable {
     }
 
     public void sendKey(int key) {
+        if (!allowedKey(key)) { commandDetail("Dieser TV-Befehl wird nicht unterstützt."); return; }
+        sendCommand(TvProtocol.key(key), false, null);
+    }
+
+    public void launchApp(String link, String label) {
+        try { sendCommand(TvProtocol.appLink(link), true,
+            "Startbefehl für " + label + " gesendet – Start am TV prüfen."); }
+        catch (IllegalArgumentException ex) { commandDetail(ex.getMessage()); }
+    }
+
+    private void commandDetail(String detail) {
+        if (!closed) setState(state.withDetail(detail));
+    }
+
+    private void sendCommand(byte[] message, boolean app, String sentDetail) {
         Session s = current;
-        if (!allowedKey(key)) {
-            if (!closed && state.connected()) update(Phase.READY, "Dieser Befehl ist noch nicht implementiert.", state.keys);
+        if (s == null || !s.ready || !state.connected()) {
+            commandDetail("TV nicht verbunden. Zuerst verbinden."); return;
+        }
+        if (app ? !s.apps : !s.keys) {
+            commandDetail(app ? "TV meldet keine App-Link-Unterstützung." : "TV meldet keine Tastenunterstützung.");
             return;
         }
-        if (s == null || !s.ready || !s.keys || !state.connected()) return;
         try {
             writers.execute(() -> {
-                if (s.cancelled || !s.ready || !s.keys) return;
-                try { s.send(TvProtocol.key(key)); }
-                catch (IOException ex) {
+                if (s.cancelled || !s.ready || (app ? !s.apps : !s.keys)) return;
+                try {
+                    s.send(message);
+                    if (sentDetail != null) main.post(() -> {
+                        if (!closed && current == s && !s.cancelled && state.connected()) commandDetail(sentDetail);
+                    });
+                } catch (IOException ex) {
                     s.writeFailed = true;
                     s.closeSocket();
                 }
             });
         } catch (RejectedExecutionException ex) {
-            if (!closed && current == s) update(Phase.READY, "Zu viele Tastenbefehle. Bitte kurz warten.", state.keys);
+            if (!closed && current == s) commandDetail("Zu viele TV-Befehle. Bitte kurz warten.");
         }
     }
     private static boolean allowedKey(int key) {
         return key == KeyEvent.KEYCODE_BACK || key == KeyEvent.KEYCODE_HOME ||
             key == KeyEvent.KEYCODE_DPAD_UP || key == KeyEvent.KEYCODE_DPAD_DOWN ||
             key == KeyEvent.KEYCODE_DPAD_LEFT || key == KeyEvent.KEYCODE_DPAD_RIGHT ||
-            key == KeyEvent.KEYCODE_DPAD_CENTER;
+            key == KeyEvent.KEYCODE_DPAD_CENTER || key == KeyEvent.KEYCODE_POWER ||
+            key == KeyEvent.KEYCODE_VOLUME_UP || key == KeyEvent.KEYCODE_VOLUME_DOWN ||
+            key == KeyEvent.KEYCODE_VOLUME_MUTE;
     }
 
     private void run(Session s) {
@@ -175,8 +218,8 @@ public final class TvRemoteClient implements AutoCloseable {
         } catch (RuntimeException ex) {
             error = s.stage + ": TV-Verbindung fehlgeschlagen. " + diagnostic(ex);
         } finally {
-            s.ready = false; s.keys = false; s.closeSocket();
-            final String reason = s.writeFailed ? "Tastenbefehl konnte nicht gesendet werden. Bitte erneut verbinden." :
+            s.ready = false; s.keys = false; s.apps = false; s.closeSocket();
+            final String reason = s.writeFailed ? "TV-Befehl konnte nicht gesendet werden. Bitte erneut verbinden." :
                 (error == null ? "Verbindung beendet." : error);
             main.post(() -> {
                 if (!closed && current == s && !s.cancelled) {
@@ -249,6 +292,7 @@ public final class TvRemoteClient implements AutoCloseable {
             TvProtocol.RemoteHandshake handshake = new TvProtocol.RemoteHandshake();
             long deadline = SystemClock.elapsedRealtime() + 20000;
             boolean announced = false;
+            State previous = null;
             while (!s.cancelled) {
                 if (!handshake.ready() && SystemClock.elapsedRealtime() > deadline)
                     throw new IOException("Keine bestätigte TV-Steuersitzung. " + handshake.diagnostics());
@@ -264,15 +308,26 @@ public final class TvRemoteClient implements AutoCloseable {
                 if (reply != null) s.send(reply);
                 s.ready = handshake.ready();
                 s.keys = handshake.supportsKeys();
+                s.apps = handshake.supportsApps();
                 if (s.ready && !announced) {
                     synchronized (s) {
                         if (s.cancelled) return;
                         prefs.edit().putString(HOST, s.host).apply();
                     }
-                    publish(s, Phase.READY, s.keys ? "Verbunden" : "Verbunden – TV meldet keine Tastenunterstützung.", s.keys);
                     announced = true;
-                } else if (!s.ready && announced) {
-                    announced = false;
+                }
+                if (s.ready) {
+                    State snapshot = new State(Phase.READY,
+                        s.keys ? "Verbunden" : "Verbunden – TV meldet keine Tastenunterstützung.",
+                        s.keys, s.apps, handshake.powerOn(), handshake.volumeLevel(), handshake.volumeMax(), handshake.muted());
+                    if (!snapshot.sameDeviceState(previous)) {
+                        previous = snapshot;
+                        main.post(() -> {
+                            if (!closed && current == s && !s.cancelled) setState(snapshot);
+                        });
+                    }
+                } else if (announced) {
+                    announced = false; previous = null;
                     deadline = SystemClock.elapsedRealtime() + 20000;
                     publish(s, Phase.CONNECTING, "TV-Steuersitzung wird neu ausgehandelt …", false);
                 }
@@ -308,7 +363,7 @@ public final class TvRemoteClient implements AutoCloseable {
         final String host;
         final boolean pair;
         final BlockingQueue<String> codes = new ArrayBlockingQueue<>(1);
-        volatile boolean cancelled, ready, keys, writeFailed;
+        volatile boolean cancelled, ready, keys, apps, writeFailed;
         String stage = "TV-Verbindung";
         volatile Socket raw;
         volatile SSLSocket tls;
@@ -326,7 +381,7 @@ public final class TvRemoteClient implements AutoCloseable {
             if (r != null) try { r.close(); } catch (IOException ignored) {}
         }
         void cancel() {
-            synchronized (this) { cancelled = true; ready = false; keys = false; }
+            synchronized (this) { cancelled = true; ready = false; keys = false; apps = false; }
             codes.clear(); codes.offer(""); // unblock a waiting pairing worker
             closeSocket(); // raw close unblocks reads without a TLS shutdown handshake on the UI thread
         }
