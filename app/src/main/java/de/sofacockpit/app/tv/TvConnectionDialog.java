@@ -189,7 +189,11 @@ public final class TvConnectionDialog {
             main.post(() -> {
                 if (!active()) return;
                 stopSearch();
-                searchStatus.setText("Suche konnte nicht gestartet werden (" + error + "). IP-Adresse manuell eingeben.");
+                if (error == 7) {
+                    searchStatus.setText("Lokaler Netzwerkzugriff verweigert (7). Android-Einstellungen → Apps → Sofacockpit → Berechtigungen → Geräte in der Nähe / Lokales Netzwerk erlauben. Danach erneut suchen.");
+                } else {
+                    searchStatus.setText("Suche konnte nicht gestartet werden (" + error + "). IP-Adresse manuell eingeben.");
+                }
             });
         }
         @Override public void onStopDiscoveryFailed(String serviceType, int error) {}

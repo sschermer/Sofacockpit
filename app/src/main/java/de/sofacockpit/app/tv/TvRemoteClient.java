@@ -41,7 +41,7 @@ public final class TvRemoteClient implements AutoCloseable {
     public interface Listener { void onState(State state); }
 
     private static final String LEGACY_ALIAS = "sofacockpit.tv.remote.rsa.v1";
-    private static final String ALIAS = "sofacockpit.tv.remote.rsa.v2";
+    private static final String ALIAS = "sofacockpit.tv.remote.rsa.v3";
     private static final String PIN = "certificate_sha256", HOST = "last_address", KEY_ALIAS = "key_alias";
     private final SharedPreferences prefs;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -141,7 +141,7 @@ public final class TvRemoteClient implements AutoCloseable {
             s.stage = "Client-Schlüssel";
             String pin = prefs.getString(PIN, null);
             // Existing successful pairings keep their original client identity.
-            // A fresh pairing must use a new TLS-capable key (v1 cannot be changed in place).
+            // Fresh pairing uses v3; Keystore authorizations cannot be changed in place.
             String alias = s.pair ? ALIAS : prefs.getString(KEY_ALIAS, LEGACY_ALIAS);
             Identity identity = identity(alias);
             if (s.pair) {
@@ -159,7 +159,7 @@ public final class TvRemoteClient implements AutoCloseable {
             Thread.currentThread().interrupt();
             error = "Verbindung abgebrochen.";
         } catch (SocketTimeoutException ex) {
-            error = "Zeitüberschreitung. Ist der TV eingeschaltet und im selben Heimnetz?";
+            error = s.stage + ": Zeitüberschreitung. TV, Heimnetz und lokale Netzwerkberechtigung prüfen.";
         } catch (SSLException ex) {
             error = s.stage + ": TLS-Verbindung fehlgeschlagen. " + diagnostic(ex);
         } catch (ConnectException | NoRouteToHostException ex) {
@@ -333,13 +333,20 @@ public final class TvRemoteClient implements AutoCloseable {
         KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
         ks.load(null);
         if (!ks.containsAlias(alias)) {
-            if (LEGACY_ALIAS.equals(alias)) throw new GeneralSecurityException("Früherer Client-Schlüssel fehlt; bitte neu koppeln.");
+            if (!ALIAS.equals(alias)) throw new GeneralSecurityException("Früherer Client-Schlüssel fehlt; bitte neu koppeln.");
             KeyPairGenerator generator = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA, "AndroidKeyStore");
             long now = System.currentTimeMillis();
             generator.initialize(new KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_SIGN | KeyProperties.PURPOSE_VERIFY)
                 .setKeySize(2048)
                 .setDigests(KeyProperties.DIGEST_NONE, KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA384, KeyProperties.DIGEST_SHA512, KeyProperties.DIGEST_SHA1)
                 .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1, KeyProperties.SIGNATURE_PADDING_RSA_PSS)
+                // Conscrypt constructs RSA-PSS padding before invoking the private-key
+                // operation through RSA/ECB/NoPadding. Keystore maps private-key
+                // Cipher.ENCRYPT_MODE to PURPOSE_SIGN. Do not authorize encryption
+                // or decryption purposes, or use unpadded RSA to encrypt TV traffic.
+                // https://github.com/google/conscrypt/issues/718
+                // https://github.com/google/conscrypt/issues/1201
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setCertificateSubject(new X500Principal("CN=Sofacockpit-" + java.util.UUID.randomUUID()))
                 .setCertificateSerialNumber(new BigInteger(63, new SecureRandom()).setBit(62))
                 .setCertificateNotBefore(new Date(now - 86400000L))
@@ -365,6 +372,22 @@ public final class TvRemoteClient implements AutoCloseable {
             verifier.update(challenge);
             if (!verifier.verify(signature)) throw new GeneralSecurityException("TLS-RSA-Selbsttest fehlgeschlagen");
             certificate.verify(certificate.getPublicKey());
+            // Exercise the exact private-key operation Conscrypt needs for
+            // RSA-PSS TLS signatures, not just NONEwithRSA (PKCS#1 v1.5).
+            // A random block below the RSA modulus avoids an invalid-input error.
+            RSAPublicKey publicKey = (RSAPublicKey)certificate.getPublicKey();
+            int modulusBytes = (publicKey.getModulus().bitLength() + 7) / 8;
+            byte[] block = new byte[modulusBytes];
+            new SecureRandom().nextBytes(block);
+            block[0] = 0;
+            javax.crypto.Cipher rawRsa = javax.crypto.Cipher.getInstance("RSA/ECB/NoPadding");
+            rawRsa.init(javax.crypto.Cipher.ENCRYPT_MODE, privateKey);
+            byte[] rawSignature = rawRsa.doFinal(block);
+            BigInteger recovered = new BigInteger(1, rawSignature).modPow(
+                publicKey.getPublicExponent(), publicKey.getModulus());
+            if (!recovered.equals(new BigInteger(1, block))) {
+                throw new GeneralSecurityException("RSA-PSS-TLS-Selbsttest fehlgeschlagen");
+            }
         }
         return new Identity(alias, privateKey, certificate);
     }
