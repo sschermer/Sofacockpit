@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.PowerSettingsNew
@@ -47,8 +46,8 @@ private val cockpitGreen = Color(0xFF42D792)
 private val cockpitRed = Color(0xFFEB5353)
 
 /** Hosts the existing Tonmaschine Compose screen and its real device controls. */
-class TonmaschineComposePage(context: Context, vm: MainViewModel) : ComposeView(context) {
-    init {
+fun createTonmaschineComposePage(context: Context, vm: MainViewModel): ComposeView =
+    ComposeView(context).apply {
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         setContent {
             val activity = context as ComponentActivity
@@ -67,15 +66,13 @@ class TonmaschineComposePage(context: Context, vm: MainViewModel) : ComposeView(
             Tonmaschine(vm, connect)
         }
     }
-}
 
 /** Compact start-screen status. Values and switch states come from soundbar reports. */
-class SoundbarHomeComposeView(context: Context, vm: MainViewModel) : ComposeView(context) {
-    init {
+fun createSoundbarHomeComposeView(context: Context, vm: MainViewModel): ComposeView =
+    ComposeView(context).apply {
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         setContent { SoundbarHomeCard(vm) }
     }
-}
 
 @Composable
 private fun SoundbarHomeCard(vm: MainViewModel) {

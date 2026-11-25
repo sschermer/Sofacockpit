@@ -61,7 +61,7 @@ public class MainActivity extends ComponentActivity {
         shell.addView(footer, new LinearLayout.LayoutParams(-1, dp(34)));
         setContentView(shell);
 
-        pager.addPage(new TonmaschineComposePage(this, soundbarModel));
+        pager.addPage(SofacockpitComposeViewsKt.createTonmaschineComposePage(this, soundbarModel));
         pager.addPage(homePage(soundbarModel));
         pager.addPage(page("TV-Steuerkreuz", "Fernbedienung", "Die TV-Kopplung und Navigation sind noch nicht eingerichtet."));
         pager.setOnPageChanged(index -> updateDots(index));
@@ -130,7 +130,7 @@ public class MainActivity extends ComponentActivity {
         LinearLayout.LayoutParams soundbarLp = new LinearLayout.LayoutParams(-1, -2);
         soundbarLp.topMargin = dp(2);
         soundbarLp.bottomMargin = dp(12);
-        content.addView(new SoundbarHomeComposeView(this, vm), soundbarLp);
+        content.addView(SofacockpitComposeViewsKt.createSoundbarHomeComposeView(this, vm), soundbarLp);
         return scroll;
     }
 
