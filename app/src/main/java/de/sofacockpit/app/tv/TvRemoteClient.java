@@ -63,6 +63,8 @@ public final class TvRemoteClient implements AutoCloseable {
     private final SharedPreferences prefs;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService sessions = Executors.newSingleThreadExecutor();
+    // Independent of the reader and writer: can abort a stalled read or write.
+    private final ScheduledExecutorService watchdogs = Executors.newSingleThreadScheduledExecutor();
     private final ThreadPoolExecutor writers = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
         new ArrayBlockingQueue<>(32), new ThreadPoolExecutor.AbortPolicy());
     private final Listener listener;
@@ -123,7 +125,7 @@ public final class TvRemoteClient implements AutoCloseable {
     }
     @Override public void close() {
         closed = true; cancelCurrent();
-        sessions.shutdownNow(); writers.shutdownNow();
+        sessions.shutdownNow(); writers.shutdownNow(); watchdogs.shutdownNow();
     }
 
     public void sendKey(int key) {
@@ -287,50 +289,79 @@ public final class TvRemoteClient implements AutoCloseable {
         try (SSLSocket socket = open(s, host, TvProtocol.REMOTE_PORT, identity, pin)) {
             s.stage = "TV-Steuerprotokoll";
             publish(s, Phase.CONNECTING, "TV-Kopplung bestätigt. Steuersitzung wird ausgehandelt …", false);
-            socket.setSoTimeout(16000);
+            // An input-only 16 s timeout could disconnect during active key use:
+            // the TV may suppress its normal idle pings while receiving commands.
+            // Use a bidirectional watchdog instead, so a partial frame is never
+            // discarded and restarted after a read timeout.
+            socket.setSoTimeout(0);
             InputStream input = socket.getInputStream();
             TvProtocol.RemoteHandshake handshake = new TvProtocol.RemoteHandshake();
-            long deadline = SystemClock.elapsedRealtime() + 20000;
+            RemoteLiveness live = new RemoteLiveness(SystemClock.elapsedRealtime());
+            s.liveness = live;
+            Socket raw = s.raw;
+            if (raw == null || s.cancelled) throw new IOException("Abgebrochen");
+            raw.setKeepAlive(true);
+            java.util.concurrent.atomic.AtomicReference<RemoteLiveness.Expiry> timedOut =
+                new java.util.concurrent.atomic.AtomicReference<>(RemoteLiveness.Expiry.NONE);
+            ScheduledFuture<?> watch = watchdogs.scheduleAtFixedRate(() -> {
+                if (s.cancelled) return;
+                RemoteLiveness.Expiry expiry = live.expiry(SystemClock.elapsedRealtime());
+                if (expiry != RemoteLiveness.Expiry.NONE &&
+                    timedOut.compareAndSet(RemoteLiveness.Expiry.NONE, expiry)) {
+                    // Invalidate the transport before unblocking the reader.
+                    s.ready = false; s.keys = false; s.apps = false;
+                    try { raw.close(); } catch (IOException ignored) {}
+                }
+            }, 1, 1, TimeUnit.SECONDS);
             boolean announced = false;
             State previous = null;
-            while (!s.cancelled) {
-                if (!handshake.ready() && SystemClock.elapsedRealtime() > deadline)
-                    throw new IOException("Keine bestätigte TV-Steuersitzung. " + handshake.diagnostics());
-                byte[] frame;
-                try {
-                    frame = TvProtocol.readFrame(input);
-                } catch (SocketTimeoutException | EOFException ex) {
-                    throw new IOException("TV-Steuersitzung: " +
-                        (ex instanceof SocketTimeoutException ? "Zeitüberschreitung" : "Verbindung beendet") +
-                        ". " + handshake.diagnostics(), ex);
-                }
-                byte[] reply = handshake.accept(frame);
-                if (reply != null) s.send(reply);
-                s.ready = handshake.ready();
-                s.keys = handshake.supportsKeys();
-                s.apps = handshake.supportsApps();
-                if (s.ready && !announced) {
-                    synchronized (s) {
-                        if (s.cancelled) return;
-                        prefs.edit().putString(HOST, s.host).apply();
+            try {
+                while (!s.cancelled) {
+                    byte[] frame = TvProtocol.readFrame(input);
+                    byte[] reply = handshake.accept(frame);
+                    live.inbound(SystemClock.elapsedRealtime(), handshake.ready());
+                    if (reply != null) s.send(reply);
+                    if (timedOut.get() != RemoteLiveness.Expiry.NONE) throw new IOException("TV-Zeitüberschreitung");
+                    s.ready = handshake.ready();
+                    s.keys = handshake.supportsKeys();
+                    s.apps = handshake.supportsApps();
+                    if (s.ready && !announced) {
+                        synchronized (s) {
+                            if (s.cancelled) return;
+                            prefs.edit().putString(HOST, s.host).apply();
+                        }
+                        announced = true;
                     }
-                    announced = true;
-                }
-                if (s.ready) {
-                    State snapshot = new State(Phase.READY,
-                        s.keys ? "Verbunden" : "Verbunden – TV meldet keine Tastenunterstützung.",
-                        s.keys, s.apps, handshake.powerOn(), handshake.volumeLevel(), handshake.volumeMax(), handshake.muted());
-                    if (!snapshot.sameDeviceState(previous)) {
-                        previous = snapshot;
-                        main.post(() -> {
-                            if (!closed && current == s && !s.cancelled) setState(snapshot);
-                        });
+                    if (s.ready) {
+                        State snapshot = new State(Phase.READY,
+                            s.keys ? "Verbunden" : "Verbunden – TV meldet keine Tastenunterstützung.",
+                            s.keys, s.apps, handshake.powerOn(), handshake.volumeLevel(), handshake.volumeMax(), handshake.muted());
+                        if (!snapshot.sameDeviceState(previous)) {
+                            previous = snapshot;
+                            main.post(() -> {
+                                if (!closed && current == s && !s.cancelled && s.ready) setState(snapshot);
+                            });
+                        }
+                    } else if (announced) {
+                        announced = false; previous = null;
+                        publish(s, Phase.CONNECTING, "TV-Steuersitzung wird neu ausgehandelt …", false);
                     }
-                } else if (announced) {
-                    announced = false; previous = null;
-                    deadline = SystemClock.elapsedRealtime() + 20000;
-                    publish(s, Phase.CONNECTING, "TV-Steuersitzung wird neu ausgehandelt …", false);
                 }
+            } catch (IOException ex) {
+                RemoteLiveness.Expiry expiry = timedOut.get();
+                if (expiry != RemoteLiveness.Expiry.NONE) {
+                    String reason = expiry == RemoteLiveness.Expiry.HANDSHAKE
+                        ? "Keine bestätigte TV-Steuersitzung"
+                        : "TV-Verbindung unterbrochen: 25 s ohne Sende- oder Empfangsaktivität";
+                    throw new IOException(reason + ". " + live.diagnostics(SystemClock.elapsedRealtime())
+                        + ". " + handshake.diagnostics(), ex);
+                }
+                if (ex instanceof EOFException)
+                    throw new IOException("TV hat die Steuerverbindung beendet. " + handshake.diagnostics(), ex);
+                throw ex;
+            } finally {
+                watch.cancel(false);
+                s.liveness = null;
             }
         } finally { s.closeSocket(); }
     }
@@ -367,6 +398,7 @@ public final class TvRemoteClient implements AutoCloseable {
         String stage = "TV-Verbindung";
         volatile Socket raw;
         volatile SSLSocket tls;
+        volatile RemoteLiveness liveness;
         final Object outputLock = new Object();
         Session(String host, boolean pair) { this.host = host; this.pair = pair; }
         void send(byte[] message) throws IOException {
@@ -374,6 +406,8 @@ public final class TvRemoteClient implements AutoCloseable {
                 SSLSocket socket = tls;
                 if (cancelled || socket == null || socket.isClosed()) throw new IOException("TV nicht verbunden.");
                 TvProtocol.writeFrame(socket.getOutputStream(), message);
+                RemoteLiveness live = liveness;
+                if (live != null) live.outbound(SystemClock.elapsedRealtime());
             }
         }
         void closeSocket() {
