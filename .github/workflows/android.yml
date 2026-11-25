@@ -42,6 +42,9 @@ jobs:
         with:
           gradle-version: '9.6.0'
 
+      - name: Run JVM unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest --stacktrace
+
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug --stacktrace
 
@@ -50,7 +53,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v0.2.0-debug
+          name: Sofacockpit-Android-v0.3.0-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 90
@@ -60,9 +63,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create sofacockpit-v0.2.0 \
+          gh release create sofacockpit-v0.3.0 \
             app/build/outputs/apk/debug/app-debug.apk \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "Sofacockpit v0.2.0 (Tonmaschine und UI)" \
-            --notes "Debug APK mit der integrierten Android-Tonmaschine und den überarbeiteten Sofacockpit-Seiten. Die TV-Kopplung und die Integration mit dem TCL sind noch nicht enthalten. Der Debug-Schlüssel ist nicht als dauerhafter Update-Schlüssel gedacht. Soundbar-Steuerung muss am LG S95QR geprüft werden."
+            --title "Sofacockpit v0.3.0 (TV-Kopplung)" \
+            --notes "Debug APK mit Android TV Remote v2: Gerätesuche, TLS-Kopplung per Code und sieben Navigationstasten. Die Verbindung am TCL sowie die Soundbar-Steuerung müssen am Gerät geprüft werden. Der Debug-Schlüssel ist nicht als dauerhafter Update-Schlüssel gedacht."

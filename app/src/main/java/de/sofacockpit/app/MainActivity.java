@@ -8,6 +8,11 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
+import android.view.KeyEvent;
+import de.sofacockpit.app.tv.TvRemoteClient;
+import de.sofacockpit.app.tv.TvConnectionDialog;
+import java.util.ArrayList;
+import java.util.List;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -30,11 +35,17 @@ public class MainActivity extends ComponentActivity {
     private TextView[] dots;
     private int pageWidth;
     private MainViewModel soundbarModel;
+    private TvRemoteClient tv;
+    private TvConnectionDialog tvDialog;
+    private TextView tvHomeStatus, tvHomeDetail, tvRemoteStatus;
+    private final List<TextView> tvKeys = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         soundbarModel = new ViewModelProvider(this).get(MainViewModel.class);
+        tv = new TvRemoteClient(this, this::renderTvState);
+        tvDialog = new TvConnectionDialog(this, tv);
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         getWindow().getDecorView().setSystemUiVisibility(0);
@@ -63,7 +74,8 @@ public class MainActivity extends ComponentActivity {
 
         pager.addPage(SofacockpitComposeViewsKt.createTonmaschineComposePage(this, soundbarModel));
         pager.addPage(homePage(soundbarModel));
-        pager.addPage(page("TV-Steuerkreuz", "Fernbedienung", "Die TV-Kopplung und Navigation sind noch nicht eingerichtet."));
+        pager.addPage(page("TV-Steuerkreuz", "Fernbedienung", "Nicht verbunden"));
+        renderTvState(tv.state());
         pager.setOnPageChanged(index -> updateDots(index));
         pager.post(() -> {
             pageWidth = pager.getWidth();
@@ -95,7 +107,14 @@ public class MainActivity extends ComponentActivity {
         titleLp.bottomMargin = dp(12);
         titleRow.setLayoutParams(titleLp);
 
-        deviceHeader(content, "FERNSEHER", "Nicht verbunden");
+        tvHomeStatus = deviceHeader(content, "FERNSEHER", "Nicht verbunden");
+        ((View) tvHomeStatus.getParent()).setOnClickListener(v -> tvDialog.open());
+        tvHomeStatus.setTextColor(ACCENT);
+        tvHomeStatus.setContentDescription("Fernseher verbinden");
+        tvHomeDetail = label("", 12, MUTED);
+        tvHomeDetail.setVisibility(View.GONE);
+        tvHomeDetail.setOnClickListener(v -> tvDialog.open());
+        content.addView(tvHomeDetail);
 
         LinearLayout streaming = section(content, "STREAMING");
         HorizontalScrollView streamScroll = new HorizontalScrollView(this);
@@ -157,7 +176,12 @@ public class MainActivity extends ComponentActivity {
         LinearLayout.LayoutParams noteLp = new LinearLayout.LayoutParams(-1, -2);
         noteLp.topMargin = dp(12);
         card.addView(note, noteLp);
-        if (heading.equals("TV-Steuerkreuz")) addDpad(card);
+        if (heading.equals("TV-Steuerkreuz")) {
+            tvRemoteStatus = note;
+            note.setOnClickListener(v -> tvDialog.open());
+            note.setContentDescription("TV-Verbindungsstatus und Einstellungen");
+            addDpad(card);
+        }
         outer.addView(card, new LinearLayout.LayoutParams(-1, -2));
         return outer;
     }
@@ -174,29 +198,31 @@ public class MainActivity extends ComponentActivity {
         dialLp.topMargin = dp(16);
         card.addView(dial, dialLp);
         int arrowSize = dp(82);
-        addDialButton(dial, "↑", "oben", arrowSize, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        addDialButton(dial, "↓", "unten", arrowSize, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        addDialButton(dial, "←", "links", arrowSize, Gravity.CENTER_VERTICAL | Gravity.LEFT);
-        addDialButton(dial, "→", "rechts", arrowSize, Gravity.CENTER_VERTICAL | Gravity.RIGHT);
-        addDialButton(dial, "OK", "OK", dp(88), Gravity.CENTER);
+        addDialButton(dial, "↑", "oben", arrowSize, Gravity.TOP | Gravity.CENTER_HORIZONTAL, KeyEvent.KEYCODE_DPAD_UP);
+        addDialButton(dial, "↓", "unten", arrowSize, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL, KeyEvent.KEYCODE_DPAD_DOWN);
+        addDialButton(dial, "←", "links", arrowSize, Gravity.CENTER_VERTICAL | Gravity.LEFT, KeyEvent.KEYCODE_DPAD_LEFT);
+        addDialButton(dial, "→", "rechts", arrowSize, Gravity.CENTER_VERTICAL | Gravity.RIGHT, KeyEvent.KEYCODE_DPAD_RIGHT);
+        addDialButton(dial, "OK", "OK", dp(88), Gravity.CENTER, KeyEvent.KEYCODE_DPAD_CENTER);
         LinearLayout actions = new LinearLayout(this);
         actions.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams actionLp = new LinearLayout.LayoutParams(-1, -2);
         actionLp.topMargin = dp(12);
         card.addView(actions, actionLp);
-        actions.addView(actionButton("Zurück", "TV-Verbindung fehlt"), new LinearLayout.LayoutParams(0, dp(58), 1));
+        actions.addView(tvButton("Zurück", KeyEvent.KEYCODE_BACK), new LinearLayout.LayoutParams(0, dp(58), 1));
         View gap = new View(this);
         actions.addView(gap, new LinearLayout.LayoutParams(dp(10), dp(1)));
-        actions.addView(actionButton("Home", "TV-Verbindung fehlt"), new LinearLayout.LayoutParams(0, dp(58), 1));
-        TextView hint = label("TV-Kopplung noch nicht eingerichtet", 12, MUTED);
+        actions.addView(tvButton("Home", KeyEvent.KEYCODE_HOME), new LinearLayout.LayoutParams(0, dp(58), 1));
+        TextView hint = actionButton("TV-Verbindung", "");
+        hint.setOnClickListener(v -> tvDialog.open());
+        hint.setMinHeight(dp(46));
         hint.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams hintLp = new LinearLayout.LayoutParams(-1, -2);
         hintLp.topMargin = dp(10);
         card.addView(hint, hintLp);
     }
 
-    private void addDialButton(FrameLayout dial, String text, String description, int size, int gravity) {
-        TextView button = actionButton(text, "TV-Verbindung fehlt");
+    private void addDialButton(FrameLayout dial, String text, String description, int size, int gravity, int key) {
+        TextView button = tvButton(text, key);
         GradientDrawable circle = shape(Color.rgb(48, 58, 72), 100);
         circle.setShape(GradientDrawable.OVAL);
         circle.setStroke(dp(1), Color.rgb(79, 96, 118));
@@ -209,7 +235,7 @@ public class MainActivity extends ComponentActivity {
         dial.addView(button, lp);
     }
 
-    private void deviceHeader(LinearLayout parent, String name, String status) {
+    private TextView deviceHeader(LinearLayout parent, String name, String status) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
@@ -219,7 +245,57 @@ public class MainActivity extends ComponentActivity {
         TextView title = label(name, 12, MUTED);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         row.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        row.addView(label(status, 13, MUTED));
+        TextView statusView = label(status, 13, MUTED);
+        statusView.setPadding(dp(8), dp(8), 0, dp(8));
+        row.addView(statusView);
+        return statusView;
+    }
+
+    private TextView tvButton(String text, int key) {
+        TextView button = actionButton(text, "");
+        button.setOnClickListener(v -> tv.sendKey(key));
+        tvKeys.add(button);
+        return button;
+    }
+
+    private void renderTvState(TvRemoteClient.State state) {
+        boolean ready = state.connected() && state.keys;
+        if (tvHomeStatus != null) {
+            String shortStatus;
+            switch (state.phase) {
+                case READY: shortStatus = "Verbunden"; break;
+                case CONNECTING: shortStatus = "Verbinde …"; break;
+                case PAIRING: shortStatus = "Kopple …"; break;
+                case CODE: shortStatus = "Code eingeben"; break;
+                case VERIFYING: shortStatus = "Prüfe Code …"; break;
+                case ERROR: shortStatus = "Verbindungsfehler"; break;
+                default: shortStatus = "Nicht verbunden";
+            }
+            tvHomeStatus.setText(shortStatus);
+            tvHomeStatus.setTextColor(state.phase == TvRemoteClient.Phase.READY ? Color.rgb(66, 215, 146) : ACCENT);
+            tvHomeStatus.setContentDescription(shortStatus + " – Fernseher verbinden");
+        }
+        if (tvHomeDetail != null) {
+            boolean showDetail = state.phase == TvRemoteClient.Phase.ERROR ||
+                (state.connected() && !"Verbunden".equals(state.detail));
+            tvHomeDetail.setText(state.detail);
+            tvHomeDetail.setVisibility(showDetail ? View.VISIBLE : View.GONE);
+        }
+        if (tvRemoteStatus != null) {
+            tvRemoteStatus.setText(state.detail);
+            tvRemoteStatus.setContentDescription(state.detail + " – TV-Verbindung öffnen");
+        }
+        for (TextView key : tvKeys) {
+            key.setEnabled(ready);
+            key.setAlpha(ready ? 1f : .42f);
+        }
+        if (tvDialog != null) tvDialog.render(state);
+    }
+
+    @Override protected void onDestroy() {
+        if (tvDialog != null) tvDialog.close();
+        if (tv != null) tv.close();
+        super.onDestroy();
     }
 
     private LinearLayout section(LinearLayout parent, String name) {
