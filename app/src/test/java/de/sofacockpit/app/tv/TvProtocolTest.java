@@ -33,17 +33,48 @@ public class TvProtocolTest {
     @Test public void negotiationAndPing() throws Exception {
         TvProtocol.RemoteHandshake h = new TvProtocol.RemoteHandshake();
         byte[] reply = h.accept(TvProtocol.bytes(1, TvProtocol.number(1, 511)));
-        assertEquals(3, TvProtocol.parse(reply).child(1).integer(1, -1));
+        assertEquals(35, TvProtocol.parse(reply).child(1).integer(1, -1));
         assertFalse(h.ready());
         reply = h.accept(TvProtocol.bytes(2, new byte[0]));
-        assertEquals(3, TvProtocol.parse(reply).child(2).integer(1, -1));
+        assertEquals(35, TvProtocol.parse(reply).child(2).integer(1, -1));
         assertFalse(h.ready());
         reply = h.accept(TvProtocol.bytes(8, TvProtocol.number(1, 123)));
         assertEquals(123, TvProtocol.parse(reply).child(9).integer(1, -1));
         h.accept(TvProtocol.bytes(40, new byte[0]));
         assertTrue(h.ready());
         assertTrue(h.supportsKeys());
+        assertEquals(Boolean.FALSE, h.powerOn());
         assertArrayEquals(new byte[]{82, 4, 8, 19, 16, 3}, TvProtocol.key(19));
+    }
+    @Test public void powerStatusNegotiatedFromRealWireFields() throws Exception {
+        TvProtocol.RemoteHandshake h = new TvProtocol.RemoteHandshake();
+        // RemoteConfigure.code1 = 611 (PING|KEY|POWER|VOLUME|APP_LINK);
+        // these bytes are independent of the encoder under test.
+        byte[] reply = h.accept(new byte[]{0x0a, 0x03, 0x08, (byte)0xe3, 0x04});
+        assertEquals(35, TvProtocol.parse(reply).child(1).integer(1, -1));
+        assertFalse(h.ready());
+        assertArrayEquals(new byte[]{0x12, 0x02, 0x08, 0x23},
+            h.accept(new byte[]{0x12, 0x00}));
+        assertFalse(h.ready());
+        assertArrayEquals(new byte[]{0x4a, 0x02, 0x08, 0x7b},
+            h.accept(new byte[]{0x42, 0x02, 0x08, 0x7b}));
+        assertFalse(h.ready());
+        assertNull(h.accept(new byte[]{(byte)0xc2, 0x02, 0x02, 0x08, 0x01}));
+        assertTrue(h.ready());
+        assertTrue(h.supportsKeys());
+        assertEquals(Boolean.TRUE, h.powerOn());
+        assertTrue(h.diagnostics().contains("TV-Funktionen=611, ausgehandelt=35"));
+        assertTrue(h.diagnostics().contains("Configure=1, Active=1, Start=1, Ping=1"));
+    }
+    @Test public void pingAloneIsNotReadyAndDiagnosticShowsMissingStart() throws Exception {
+        TvProtocol.RemoteHandshake h = new TvProtocol.RemoteHandshake();
+        h.accept(new byte[]{0x0a, 0x02, 0x08, 0x23});
+        h.accept(new byte[]{0x12, 0x00});
+        h.accept(new byte[]{0x42, 0x02, 0x08, 0x01});
+        assertFalse(h.ready());
+        assertFalse(h.supportsKeys());
+        assertNull(h.powerOn());
+        assertTrue(h.diagnostics().contains("Configure=1, Active=1, Start=0, Ping=1"));
     }
     @Test public void missingKeyCapabilityAndEarlyStart() throws Exception {
         TvProtocol.RemoteHandshake h = new TvProtocol.RemoteHandshake();

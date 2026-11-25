@@ -19,7 +19,10 @@ public final class TvProtocol {
     private TvProtocol() {}
     static final int MAX_FRAME = 256 * 1024;
     public static final int PAIR_PORT = 6467, REMOTE_PORT = 6466;
-    public static final int KEY_FEATURE = 2, PING_FEATURE = 1;
+    public static final int KEY_FEATURE = 2, PING_FEATURE = 1, POWER_FEATURE = 32;
+    // RemoteStart is the power/status notification and also the readiness signal.
+    // Request it even though no power-control buttons are implemented yet.
+    static final int REQUESTED_FEATURES = PING_FEATURE | KEY_FEATURE | POWER_FEATURE;
 
     static byte[] concat(byte[]... items) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -145,29 +148,55 @@ public final class TvProtocol {
     /** The TV drives negotiation. Receiving remote_start (even when power is off)
      * after configure/active confirms a real remote session, not just an open socket. */
     static final class RemoteHandshake {
-        private int features;
+        private int features, advertisedFeatures;
+        private int configureCount, activeCount, startCount, pingCount, otherCount;
         private boolean configured, activated, ready;
+        private Boolean powerOn;
+        private final java.util.SortedSet<Integer> seenFields = new java.util.TreeSet<>();
         boolean ready() { return ready; }
         boolean supportsKeys() { return ready && (features & KEY_FEATURE) != 0; }
+        Boolean powerOn() { return powerOn; }
+        String diagnostics() {
+            return "TV-Funktionen=" + advertisedFeatures + ", ausgehandelt=" + features +
+                "; Configure=" + configureCount + ", Active=" + activeCount +
+                ", Start=" + startCount + ", Ping=" + pingCount +
+                ", Sonstige=" + otherCount + "; Felder=" + seenFields;
+        }
         byte[] accept(byte[] data) throws IOException {
             Message m = parse(data);
+            // Record field numbers only, never message payloads, PINs or credentials.
+            for (int tag : m.messages.keySet()) if (seenFields.size() < 24) seenFields.add(tag);
+            for (int tag : m.integers.keySet()) if (seenFields.size() < 24) seenFields.add(tag);
             if (m.has(1)) {
-                configured = true; activated = false; ready = false;
-                features = (int)m.child(1).integer(1, 0) & (KEY_FEATURE | PING_FEATURE);
+                configureCount++;
+                configured = true; activated = false; ready = false; powerOn = null;
+                advertisedFeatures = (int)m.child(1).integer(1, 0);
+                features = advertisedFeatures & REQUESTED_FEATURES;
                 byte[] info = concat(number(3, 1), string(4, "1"), string(5, "atvremote"), string(6, "1.0.0"));
                 return bytes(1, concat(number(1, features), bytes(2, info)));
             }
             if (m.has(2)) {
                 if (!configured) throw new IOException("TV-Konfiguration fehlt");
+                activeCount++;
                 activated = true;
                 return bytes(2, number(1, features));
             }
-            if (m.has(8)) return bytes(9, number(1, m.child(8).integer(1, 0)));
-            if (m.has(40)) {
-                if (!configured || !activated) throw new IOException("TV-Steuersitzung nicht vollständig ausgehandelt");
-                ready = true;
+            if (m.has(8)) {
+                pingCount++;
+                return bytes(9, number(1, m.child(8).integer(1, 0)));
             }
-            if (m.has(3) && m.child(3).integer(1, 0) != 0) throw new IOException("Der Fernseher meldet einen Protokollfehler oder nicht unterstützten Befehl.");
+            if (m.has(40)) {
+                startCount++;
+                if (!configured || !activated)
+                    throw new IOException("TV-Steuersitzung nicht vollständig ausgehandelt. " + diagnostics());
+                // Proto3 default false is a legitimate start notification for standby.
+                powerOn = m.child(40).integer(1, 0) != 0;
+                ready = true;
+                return null;
+            }
+            if (m.has(3) && m.child(3).integer(1, 0) != 0)
+                throw new IOException("TV meldet einen Protokollfehler. " + diagnostics());
+            otherCount++;
             return null;
         }
     }

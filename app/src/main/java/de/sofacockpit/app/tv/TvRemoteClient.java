@@ -243,6 +243,7 @@ public final class TvRemoteClient implements AutoCloseable {
         s.stage = "Steuerverbindung (Port 6466)";
         try (SSLSocket socket = open(s, host, TvProtocol.REMOTE_PORT, identity, pin)) {
             s.stage = "TV-Steuerprotokoll";
+            publish(s, Phase.CONNECTING, "TV-Kopplung bestätigt. Steuersitzung wird ausgehandelt …", false);
             socket.setSoTimeout(16000);
             InputStream input = socket.getInputStream();
             TvProtocol.RemoteHandshake handshake = new TvProtocol.RemoteHandshake();
@@ -250,8 +251,16 @@ public final class TvRemoteClient implements AutoCloseable {
             boolean announced = false;
             while (!s.cancelled) {
                 if (!handshake.ready() && SystemClock.elapsedRealtime() > deadline)
-                    throw new IOException("Keine bestätigte TV-Steuersitzung. Bitte erneut verbinden.");
-                byte[] reply = handshake.accept(TvProtocol.readFrame(input));
+                    throw new IOException("Keine bestätigte TV-Steuersitzung. " + handshake.diagnostics());
+                byte[] frame;
+                try {
+                    frame = TvProtocol.readFrame(input);
+                } catch (SocketTimeoutException | EOFException ex) {
+                    throw new IOException("TV-Steuersitzung: " +
+                        (ex instanceof SocketTimeoutException ? "Zeitüberschreitung" : "Verbindung beendet") +
+                        ". " + handshake.diagnostics(), ex);
+                }
+                byte[] reply = handshake.accept(frame);
                 if (reply != null) s.send(reply);
                 s.ready = handshake.ready();
                 s.keys = handshake.supportsKeys();
