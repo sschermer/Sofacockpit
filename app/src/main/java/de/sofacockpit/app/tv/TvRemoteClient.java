@@ -40,8 +40,9 @@ public final class TvRemoteClient implements AutoCloseable {
     }
     public interface Listener { void onState(State state); }
 
-    private static final String ALIAS = "sofacockpit.tv.remote.rsa.v1";
-    private static final String PIN = "certificate_sha256", HOST = "last_address";
+    private static final String LEGACY_ALIAS = "sofacockpit.tv.remote.rsa.v1";
+    private static final String ALIAS = "sofacockpit.tv.remote.rsa.v2";
+    private static final String PIN = "certificate_sha256", HOST = "last_address", KEY_ALIAS = "key_alias";
     private final SharedPreferences prefs;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService sessions = Executors.newSingleThreadExecutor();
@@ -137,14 +138,18 @@ public final class TvRemoteClient implements AutoCloseable {
         try {
             if (s.cancelled) return;
             InetAddress host = localAddress(s.host);
-            Identity identity = identity();
+            s.stage = "Client-Schlüssel";
             String pin = prefs.getString(PIN, null);
+            // Existing successful pairings keep their original client identity.
+            // A fresh pairing must use a new TLS-capable key (v1 cannot be changed in place).
+            String alias = s.pair ? ALIAS : prefs.getString(KEY_ALIAS, LEGACY_ALIAS);
+            Identity identity = identity(alias);
             if (s.pair) {
                 pin = pair(s, host, identity);
                 synchronized (s) {
                     if (s.cancelled) return;
                     // Only after successful secret acknowledgement. Old trust is retained on failure.
-                    prefs.edit().putString(PIN, pin).putString(HOST, s.host).apply();
+                    prefs.edit().putString(PIN, pin).putString(HOST, s.host).putString(KEY_ALIAS, alias).apply();
                 }
                 publish(s, Phase.CONNECTING, "Gekoppelt. Steuersitzung wird aufgebaut …", false);
             }
@@ -155,12 +160,12 @@ public final class TvRemoteClient implements AutoCloseable {
             error = "Verbindung abgebrochen.";
         } catch (SocketTimeoutException ex) {
             error = "Zeitüberschreitung. Ist der TV eingeschaltet und im selben Heimnetz?";
-        } catch (SSLHandshakeException ex) {
-            error = "TLS-Verbindung abgelehnt. TV-Zertifikat oder Kopplung stimmt nicht. Prüfe den TV und kopple bei Bedarf neu.";
+        } catch (SSLException ex) {
+            error = s.stage + ": TLS-Verbindung fehlgeschlagen. " + diagnostic(ex);
         } catch (ConnectException | NoRouteToHostException ex) {
             error = "TV nicht erreichbar. IP-Adresse, Netzwerk und eingeschalteten TV prüfen.";
         } catch (GeneralSecurityException ex) {
-            error = "Sicherer Schlüsselspeicher oder TLS konnte nicht eingerichtet werden.";
+            error = s.stage + ": Sicherer Schlüsselspeicher oder TLS konnte nicht eingerichtet werden. " + diagnostic(ex);
         } catch (EOFException ex) {
             error = "Der Fernseher hat die Verbindung beendet. Bitte erneut verbinden.";
         } catch (IOException | IllegalArgumentException ex) {
@@ -168,7 +173,7 @@ public final class TvRemoteClient implements AutoCloseable {
         } catch (SecurityException ex) {
             error = "Lokaler Netzwerkzugriff nicht erlaubt. Berechtigung in Android prüfen.";
         } catch (RuntimeException ex) {
-            error = "TV-Verbindung fehlgeschlagen (" + ex.getClass().getSimpleName() + ").";
+            error = s.stage + ": TV-Verbindung fehlgeschlagen. " + diagnostic(ex);
         } finally {
             s.ready = false; s.keys = false; s.closeSocket();
             final String reason = s.writeFailed ? "Tastenbefehl konnte nicht gesendet werden. Bitte erneut verbinden." :
@@ -183,8 +188,25 @@ public final class TvRemoteClient implements AutoCloseable {
         }
     }
 
+    private static String diagnostic(Throwable error) {
+        // No application payloads, codes or key material are included in TLS diagnostics.
+        StringBuilder result = new StringBuilder();
+        for (int depth = 0; error != null && depth < 4; depth++, error = error.getCause()) {
+            if (result.length() > 0) result.append(" / ");
+            result.append(error.getClass().getSimpleName());
+            String detail = error.getMessage();
+            if (detail != null && !detail.isEmpty()) {
+                detail = detail.replaceAll("[\\r\\n\\t]+", " ");
+                result.append(": ").append(detail.substring(0, Math.min(180, detail.length())));
+            }
+        }
+        return result.substring(0, Math.min(360, result.length()));
+    }
+
     private String pair(Session s, InetAddress host, Identity identity) throws IOException, GeneralSecurityException, InterruptedException {
+        s.stage = "Kopplung (Port 6467)";
         try (SSLSocket socket = open(s, host, TvProtocol.PAIR_PORT, identity, null)) {
+            s.stage = "Kopplungsprotokoll";
             X509Certificate peer = peer(socket);
             InputStream input = socket.getInputStream();
             s.send(TvProtocol.pairRequest());
@@ -218,7 +240,9 @@ public final class TvRemoteClient implements AutoCloseable {
     }
     private void remote(Session s, InetAddress host, Identity identity, String pin)
         throws IOException, GeneralSecurityException {
+        s.stage = "Steuerverbindung (Port 6466)";
         try (SSLSocket socket = open(s, host, TvProtocol.REMOTE_PORT, identity, pin)) {
+            s.stage = "TV-Steuerprotokoll";
             socket.setSoTimeout(16000);
             InputStream input = socket.getInputStream();
             TvProtocol.RemoteHandshake handshake = new TvProtocol.RemoteHandshake();
@@ -276,6 +300,7 @@ public final class TvRemoteClient implements AutoCloseable {
         final boolean pair;
         final BlockingQueue<String> codes = new ArrayBlockingQueue<>(1);
         volatile boolean cancelled, ready, keys, writeFailed;
+        String stage = "TV-Verbindung";
         volatile Socket raw;
         volatile SSLSocket tls;
         final Object outputLock = new Object();
@@ -299,19 +324,21 @@ public final class TvRemoteClient implements AutoCloseable {
     }
 
     private static final class Identity {
+        final String alias;
         final PrivateKey key;
         final X509Certificate cert;
-        Identity(PrivateKey key, X509Certificate cert) { this.key = key; this.cert = cert; }
+        Identity(String alias, PrivateKey key, X509Certificate cert) { this.alias = alias; this.key = key; this.cert = cert; }
     }
-    private static Identity identity() throws GeneralSecurityException, IOException {
+    private static Identity identity(String alias) throws GeneralSecurityException, IOException {
         KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
         ks.load(null);
-        if (!ks.containsAlias(ALIAS)) {
+        if (!ks.containsAlias(alias)) {
+            if (LEGACY_ALIAS.equals(alias)) throw new GeneralSecurityException("Früherer Client-Schlüssel fehlt; bitte neu koppeln.");
             KeyPairGenerator generator = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA, "AndroidKeyStore");
             long now = System.currentTimeMillis();
-            generator.initialize(new KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_SIGN | KeyProperties.PURPOSE_VERIFY)
+            generator.initialize(new KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_SIGN | KeyProperties.PURPOSE_VERIFY)
                 .setKeySize(2048)
-                .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA384, KeyProperties.DIGEST_SHA512, KeyProperties.DIGEST_SHA1)
+                .setDigests(KeyProperties.DIGEST_NONE, KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA384, KeyProperties.DIGEST_SHA512, KeyProperties.DIGEST_SHA1)
                 .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1, KeyProperties.SIGNATURE_PADDING_RSA_PSS)
                 .setCertificateSubject(new X500Principal("CN=Sofacockpit-" + java.util.UUID.randomUUID()))
                 .setCertificateSerialNumber(new BigInteger(63, new SecureRandom()).setBit(62))
@@ -320,11 +347,26 @@ public final class TvRemoteClient implements AutoCloseable {
                 .build());
             generator.generateKeyPair();
         }
-        PrivateKey privateKey = (PrivateKey)ks.getKey(ALIAS, null);
-        X509Certificate certificate = (X509Certificate)ks.getCertificate(ALIAS);
+        PrivateKey privateKey = (PrivateKey)ks.getKey(alias, null);
+        X509Certificate certificate = (X509Certificate)ks.getCertificate(alias);
         if (privateKey == null || certificate == null || !(certificate.getPublicKey() instanceof RSAPublicKey))
             throw new GeneralSecurityException("Ungültige Client-Identität");
-        return new Identity(privateKey, certificate);
+        if (ALIAS.equals(alias)) {
+            // Conscrypt may sign a digest it already computed. Validate that the
+            // non-exportable key actually permits raw RSA signing before using TLS.
+            byte[] challenge = new byte[32];
+            new SecureRandom().nextBytes(challenge);
+            Signature signer = Signature.getInstance("NONEwithRSA");
+            signer.initSign(privateKey);
+            signer.update(challenge);
+            byte[] signature = signer.sign();
+            Signature verifier = Signature.getInstance("NONEwithRSA");
+            verifier.initVerify(certificate.getPublicKey());
+            verifier.update(challenge);
+            if (!verifier.verify(signature)) throw new GeneralSecurityException("TLS-RSA-Selbsttest fehlgeschlagen");
+            certificate.verify(certificate.getPublicKey());
+        }
+        return new Identity(alias, privateKey, certificate);
     }
     private static String fingerprint(X509Certificate certificate) throws CertificateException {
         return Base64.encodeToString(TvProtocol.sha256(certificate.getEncoded()), Base64.NO_WRAP);
@@ -357,18 +399,18 @@ public final class TvRemoteClient implements AutoCloseable {
         if (port != TvProtocol.PAIR_PORT && expectedPin == null) throw new GeneralSecurityException("No TV pin");
         X509KeyManager keyManager = new X509KeyManager() {
             public String[] getClientAliases(String type, Principal[] issuers) {
-                return type != null && type.startsWith("RSA") ? new String[]{ALIAS} : null;
+                return type != null && type.startsWith("RSA") ? new String[]{identity.alias} : null;
             }
             public String chooseClientAlias(String[] types, Principal[] issuers, Socket socket) {
-                if (types != null) for (String type : types) if (getClientAliases(type, issuers) != null) return ALIAS;
+                if (types != null) for (String type : types) if (getClientAliases(type, issuers) != null) return identity.alias;
                 return null;
             }
             public String[] getServerAliases(String type, Principal[] issuers) { return null; }
             public String chooseServerAlias(String type, Principal[] issuers, Socket socket) { return null; }
             public X509Certificate[] getCertificateChain(String alias) {
-                return ALIAS.equals(alias) ? new X509Certificate[]{identity.cert} : null;
+                return identity.alias.equals(alias) ? new X509Certificate[]{identity.cert} : null;
             }
-            public PrivateKey getPrivateKey(String alias) { return ALIAS.equals(alias) ? identity.key : null; }
+            public PrivateKey getPrivateKey(String alias) { return identity.alias.equals(alias) ? identity.key : null; }
         };
         SSLContext context = SSLContext.getInstance("TLS");
         context.init(new KeyManager[]{keyManager}, new TrustManager[]{trust}, new SecureRandom());
@@ -381,7 +423,13 @@ public final class TvRemoteClient implements AutoCloseable {
         SSLSocket tls = (SSLSocket)context.getSocketFactory().createSocket(raw, host.getHostAddress(), port, true);
         s.tls = tls;
         tls.setUseClientMode(true);
-        tls.setEnabledProtocols(new String[]{"TLSv1.2"}); // compatible with Android TV Remote v2 mutual TLS
+        // TLS 1.3 where supported, with TLS 1.2 for older TVs. Never enable 1.0/1.1.
+        java.util.List<String> modern = new java.util.ArrayList<>();
+        for (String protocol : tls.getSupportedProtocols()) {
+            if ("TLSv1.3".equals(protocol) || "TLSv1.2".equals(protocol)) modern.add(protocol);
+        }
+        if (modern.isEmpty()) throw new SSLHandshakeException("Keine TLS-1.2/1.3-Unterstützung");
+        tls.setEnabledProtocols(modern.toArray(new String[0]));
         tls.setSoTimeout(10000);
         tls.startHandshake();
         peer(tls);

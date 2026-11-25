@@ -55,6 +55,10 @@ Protokollreferenzen (eigene Implementierung, keine importierten Quelltexte oder 
 
 Der erste echte Test am TCL muss Gerätesuche, Code-Eingabe, Wiederverbindung, D-Pad, OK, Zurück, Home und Abbruch prüfen. TV-LAN und Handy-WLAN sollten im gleichen lokalen Netz funktionieren, sofern mDNS und TCP nicht durch Netzisolation blockiert werden.
 
+### Fehlerbehebung in v0.3.1
+
+Beim ersten TCL-Test funktionierte die mDNS-Suche, die TLS-Kopplung scheiterte jedoch vor erfolgreicher Code-Bestätigung. Die Client-Schlüsselerzeugung erlaubt jetzt zusätzlich DIGEST_NONE für den vom TLS-Stack bereits berechneten Digest (siehe [Android KeyGenParameterSpec.Builder.setDigests](https://developer.android.com/reference/android/security/keystore/KeyGenParameterSpec.Builder#setDigests(java.lang.String...))). Neue Kopplungen verwenden einen neuen Keystore-Alias; frühere bestätigte Kopplungen behalten ihre Identität. TLS 1.2 und 1.3 sind zugelassen; Zertifikats-Pinning bleibt unverändert. Im Fehlerfall werden nun die Verbindungsphase und die konkrete Exception angezeigt. Die Korrektur muss noch am TV bestätigt werden.
+
 ### Bauen
 
 Das Android-Projekt verwendet Gradle, Kotlin und Jetpack Compose für den eingebetteten Tonmaschine-Screen. Mit Android SDK 36 und Gradle 9.6 lässt sich die Debug-APK mit `./gradlew :app:assembleDebug` bauen. Sie liegt danach unter `app/build/outputs/apk/debug/app-debug.apk`. Der Debug-Build ist debug-signiert und nicht für eine Store-Veröffentlichung gedacht. Protokoll-Unit-Tests mit `./gradlew :app:testDebugUnitTest`. Der GitHub-Actions-Workflow führt diese Tests, den APK-Build und die Signaturprüfung aus. Debug-APKs verschiedener CI-Läufe können unterschiedliche Signaturschlüssel besitzen; ein direktes Update kann deshalb scheitern. Eine Deinstallation löscht lokale App-Daten.
