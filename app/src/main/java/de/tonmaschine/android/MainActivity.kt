@@ -19,6 +19,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
@@ -330,7 +335,7 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, connectionSettings: (() 
                                 TextButton(onClick = { vm.setVolume((actual - 1).coerceAtLeast(0)) }, enabled = active) { Text("−") }
                                 Slider(draft, onValueChange = { draft = it },
                                     onValueChangeFinished = { vm.setVolume(draft.toInt()) },
-                                    modifier = Modifier.weight(1f), valueRange = 0f..100f, enabled = active)
+                                    modifier = Modifier.weight(1f).reserveSliderGesture(active), valueRange = 0f..100f, enabled = active)
                                 TextButton(onClick = { vm.setVolume((actual + 1).coerceAtMost(100)) }, enabled = active) { Text("+") }
                                 Text("${draft.toInt()}", modifier = Modifier.width(35.dp), fontWeight = FontWeight.Bold)
                             }
@@ -423,6 +428,7 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, connectionSettings: (() 
                                 var draft by remember(spec.field, value) { mutableFloatStateOf((value ?: 0).toFloat()) }
                                 Slider(draft, onValueChange = { draft = it },
                                     onValueChangeFinished = { vm.setLevel(spec, draft.toInt()) },
+                                    modifier = Modifier.reserveSliderGesture(active && value != null),
                                     enabled = active && value != null, valueRange = spec.min.toFloat()..spec.max.toFloat(),
                                     steps = (spec.max - spec.min - 1).coerceAtLeast(0))
                             }
@@ -545,6 +551,25 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, connectionSettings: (() 
         }
     }
 }
+/** Reserve the slider touch before the Android parent handles horizontal motion. */
+@Composable
+private fun Modifier.reserveSliderGesture(enabled: Boolean): Modifier {
+    val view = LocalView.current
+    return if (!enabled) this else pointerInput(view) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            view.parent?.requestDisallowInterceptTouchEvent(true)
+            try {
+                do {
+                    val event = awaitPointerEvent(PointerEventPass.Final)
+                } while (event.changes.any { it.pressed })
+            } finally {
+                view.parent?.requestDisallowInterceptTouchEvent(false)
+            }
+        }
+    }
+}
+
 @Composable
 private fun StandbyPowerButton(onWake: () -> Unit) {
     var justPressed by remember { mutableStateOf(false) }

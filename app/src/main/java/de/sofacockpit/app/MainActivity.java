@@ -32,6 +32,7 @@ import android.widget.EditText;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.PopupMenu;
 
 public class MainActivity extends ComponentActivity {
     private static final int BG = Color.rgb(11, 14, 19);
@@ -40,9 +41,13 @@ public class MainActivity extends ComponentActivity {
     private static final int TEXT = Color.rgb(242, 245, 249);
     private static final int MUTED = Color.rgb(151, 163, 179);
     private static final int ACCENT = Color.rgb(112, 190, 255);
-    private Pager pager;
-    private TextView[] dots;
-    private int pageWidth;
+    private final CockpitNavigation navigation = new CockpitNavigation();
+    private final View[] categoryViews = new View[3];
+    private final SwipeCategoryPager[] categoryPagers = new SwipeCategoryPager[3];
+    private final TextView[] tabs = new TextView[3];
+    private final TextView[] dots = new TextView[3];
+    private LinearLayout footer;
+    private PopupMenu quickMenu;
     private MainViewModel soundbarModel;
     private TvRemoteClient tv;
     private TvConnectionDialog tvDialog;
@@ -74,30 +79,42 @@ public class MainActivity extends ComponentActivity {
         shell.setOrientation(LinearLayout.VERTICAL);
         shell.setBackgroundColor(BG);
 
-        pager = new Pager();
-        pager.setFillViewport(true);
-        pager.setHorizontalScrollBarEnabled(false);
-        pager.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        shell.addView(pager, new LinearLayout.LayoutParams(-1, 0, 1));
-
-        LinearLayout footer = new LinearLayout(this);
-        footer.setGravity(Gravity.CENTER);
-        footer.setPadding(0, dp(4), 0, dp(18));
-        dots = new TextView[]{label("●", 12, MUTED), label("●", 12, ACCENT), label("●", 12, MUTED)};
-        for (TextView dot : dots) {
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(28), dp(24));
-            dot.setGravity(Gravity.CENTER);
-            footer.addView(dot, lp);
+        shell.addView(createTabs(), new LinearLayout.LayoutParams(-1, -2));
+        FrameLayout pages = new FrameLayout(this);
+        shell.addView(pages, new LinearLayout.LayoutParams(-1, 0, 1));
+        categoryViews[0] = homePage(soundbarModel);
+        for (int category = 1; category <= 2; category++) {
+            final int group = category;
+            SwipeCategoryPager pager = new SwipeCategoryPager(this, index -> onPageChanged(group, index));
+            categoryPagers[group] = pager;
+            categoryViews[group] = pager;
+            if (group == CockpitNavigation.TV)
+                pager.addPage(page("TV-Steuerkreuz", "Fernbedienung", "Nicht verbunden"));
+            else
+                pager.addPage(SofacockpitComposeViewsKt.createTonmaschineComposePage(this, soundbarModel, tvDialog::open));
+            for (int index = 1; index < CockpitNavigation.pageCount(group); index++)
+                pager.addPage(page(CockpitNavigation.pageLabel(group, index),
+                    CockpitNavigation.tabLabel(group), "Platzhalter – Inhalt folgt."));
         }
-        shell.addView(footer, new LinearLayout.LayoutParams(-1, dp(34)));
-        // Android 15+ draws behind system bars for targetSdk >= 35.
-        // Apply safe bounds once to the common parent of all three pages.
+        for (View view : categoryViews) pages.addView(view, new FrameLayout.LayoutParams(-1, -1));
+        footer = new LinearLayout(this);
+        footer.setGravity(Gravity.CENTER);
+        for (int i = 0; i < dots.length; i++) {
+            final int index = i;
+            TextView dot = label("●", 12, MUTED);
+            dot.setGravity(Gravity.CENTER);
+            dot.setFocusable(true);
+            dot.setOnClickListener(v -> selectScreen(navigation.category(), index));
+            dots[i] = dot;
+            footer.addView(dot, new LinearLayout.LayoutParams(dp(48), dp(44)));
+        }
+        shell.addView(footer, new LinearLayout.LayoutParams(-1, dp(44)));
         SystemBarInsets.install(getWindow(), shell);
         setContentView(shell);
-
-        pager.addPage(SofacockpitComposeViewsKt.createTonmaschineComposePage(this, soundbarModel, tvDialog::open));
-        pager.addPage(homePage(soundbarModel));
-        pager.addPage(page("TV-Steuerkreuz", "Fernbedienung", "Nicht verbunden"));
+        int savedCategory = savedInstanceState == null ? 0 : savedInstanceState.getInt("navigation_category", 0);
+        int savedPage = savedInstanceState == null ? 0 : savedInstanceState.getInt("navigation_page", 0);
+        if (!CockpitNavigation.valid(savedCategory, savedPage)) { savedCategory = 0; savedPage = 0; }
+        selectScreen(savedCategory, savedPage);
         renderTvState(tv.state());
         SofacockpitComposeViewsKt.observeSoundbarConnection(this, soundbarModel, this::renderSoundConnection);
         renderSoundConnection();
@@ -110,15 +127,86 @@ public class MainActivity extends ComponentActivity {
                         soundbarModel.getDevice().getValue().getConnection() == Connection.DISCONNECTED) soundbarModel.connect();
             }
         }
-        pager.setOnPageChanged(index -> updateDots(index));
-        pager.post(() -> {
-            pageWidth = pager.getWidth();
-            pager.scrollTo(pageWidth, 0);
-        });
     }
 
-    private LinearLayout.LayoutParams pageParams() {
-        return new LinearLayout.LayoutParams(-1, -1);
+    private View createTabs() {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(12), dp(8), dp(12), dp(4));
+        for (int category = 0; category < tabs.length; category++) {
+            final int group = category;
+            TextView tab = label(CockpitNavigation.tabLabel(group) + (group == 0 ? "" : "  ▾"), 15, TEXT);
+            tab.setGravity(Gravity.CENTER);
+            tab.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            tab.setFocusable(true);
+            tab.setOnClickListener(v -> selectScreen(group, 0));
+            if (group != 0) tab.setOnLongClickListener(v -> {
+                showQuickMenu(group, v);
+                return true; // native long-press haptic feedback
+            });
+            tabs[group] = tab;
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(48), 1f);
+            if (group != 0) lp.leftMargin = dp(6);
+            row.addView(tab, lp);
+        }
+        return row;
+    }
+
+    private void showQuickMenu(int category, View anchor) {
+        if (quickMenu != null) quickMenu.dismiss();
+        PopupMenu popup = new PopupMenu(this, anchor, Gravity.CENTER);
+        for (int i = 0; i < CockpitNavigation.pageCount(category); i++)
+            popup.getMenu().add(0, i + 1, i, CockpitNavigation.pageLabel(category, i));
+        popup.setOnMenuItemClickListener(item -> {
+            selectScreen(category, item.getItemId() - 1);
+            return true;
+        });
+        popup.setOnDismissListener(menu -> { if (quickMenu == menu) quickMenu = null; });
+        quickMenu = popup;
+        popup.show();
+    }
+
+    private void selectScreen(int category, int page) {
+        if (!CockpitNavigation.valid(category, page)) return;
+        navigation.select(category, page);
+        for (int i = 0; i < categoryViews.length; i++) {
+            if (i != category && categoryPagers[i] != null) categoryPagers[i].finishGesture();
+            categoryViews[i].setVisibility(i == category ? View.VISIBLE : View.GONE);
+        }
+        if (categoryPagers[category] != null) categoryPagers[category].select(page);
+        renderNavigation();
+    }
+
+    private void onPageChanged(int category, int page) {
+        if (navigation.category() != category) return;
+        navigation.select(category, page);
+        renderNavigation();
+    }
+
+    private void renderNavigation() {
+        int category = navigation.category();
+        for (int i = 0; i < tabs.length; i++) {
+            boolean selected = i == category;
+            tabs[i].setBackground(shape(selected ? Color.rgb(35,61,50) : SURFACE_ALT, 12));
+            tabs[i].setTextColor(selected ? Color.rgb(66,215,146) : MUTED);
+            tabs[i].setSelected(selected);
+            tabs[i].setContentDescription(CockpitNavigation.tabLabel(i) + (selected ? ", ausgewählt" : "") +
+                (i == 0 ? "" : ", lange drücken für Seitenauswahl"));
+        }
+        footer.setVisibility(category == 0 ? View.GONE : View.VISIBLE);
+        for (int i = 0; i < dots.length; i++) {
+            boolean selected = i == navigation.page();
+            dots[i].setTextColor(selected ? Color.rgb(66,215,146) : MUTED);
+            dots[i].setSelected(selected);
+            if (category != 0) dots[i].setContentDescription(CockpitNavigation.pageLabel(category, i) +
+                (selected ? ", ausgewählt" : ""));
+        }
+    }
+
+    @Override protected void onSaveInstanceState(Bundle state) {
+        state.putInt("navigation_category", navigation.category());
+        state.putInt("navigation_page", navigation.page());
+        super.onSaveInstanceState(state);
     }
 
     private View homePage(MainViewModel vm) {
@@ -551,6 +639,7 @@ public class MainActivity extends ComponentActivity {
     }
 
     @Override protected void onDestroy() {
+        if (quickMenu != null) quickMenu.dismiss();
         if (tvDialog != null) tvDialog.close();
         if (backups != null) backups.close();
         if (tv != null) tv.close();
@@ -624,80 +713,4 @@ public class MainActivity extends ComponentActivity {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
-    private void updateDots(int active) {
-        for (int i = 0; i < dots.length; i++) dots[i].setTextColor(i == active ? ACCENT : MUTED);
-    }
-
-    private interface PageChanged { void changed(int index); }
-
-    private class Pager extends HorizontalScrollView {
-        private float downX, downY;
-        private PageChanged pageChanged;
-        private final LinearLayout strip;
-        Pager() {
-            super(MainActivity.this);
-            strip = new LinearLayout(MainActivity.this);
-            strip.setOrientation(LinearLayout.HORIZONTAL);
-            super.addView(strip, new HorizontalScrollView.LayoutParams(-2, -1));
-        }
-        void addPage(View view) { strip.addView(view, pageParams()); }
-        void setOnPageChanged(PageChanged callback) { pageChanged = callback; }
-
-        @Override protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-            int width = MeasureSpec.getSize(widthMeasureSpec);
-            strip.getLayoutParams().width = width * 3;
-            for (int i = 0; i < strip.getChildCount(); i++) {
-                strip.getChildAt(i).getLayoutParams().width = width;
-            }
-            super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-        }
-
-        @Override public boolean onInterceptTouchEvent(MotionEvent event) {
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-                downX = event.getX();
-                downY = event.getY();
-            } else if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
-                float dx = Math.abs(event.getX() - downX);
-                float dy = Math.abs(event.getY() - downY);
-                if (dx > dy && dx > 12 && inProtectedControl(downX + getScrollX(), downY)) return false;
-            }
-            return super.onInterceptTouchEvent(event);
-        }
-
-        private boolean inProtectedControl(float x, float y) {
-            if (getChildCount() == 0 || !(getChildAt(0) instanceof ViewGroup)) return false;
-            ViewGroup strip = (ViewGroup) getChildAt(0);
-            View home = strip.getChildAt(1);
-            if (!(home instanceof ViewGroup)) return false;
-            return findProtected((ViewGroup) home, x - pageWidth, y);
-        }
-
-        private boolean findProtected(ViewGroup group, float x, float y) {
-            for (int i = 0; i < group.getChildCount(); i++) {
-                View child = group.getChildAt(i);
-                if (child.getVisibility() != View.VISIBLE) continue;
-                float left = child.getLeft(), top = child.getTop();
-                if (x >= left && x <= child.getRight() && y >= top && y <= child.getBottom()) {
-                    if (child instanceof HorizontalScrollView || child instanceof SeekBar) return true;
-                    if (child instanceof ViewGroup && findProtected((ViewGroup) child, x - left, y - top)) return true;
-                }
-            }
-            return false;
-        }
-
-        @Override public boolean onTouchEvent(MotionEvent event) {
-            boolean handled = super.onTouchEvent(event);
-            if (event.getActionMasked() == MotionEvent.ACTION_UP || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
-                post(this::snapToPage);
-            }
-            return handled;
-        }
-
-        private void snapToPage() {
-            if (pageWidth <= 0) return;
-            int index = Math.max(0, Math.min(2, Math.round((float) getScrollX() / pageWidth)));
-            smoothScrollTo(index * pageWidth, 0);
-            if (pageChanged != null) pageChanged.changed(index);
-        }
-    }
 }
