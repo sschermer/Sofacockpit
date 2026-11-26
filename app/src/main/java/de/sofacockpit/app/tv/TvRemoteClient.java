@@ -62,6 +62,8 @@ public final class TvRemoteClient implements AutoCloseable {
     private static final String ALIAS = "sofacockpit.tv.remote.rsa.v3";
     private static final String PIN = "certificate_sha256", HOST = "last_address", KEY_ALIAS = "key_alias";
     private static final String PORTABLE_ALIAS = "sofacockpit.tv.portable.v1", WRAPPED_IDENTITY = "portable_identity";
+    private static final String WAKE_MAC = "wake_lan_mac", WAKE_HOST = "wake_host", WAKE_PIN = "wake_pin";
+    private final Context appContext;
     private final SharedPreferences prefs;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService sessions = Executors.newSingleThreadExecutor();
@@ -78,13 +80,48 @@ public final class TvRemoteClient implements AutoCloseable {
     private RefreshProbe refreshProbe;
 
     public TvRemoteClient(Context context, Listener listener) {
-        prefs = context.getApplicationContext().getSharedPreferences("tv_pairing", Context.MODE_PRIVATE);
+        appContext = context.getApplicationContext();
+        prefs = appContext.getSharedPreferences("tv_pairing", Context.MODE_PRIVATE);
         this.listener = listener;
     }
     public State state() { return state; }
     public boolean paired() { return prefs.contains(PIN); }
     public String lastAddress() { return prefs.getString(HOST, ""); }
     public boolean busy() { return current != null; }
+    public String wakeMac() {
+        // A local wake target belongs to the saved IPv4 address and trusted TV certificate.
+        if (!paired() || !lastAddress().equals(prefs.getString(WAKE_HOST, "")) ||
+            !java.util.Objects.equals(prefs.getString(PIN, null), prefs.getString(WAKE_PIN, null))) return "";
+        return prefs.getString(WAKE_MAC, "");
+    }
+    public boolean wakeConfigured() { return !wakeMac().isEmpty(); }
+    public boolean wakeInProgress() { return current != null && current.wakeMac != null && !state.connected(); }
+    public boolean canWake() { return WakeOnLan.useWake(state.connected(), busy(), wakeConfigured()); }
+    private static SharedPreferences.Editor clearWake(SharedPreferences.Editor edit) {
+        return edit.remove(WAKE_MAC).remove(WAKE_HOST).remove(WAKE_PIN);
+    }
+    public void rememberWakeMac(String input) throws IOException {
+        if (closed || (busy() && !state.connected())) throw new IOException("Verbindungsaufbau läuft.");
+        String mac = WakeOnLan.normalizeMac(input);
+        SharedPreferences.Editor edit = prefs.edit();
+        if (mac.isEmpty()) clearWake(edit);
+        else {
+            String host = lastAddress();
+            String pin = prefs.getString(PIN, null);
+            if (pin == null || host.isEmpty() || !(localAddress(host) instanceof Inet4Address))
+                throw new IOException("Zuerst den Fernseher über seine LAN-IPv4-Adresse verbinden.");
+            edit.putString(WAKE_MAC, mac).putString(WAKE_HOST, host).putString(WAKE_PIN, pin);
+        }
+        if (!edit.commit()) throw new IOException("Wake-on-LAN-Einstellung konnte nicht gespeichert werden.");
+        listener.onState(state);
+    }
+
+    /** Only called from the user's explicit Power action. All other connection paths omit wake. */
+    public void requestPower() {
+        if (closed) return;
+        if (state.connected()) { sendKey(KeyEvent.KEYCODE_POWER); return; }
+        if (canWake()) startSession(lastAddress(), false, wakeMac());
+    }
     public boolean hasPortablePairing() {
         return paired() && PORTABLE_ALIAS.equals(prefs.getString(KEY_ALIAS, "")) && prefs.contains(WRAPPED_IDENTITY);
     }
@@ -94,8 +131,10 @@ public final class TvRemoteClient implements AutoCloseable {
         String host = address == null ? "" : address.trim();
         if (!host.isEmpty()) localAddress(host);
         boolean changed = !host.equals(lastAddress());
-        if (!prefs.edit().putString(HOST, host).commit()) throw new IOException("TV-IP konnte nicht gespeichert werden.");
-        if (changed) refreshIntent.clear();
+        SharedPreferences.Editor edit = prefs.edit().putString(HOST, host);
+        if (changed) clearWake(edit);
+        if (!edit.commit()) throw new IOException("TV-IP konnte nicht gespeichert werden.");
+        if (changed) { refreshIntent.clear(); listener.onState(state); }
     }
 
     /** Invoked only by a user-initiated encrypted backup worker. */
@@ -140,6 +179,8 @@ public final class TvRemoteClient implements AutoCloseable {
     public void applyConfiguration(PreparedConfiguration config) throws IOException {
         disconnect();
         SharedPreferences.Editor edit = prefs.edit().putString(HOST, config.address);
+        if (!config.address.equals(lastAddress()) ||
+            (config.includesPairing() && !java.util.Objects.equals(config.pin, prefs.getString(PIN, null)))) clearWake(edit);
         if (config.includesPairing())
             edit.putString(PIN, config.pin).putString(KEY_ALIAS, PORTABLE_ALIAS).putString(WRAPPED_IDENTITY, config.wrapped);
         else if (!config.address.equals(lastAddress()))
@@ -182,6 +223,10 @@ public final class TvRemoteClient implements AutoCloseable {
     }
 
     public void start(String address, boolean pair) {
+        startSession(address, pair, null);
+    }
+
+    private void startSession(String address, boolean pair, String wakeMac) {
         recovery.cancel();
         if (closed) return;
         String host = address == null ? "" : address.trim();
@@ -189,10 +234,11 @@ public final class TvRemoteClient implements AutoCloseable {
         if (host.isEmpty()) { update(Phase.ERROR, "Bitte eine TV-IP-Adresse auswählen oder eingeben.", false); return; }
         if (!pair && !paired()) { update(Phase.ERROR, "Noch kein Fernseher gekoppelt. Bitte zuerst koppeln.", false); return; }
         cancelCurrent();
-        Session s = new Session(host, pair);
+        Session s = new Session(host, pair, wakeMac);
         current = s;
         update(pair ? Phase.PAIRING : Phase.CONNECTING,
-            pair ? "Kopplung wird vorbereitet …" : "Verbindung wird aufgebaut …", false);
+            pair ? "Kopplung wird vorbereitet …" :
+                wakeMac != null ? "TV wird aufgeweckt …" : "Verbindung wird aufgebaut …", false);
         sessions.execute(() -> run(s));
     }
     public void submitCode(String code) {
@@ -230,6 +276,7 @@ public final class TvRemoteClient implements AutoCloseable {
      */
     public void refreshConnection(java.util.function.Consumer<String> done) {
         if (closed) { done.accept("TV: nicht verfügbar"); return; }
+        if (wakeInProgress()) { done.accept("TV: Aufwecken läuft bereits"); return; }
         if (refreshProbe != null) { done.accept("TV: Prüfung läuft bereits"); return; }
         if (state.phase == Phase.PAIRING || state.phase == Phase.CODE || state.phase == Phase.VERIFYING) {
             done.accept("TV: Kopplung läuft"); return;
@@ -375,13 +422,23 @@ public final class TvRemoteClient implements AutoCloseable {
                 synchronized (s) {
                     if (s.cancelled) return;
                     // Only after successful secret acknowledgement. Old trust is retained on failure.
-                    if (!prefs.edit().putString(PIN, pin).putString(HOST, s.host).putString(KEY_ALIAS, alias)
-                        .putString(WRAPPED_IDENTITY, wrapped).commit())
+                    SharedPreferences.Editor edit = prefs.edit().putString(PIN, pin).putString(HOST, s.host)
+                        .putString(KEY_ALIAS, alias).putString(WRAPPED_IDENTITY, wrapped);
+                    if (!s.host.equals(lastAddress()) || !java.util.Objects.equals(pin, prefs.getString(PIN, null)))
+                        clearWake(edit);
+                    if (!edit.commit())
                         throw new IOException("Neue TV-Kopplung konnte nicht gespeichert werden.");
                 }
                 publish(s, Phase.CONNECTING, "Gekoppelt. Steuersitzung wird aufgebaut …", false);
             }
             if (pin == null) throw new IOException("Keine gespeicherte Kopplung.");
+            if (s.wakeMac != null) {
+                s.stage = "Wake-on-LAN";
+                // No credentials in the packet or status, and no power toggle after waking.
+                LanWakeSender.send(appContext, host, s.wakeMac, () -> s.cancelled);
+                if (s.cancelled) return;
+                publish(s, Phase.CONNECTING, "Aufweckpakete gesendet – TV-Verbindung wird aufgebaut …", false);
+            }
             remote(s, host, identity, pin);
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
@@ -391,7 +448,8 @@ public final class TvRemoteClient implements AutoCloseable {
         } catch (SSLException ex) {
             error = s.stage + ": TLS-Verbindung fehlgeschlagen. " + diagnostic(ex);
         } catch (ConnectException | NoRouteToHostException ex) {
-            error = "TV nicht erreichbar. IP-Adresse, Netzwerk und eingeschalteten TV prüfen.";
+            error = s.wakeMac == null ? "TV nicht erreichbar. IP-Adresse, Netzwerk und eingeschalteten TV prüfen." :
+                "TV nach Aufweckversuch nicht erreichbar. LAN-MAC, Energiemodus und Heimnetz prüfen.";
         } catch (GeneralSecurityException ex) {
             error = s.stage + ": Sicherer Schlüsselspeicher oder TLS konnte nicht eingerichtet werden. " + diagnostic(ex);
         } catch (EOFException ex) {
@@ -513,13 +571,18 @@ public final class TvRemoteClient implements AutoCloseable {
                     if (s.ready && !announced) {
                         synchronized (s) {
                             if (s.cancelled) return;
-                            prefs.edit().putString(HOST, s.host).apply();
+                            SharedPreferences.Editor edit = prefs.edit().putString(HOST, s.host);
+                            if (!s.host.equals(lastAddress())) clearWake(edit);
+                            edit.apply();
                         }
                         announced = true;
                     }
                     if (s.ready) {
                         State snapshot = new State(Phase.READY,
-                            s.keys ? "Verbunden" : "Verbunden – TV meldet keine Tastenunterstützung.",
+                            !s.keys ? "Verbunden – TV meldet keine Tastenunterstützung." :
+                                s.wakeMac != null && Boolean.FALSE.equals(handshake.powerOn())
+                                ? "Verbunden – TV meldet noch Standby. Power erneut drücken."
+                                : "Verbunden",
                             s.keys, s.apps, handshake.powerOn(), handshake.volumeLevel(), handshake.volumeMax(), handshake.muted());
                         if (!snapshot.sameDeviceState(previous)) {
                             previous = snapshot;
@@ -578,6 +641,7 @@ public final class TvRemoteClient implements AutoCloseable {
     private static final class Session {
         final String host;
         final boolean pair;
+        final String wakeMac;
         final BlockingQueue<String> codes = new ArrayBlockingQueue<>(1);
         volatile boolean cancelled, ready, keys, apps, writeFailed;
         String stage = "TV-Verbindung";
@@ -585,7 +649,9 @@ public final class TvRemoteClient implements AutoCloseable {
         volatile SSLSocket tls;
         volatile RemoteLiveness liveness;
         final Object outputLock = new Object();
-        Session(String host, boolean pair) { this.host = host; this.pair = pair; }
+        Session(String host, boolean pair, String wakeMac) {
+            this.host = host; this.pair = pair; this.wakeMac = wakeMac;
+        }
         void send(byte[] message) throws IOException {
             synchronized (outputLock) {
                 SSLSocket socket = tls;
@@ -683,7 +749,7 @@ public final class TvRemoteClient implements AutoCloseable {
             throw new SSLPeerUnverifiedException("TV-RSA-Zertifikat fehlt");
         return (X509Certificate)certs[0];
     }
-    private static SSLSocket open(Session s, InetAddress host, int port, Identity identity, String expectedPin)
+    private SSLSocket open(Session s, InetAddress host, int port, Identity identity, String expectedPin)
         throws IOException, GeneralSecurityException {
         if (s.cancelled) throw new IOException("Abgebrochen");
         X509TrustManager trust = new X509TrustManager() {
@@ -720,10 +786,7 @@ public final class TvRemoteClient implements AutoCloseable {
         };
         SSLContext context = SSLContext.getInstance("TLS");
         context.init(new KeyManager[]{keyManager}, new TrustManager[]{trust}, new SecureRandom());
-        Socket raw = new Socket();
-        s.raw = raw;
-        if (s.cancelled) { raw.close(); throw new IOException("Abgebrochen"); }
-        raw.connect(new InetSocketAddress(host, port), 5000);
+        Socket raw = connectRaw(s, host, port);
         raw.setSoTimeout(10000);
         raw.setTcpNoDelay(true);
         SSLSocket tls = (SSLSocket)context.getSocketFactory().createSocket(raw, host.getHostAddress(), port, true);
@@ -740,5 +803,30 @@ public final class TvRemoteClient implements AutoCloseable {
         tls.startHandshake();
         peer(tls);
         return tls;
+    }
+
+    private Socket connectRaw(Session s, InetAddress host, int port) throws IOException {
+        int attempts = s.wakeMac != null && port == TvProtocol.REMOTE_PORT ? WakeOnLan.CONNECT_ATTEMPTS : 1;
+        for (int i = 1; i <= attempts; i++) {
+            if (s.cancelled) throw new IOException("Abgebrochen");
+            if (attempts > 1) publish(s, Phase.CONNECTING,
+                "Aufweckpakete gesendet – TV-Verbindung (" + i + "/" + attempts + ") …", false);
+            Socket raw = new Socket();
+            s.raw = raw;
+            if (s.cancelled) { raw.close(); throw new IOException("Abgebrochen"); }
+            try {
+                raw.connect(new InetSocketAddress(host, port), 5000);
+                return raw;
+            } catch (IOException ex) {
+                try { raw.close(); } catch (IOException ignored) {}
+                if (s.cancelled || i == attempts) throw ex;
+                try { Thread.sleep(1000); }
+                catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new InterruptedIOException("Aufwecken abgebrochen.");
+                }
+            }
+        }
+        throw new IOException("TV nicht erreichbar.");
     }
 }

@@ -85,7 +85,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v1.0.1
+          name: Sofacockpit-Android-v1.1.0
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -94,9 +94,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create sofacockpit-v1.0.1 \
+          gh release create sofacockpit-v1.1.0 \
             dist/Sofacockpit.apk dist/*.sofatheme \
             --target "$GITHUB_SHA" \
-            --latest \
-            --title "Sofacockpit v1.0.1 (Kompakte HDMI-Auswahl)" \
-            --notes "Kompakterer Quellen-Screen: HDMI-Schnellwahltasten mit 48 dp Mindesthöhe statt 70 dp, kleinere Zeilenabstände, TV-Eingangsauswahl in derselben kompakten Höhe. Die Tasten können bei längeren Bezeichnungen oder großer Systemschrift mitwachsen. Anordnung, HDMI-Befehle, Umbenennen per langem Drücken, Apps-Bereich, Navigation und Updatefunktion bleiben unverändert. Reguläres Release mit unveränderter Signatur."
+            --prerelease \
+            --title "Sofacockpit v1.1.0 (Wake-on-LAN)" \
+            --notes "Testversion: TV über LAN im optimierten Standby aufwecken. LAN-MAC einmalig unter Verbindungen speichern. Power startet bei fehlender TV-Sitzung gezielt Magic Packets und begrenzte Wiederverbindung mit vorhandener Kopplung; keine Aufweckpakete durch App-Start oder Refresh. Aufwecken am TCL über FRITZ!Box und Windows bestätigt, Android-Gerätetest und längerer Standby noch offen. Feste Signatur unverändert."

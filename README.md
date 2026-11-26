@@ -16,7 +16,7 @@ Alle sechs Gerätescreens sind angelegt. Nicht unterstützte Funktionen sind als
 
 ### Startbildschirm
 
-- **TV** mit Verbindungsstatus. Den Status antippen, um den Verbindungsdialog zu öffnen. Bei bestätigter Verbindung erscheinen Stumm- und Power-Symbole; Farbe basiert auf tatsächlich gemeldetem Status.
+- **TV** mit Verbindungsstatus. Den Status antippen, um den Verbindungsdialog zu öffnen. Bei bestätigter Verbindung erscheinen Stumm- und Power-Symbole; Farbe basiert auf tatsächlich gemeldetem Status. Ab v1.1.0 erscheint Power bei eingerichteter LAN-Aufweckfunktion auch ohne aktive TV-Verbindung.
 - **Streaming-Leiste** mit Netflix, Prime Video, Apple TV+, Disney+ und Dyn als Vorauswahl, vier sichtbaren Schnellwahltasten und horizontalem Scrollen. Plus öffnet den Dienstekatalog; langes Drücken bearbeitet, verschiebt oder entfernt einen Eintrag.
 - **Lautstärke** mit − und + für einzelne TV-Tastenschritte sowie einer Anzeige des tatsächlich gemeldeten Pegels, sofern verfügbar. Direktes Setzen eines absoluten Wertes ist noch nicht unterstützt.
 - **Soundbar** mit Ein/Aus, Night, DRC, Surround und Audioformat. Das Format wird aus der Soundbar-Meldung übernommen, nicht geschätzt.
@@ -118,6 +118,16 @@ Es wird ohne Token ausschließlich das öffentliche Repository sschermer/Sofacoc
 Die geprüfte APK liegt im privaten Cache, wird nur über einen eng begrenzten FileProvider mit Leseberechtigung an den Android-Installer übergeben und kann dort zusätzlich geprüft werden. Kein Umgehen der Installationsbestätigung, Play Protect oder Android-Richtlinien. Die Installation erfolgt als normales Paketupdate ohne Deinstallation; TV-Kopplung, Themes, NAS-Einstellungen und andere gespeicherte Einstellungen bleiben erhalten. Wenn Android ablehnt oder der Benutzer abbricht, bleibt die alte Version installiert. Bei einer Activity-Neuerstellung während Download oder Berechtigungsdialog kann ein erneutes Anstoßen erforderlich sein. Alte Update-Cache-Dateien werden bei weiteren Downloads nach zwei Tagen entfernt.
 
 Die Release-Workflows müssen weiterhin monoton steigende versionCode-Werte, zur Tag-Version passende versionName und die feste Signatur verwenden. Pre-Releases werden wie bisher mit --prerelease veröffentlicht; für eine reguläre Freigabe dieses Flag entfernen. Die Update-Funktion wurde beim Wechsel von v0.9.0 auf v0.9.1 auf dem realen Gerät erfolgreich getestet. Das erste reguläre Release ist v1.0.0; die neue Pull-to-Refresh-Geste steht noch zum Gerätetest an.
+
+## Wake-on-LAN (v1.1.0, Pre-Release)
+
+Am TCL 85C89L wurde im Energiemodus **Optimiert** mit LAN und deaktiviertem TV-WLAN ein erfolgreiches Aufwecken über die FRITZ!Box nach zwei Minuten Standby bestätigt. Auch ein separates Windows-Skript mit UDP-Magic-Packet an den Subnetz-Broadcast (Port 9) funktionierte. Das Verhalten der Android-App und nach längerem Standby ist noch am Gerät zu bestätigen.
+
+**Einrichten:** TV per LAN verbinden, vorhandene Kopplung/Steuerverbindung an der LAN-IPv4-Adresse verwenden. In der FRITZ!Box die LAN-MAC-Adresse (nicht WLAN-MAC) ablesen; eine dauerhaft zugewiesene IPv4-Adresse ist sinnvoll. Start lange drücken → Verbindungen → Wake-on-LAN einrichten. MAC eingeben und speichern; leeres Feld deaktiviert die Funktion. Keine Portfreigabe und kein Start bei Internetzugriff nötig. Die Einstellung ist lokal in app-privaten Einstellungen gespeichert, an IPv4-Adresse und TV-Zertifikat gebunden; bei anderer Adresse/anderem Zertifikat wird sie gelöscht. Sie wird in dieser ersten Version nicht in .sofacfg exportiert.
+
+**Benutzung:** Mit aktiver Steuersitzung sendet Power den bisherigen Remote-v2-Befehl. Ohne Sitzung und mit konfiguriertem Wake-on-LAN bleibt Power sichtbar und startet ausschließlich auf Antippen einen Aufweckversuch: bis zu drei Magic Packets per UDP/9 über WLAN/LAN im tatsächlich ermittelten gemeinsamen IPv4-Teilnetz; danach bis zu drei TCP-Verbindungsversuche am Port 6466, anschließend unveränderte TLS-/Protokollaushandlung mit vorhandener Kopplung. Kein hartcodiertes Subnetz, keine Neukopplung, kein zusätzlicher Power-Umschaltbefehl nach dem Aufwecken. Ein bestätigtes Power-On wird ausschließlich aus dem Remote-Protokoll übernommen. Meldet der TV noch Standby, kann Power erneut ausdrücklich gedrückt werden. Bei einer noch als verbunden angezeigten, aber bereits verlorenen Sitzung gegebenenfalls den Verbindungsabbruch abwarten und Power erneut drücken.
+
+Kein Wake-Paket bei App-Start, Pull-to-Refresh, Import, Theme-Wechsel, gewöhnlichem Verbinden oder Wiederverbinden. Ohne konfiguriertes Wake-on-LAN bleibt das bisherige Verhalten unverändert. Ein laufender Aufweckvorgang kann über die Verbindungsseite abgebrochen werden; schon gesendete Pakete lassen sich nicht zurücknehmen. Keine zusätzlichen Berechtigungen oder Hintergrunddienste. Die vorhandene TLS-Pin-Prüfung bleibt unverändert. Android-Gerätetest, längerer Standby und WLAN-Regression stehen aus.
 
 ## Pull-to-Refresh (v1.0.0)
 

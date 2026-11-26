@@ -534,7 +534,17 @@ public class MainActivity extends ComponentActivity {
             setBackground(shape(SURFACE_ALT, 14));
             setTextColor(TEXT);
             setContentDescription(power ? "Fernseher ein oder aus" : "Stummschaltung");
-            setOnClickListener(v -> tv.sendKey(key));
+            setOnClickListener(v -> {
+                if (!power) { tv.sendKey(key); return; }
+                if (Build.VERSION.SDK_INT >= 37 &&
+                    checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") !=
+                        android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(new String[]{"android.permission.ACCESS_LOCAL_NETWORK"}, 601);
+                    Toast.makeText(MainActivity.this, "Netzwerkzugriff erlauben und Power erneut drücken.", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                tv.requestPower();
+            });
             tvKeys.add(this);
         }
         @Override protected void onDraw(Canvas canvas) {
@@ -810,9 +820,14 @@ public class MainActivity extends ComponentActivity {
         paintConnection(tvConnectionButton, "TV", state.connected(), state.phase == TvRemoteClient.Phase.CONNECTING ||
             state.phase == TvRemoteClient.Phase.PAIRING || state.phase == TvRemoteClient.Phase.CODE ||
             state.phase == TvRemoteClient.Phase.VERIFYING);
-        if (tvDeviceHeader != null) tvDeviceHeader.setVisibility(state.connected() ? View.VISIBLE : View.GONE);
+        boolean wakeConfigured = tv.wakeConfigured();
+        if (tvDeviceHeader != null) tvDeviceHeader.setVisibility(state.connected() || wakeConfigured ? View.VISIBLE : View.GONE);
+        if (tvHomeStatus != null) {
+            tvHomeStatus.setVisibility(!state.connected() && wakeConfigured ? View.VISIBLE : View.GONE);
+            tvHomeStatus.setText(tv.wakeInProgress() ? "Aufwecken …" : "Nicht verbunden");
+        }
         if (tvHomeDetail != null) {
-            boolean showDetail = state.phase == TvRemoteClient.Phase.ERROR ||
+            boolean showDetail = state.phase == TvRemoteClient.Phase.ERROR || tv.wakeInProgress() ||
                 (state.connected() && !"Verbunden".equals(state.detail));
             tvHomeDetail.setText(state.detail);
             tvHomeDetail.setVisibility(showDetail ? View.VISIBLE : View.GONE);
@@ -832,9 +847,13 @@ public class MainActivity extends ComponentActivity {
             key.setAlpha(ready ? 1f : .42f);
         }
         if (tvPower != null) {
-            tvPower.setVisibility(state.connected() ? View.VISIBLE : View.GONE);
+            tvPower.setVisibility(state.connected() || wakeConfigured ? View.VISIBLE : View.GONE);
+            boolean powerEnabled = ready || tv.canWake();
+            tvPower.setEnabled(powerEnabled);
+            tvPower.setAlpha(powerEnabled ? 1f : .42f);
             tvPower.setTextColor(Boolean.TRUE.equals(state.powerOn) ? ACCENT : TEXT);
-            tvPower.setContentDescription(state.powerOn == null ? "Fernseher ein oder aus, Zustand unbekannt" :
+            tvPower.setContentDescription(!state.connected() && wakeConfigured ? "Fernseher über LAN aufwecken" :
+                state.powerOn == null ? "Fernseher ein oder aus, Zustand unbekannt" :
                 (state.powerOn ? "Fernseher ausschalten" : "Fernseher einschalten"));
             tvPower.invalidate();
         }

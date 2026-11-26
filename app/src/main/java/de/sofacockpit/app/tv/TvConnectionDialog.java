@@ -52,7 +52,7 @@ public final class TvConnectionDialog {
     private CheckBox autoConnect;
     private TextView status, searchStatus;
     private EditText address, code;
-    private Button connect, rePair, disconnect, search, confirm;
+    private Button connect, rePair, disconnect, search, confirm, wakeSetup;
     private LinearLayout found, codeArea;
     private Discovery discovery;
     public TvConnectionDialog(Activity activity, TvRemoteClient client, MainViewModel soundbar,
@@ -98,6 +98,8 @@ public final class TvConnectionDialog {
             } catch (Exception ex) { address.setError("Gültige lokale IP-Adresse eingeben."); }
         });
         layout.addView(tvSave);
+        wakeSetup = button("Wake-on-LAN einrichten", this::openWakeSettings);
+        layout.addView(wakeSetup);
         search = button("Fernseher suchen", () -> { if (networkAllowed()) startSearch(); });
         layout.addView(search);
         searchStatus = text("IP-Adresse auch manuell möglich.");
@@ -222,6 +224,8 @@ public final class TvConnectionDialog {
         address.setEnabled(!busy);
         search.setEnabled(!busy);
         tvSave.setEnabled(!busy);
+        wakeSetup.setText(client.wakeConfigured() ? "Wake-on-LAN bearbeiten" : "Wake-on-LAN einrichten");
+        wakeSetup.setEnabled(paired && (!busy || state.connected()));
         for (int i = 0; i < found.getChildCount(); i++) found.getChildAt(i).setEnabled(!busy);
         boolean asking = state.phase == TvRemoteClient.Phase.CODE;
         boolean verifying = state.phase == TvRemoteClient.Phase.VERIFYING;
@@ -251,6 +255,37 @@ public final class TvConnectionDialog {
         render(client.state());
         renderSound();
     }
+    private void openWakeSettings() {
+        if (!address.getText().toString().trim().equals(client.lastAddress())) {
+            toast("Zuerst die LAN-IPv4-Adresse des TV speichern und verbinden.");
+            return;
+        }
+        LinearLayout fields = new LinearLayout(activity);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        fields.setPadding(dp(20), 0, dp(20), 0);
+        fields.addView(text("Die LAN-MAC-Adresse des Fernsehers aus der FRITZ!Box eingeben, nicht die WLAN-MAC. Nur die Power-Taste bei fehlender TV-Verbindung sendet Aufweckpakete. Leeres Feld deaktiviert Wake-on-LAN."));
+        EditText input = new EditText(activity);
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(32)});
+        input.setHint("AA:BB:CC:DD:EE:FF");
+        input.setText(client.wakeMac());
+        fields.addView(input);
+        AlertDialog setup = new AlertDialog.Builder(activity).setTitle("Wake-on-LAN")
+            .setView(fields).setNegativeButton("Abbrechen", null)
+            .setPositiveButton("Speichern", null).create();
+        setup.show();
+        setup.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            try {
+                client.rememberWakeMac(input.getText().toString());
+                setup.dismiss();
+                toast(client.wakeConfigured() ? "Wake-on-LAN gespeichert." : "Wake-on-LAN deaktiviert.");
+            } catch (Exception ex) {
+                input.setError(ex.getMessage() == null ? "Einstellung konnte nicht gespeichert werden." : ex.getMessage());
+            }
+        });
+    }
+
     private void connectSound() {
         if (!networkAllowed()) return;
         String ip = soundAddress.getText().toString().trim();
