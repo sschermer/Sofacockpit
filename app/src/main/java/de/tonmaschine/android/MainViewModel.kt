@@ -43,6 +43,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var generation = 0
     private var lastConfirmedPower: Boolean? = null
     private var connectionRefreshJob: Job? = null
+    private val resumeIntent = SoundbarResumeIntent()
     private var reportSequence = 0L
     private val reportRevisions = mutableMapOf<String, Long>()
     private val refreshReports = listOf("SPK_LIST_VIEW_INFO", "FUNC_VIEW_INFO", "EQ_VIEW_INFO", "SETTING_VIEW_INFO")
@@ -81,6 +82,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun disconnect() {
+        resumeIntent.cancel()
         generation++
         lastConfirmedPower = null
         client?.stop()
@@ -138,6 +140,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         try { store.saveIp(ip.value) }
         catch (e: Exception) { _message.value = "IP konnte nicht gespeichert werden: ${e.message}"; return }
+        resumeIntent.cancel()
         generation++
         val id = generation
         lastConfirmedPower = null
@@ -173,6 +176,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refresh() { client?.refresh() }
+
+    private fun confirmedStandby() = lastConfirmedPower == false || _device.value.powerOn == false
+
+    /** Check the existing desired session on return; do not start a new one from a saved IP. */
+    fun onBackground() {
+        cancelConnectionRefresh()
+        resumeIntent.background(generation, ip.value,
+            client != null && _device.value.connection == Connection.CONNECTED, confirmedStandby())
+    }
+
+    fun onForeground(networkAllowed: Boolean) {
+        if (!resumeIntent.take(generation, ip.value, client != null, confirmedStandby(), networkAllowed)) return
+        // Existing refresh probes real replies and reconnects once if necessary. No power command.
+        refreshConnection(java.util.function.Consumer { })
+    }
 
     /** Pull-to-refresh: only a previously requested client, never a new connection
      * to a merely stored IP. Read real responses and expedite at most one retry.
@@ -513,5 +531,5 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _message.value = "Profil übertragen – Rückmeldung abwarten"
         }
     }
-    override fun onCleared() { cancelConnectionRefresh(); client?.stop(); super.onCleared() }
+    override fun onCleared() { resumeIntent.cancel(); cancelConnectionRefresh(); client?.stop(); super.onCleared() }
 }

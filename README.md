@@ -119,6 +119,14 @@ Die geprüfte APK liegt im privaten Cache, wird nur über einen eng begrenzten F
 
 Die Release-Workflows müssen weiterhin monoton steigende versionCode-Werte, zur Tag-Version passende versionName und die feste Signatur verwenden. Pre-Releases werden wie bisher mit --prerelease veröffentlicht; für eine reguläre Freigabe dieses Flag entfernen. Die Update-Funktion wurde beim Wechsel von v0.9.0 auf v0.9.1 auf dem realen Gerät erfolgreich getestet. Das erste reguläre Release ist v1.0.0; die neue Pull-to-Refresh-Geste steht noch zum Gerätetest an.
 
+## Komfortkorrekturen (v1.1.2)
+
+- **Wake-on-LAN-Eingabe:** eigener Hexadezimal-Tastenblock 0–9/A–F, automatische Großschreibung und Doppelpunkte, Löschen und Leeren. Kopieren/Einfügen und Hardwaretastatur bleiben möglich; fehlerhafte oder zu lange Eingaben werden nicht stillschweigend gekürzt. Gespeicherte MAC-Adressen und Aufwecklogik bleiben unverändert.
+- **Power-Symbole:** TV und Soundbar verwenden die Theme-Textfarbe bei ausgeschaltetem und die Akzentfarbe bei bestätigt eingeschaltetem Gerät; unbekannte Soundbar-Powerwerte bleiben deaktiviert. Rot ist Fehlern vorbehalten. Keine Änderung an Power-Befehlen.
+- **Soundbar nach Hintergrundwechsel:** war eine gewünschte Soundbar-Sitzung beim Verlassen der App bestätigt und nicht im bestätigten Standby, prüft die App nach der Rückkehr einmalig die bestehende Verbindung mit der bisherigen Refresh-Logik. Bei ausbleibender Antwort oder Verbindungsfehler wird maximal ein zusätzlicher Verbindungsaufbau angestoßen. Keine neuen Hintergrunddienste, keine Power-Befehle, kein Wiederverbinden bewusst getrennter Geräte, bei Adresswechsel oder fehlender Berechtigung. Die genaue Ursache des Nutzerproblems ist noch nicht nachgewiesen; Wirkung am Gerät testen. Wie bei anderen Netzwerkzugriffen kann ein Gerät mit unbekanntem Powerzustand aufwachen.
+
+Tests ergänzen die reine MAC-Eingabelogik sowie die Entscheidung über den einmaligen Soundbar-Vordergrundcheck. Darstellung, Einfügen/Löschen auf Android, die tatsächliche Wiederverbindung und Standby sind am Gerät zu prüfen. Verbindungsfarben und Lautstärkezuordnung sind in dieser Version unverändert.
+
 ## App-Icon (v1.1.1)
 
 Das vom Nutzer ausgewählte positive Liniengrafik-Design ist als skalierbares adaptives Launcher-Icon eingebunden: cremefarbene Linien auf petrolfarbenem Hintergrund mit türkisgrünem Akzent. Runde und andere systemseitige Icon-Formen werden unterstützt, ab Android 13 zusätzlich der einfarbige Layer für thematische System-Icons. Die ursprünglichen SVG-Dateien liegen unter `artwork/launcher/`. Die App-internen Themes bleiben unverändert; die tatsächliche Launcher-Darstellung ist noch am Gerät zu prüfen.

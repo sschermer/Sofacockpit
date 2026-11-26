@@ -98,7 +98,6 @@ private fun SoundbarHomeCard(vm: MainViewModel, pack: ThemePack) {
     val cockpitText = Color(t.text)
     val cockpitMuted = Color(t.muted)
     val cockpitGreen = Color(t.accent)
-    val cockpitRed = Color(CockpitTheme.ERROR)
     val state by vm.device.collectAsState()
     val active = state.connection == de.tonmaschine.android.model.Connection.CONNECTED
     CockpitThemeScope(pack) {
@@ -126,7 +125,7 @@ private fun SoundbarHomeCard(vm: MainViewModel, pack: ThemePack) {
                     } else {
                         val powerColor = when (state.powerOn) {
                             true -> cockpitGreen
-                            false -> cockpitRed
+                            false -> cockpitText
                             null -> cockpitMuted
                         }
                         IconButton(

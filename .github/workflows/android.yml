@@ -85,7 +85,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v1.1.1
+          name: Sofacockpit-Android-v1.1.2
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -94,9 +94,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create sofacockpit-v1.1.1 \
+          gh release create sofacockpit-v1.1.2 \
             dist/Sofacockpit.apk dist/*.sofatheme \
             --target "$GITHUB_SHA" \
-            --latest \
-            --title "Sofacockpit v1.1.1 (Wake-on-LAN und App-Icon)" \
-            --notes "Reguläres Release: Wake-on-LAN im optimierten LAN-Standby am TCL mit Sofacockpit v1.1.0 vom Nutzer bestätigt. Aufwecken und Wiederverbindung unverändert übernommen. Neu: eigenes adaptives Sofacockpit-App-Icon mit runder und thematischer Variante. Keine Änderungen an Bedienung, Kopplung, gespeicherten Einstellungen oder Signatur. Langzeit-Standby und separate WLAN-Regression noch zu prüfen."
+            --prerelease \
+            --title "Sofacockpit v1.1.2 (MAC-Eingabe, Power-Symbole, Soundbar-Verbindung)" \
+            --notes "Test-Patch: eigener Hex-Tastenblock mit automatischer MAC-Formatierung; einheitliche weiß/grüne Power-Symbole; einmaliger Vordergrundcheck für vorher bestätigte Soundbar-Verbindungen mit vorhandener begrenzter Wiederverbindung. Keine neuen Aufweckbefehle. Keine Änderungen an Verbindungsfarben oder Lautstärkezuordnung. Gerätetests zu Eingabe und Soundbar-Wiederverbindung offen. Signatur unverändert."

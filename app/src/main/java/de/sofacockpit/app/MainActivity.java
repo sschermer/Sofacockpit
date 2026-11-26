@@ -886,15 +886,18 @@ public class MainActivity extends ComponentActivity {
         if (updates != null) updates.onPause();
         if (connectionRefresh != null) connectionRefresh.cancel();
         if (tv != null) tv.onBackground();
+        if (soundbarModel != null) soundbarModel.onBackground();
         super.onPause();
     }
 
     @Override protected void onResume() {
         super.onResume();
         if (updates != null) updates.onResume();
-        if (tv != null) tv.onForeground(Build.VERSION.SDK_INT < 37 ||
+        boolean allowed = Build.VERSION.SDK_INT < 37 ||
             checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED);
+                android.content.pm.PackageManager.PERMISSION_GRANTED;
+        if (tv != null) tv.onForeground(allowed);
+        if (soundbarModel != null) soundbarModel.onForeground(allowed);
     }
 
     @Override protected void onDestroy() {

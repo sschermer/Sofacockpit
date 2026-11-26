@@ -23,6 +23,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.InputFilter;
 import android.text.InputType;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -266,15 +268,92 @@ public final class TvConnectionDialog {
         fields.addView(text("Die LAN-MAC-Adresse des Fernsehers aus der FRITZ!Box eingeben, nicht die WLAN-MAC. Nur die Power-Taste bei fehlender TV-Verbindung sendet Aufweckpakete. Leeres Feld deaktiviert Wake-on-LAN."));
         EditText input = new EditText(activity);
         input.setSingleLine(true);
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(32)});
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS |
+            InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        input.setShowSoftInputOnFocus(false);
+        input.setTypeface(Typeface.MONOSPACE);
+        input.setTextColor(palette().text);
+        input.setHintTextColor(palette().muted);
+        input.setBackgroundTintList(ColorStateList.valueOf(palette().accent));
         input.setHint("AA:BB:CC:DD:EE:FF");
+        // Reject an invalid or overlong paste as a whole.
+        input.setFilters(new InputFilter[]{(source, start, end, dest, dstart, dend) -> {
+            String candidate = dest.subSequence(0, dstart).toString() +
+                source.subSequence(start, end) + dest.subSequence(dend, dest.length());
+            try { MacEntry.digits(candidate); return null; }
+            catch (IllegalArgumentException ex) {
+                return dest.subSequence(dstart, dend);
+            }
+        }});
+        input.addTextChangedListener(new TextWatcher() {
+            private boolean formatting;
+            private boolean deletedColon;
+            private int caret;
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+                if (!formatting) deletedColon = count == 1 && after == 0 && s.charAt(start) == ':';
+            }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (!formatting) caret = start + count;
+            }
+            @Override public void afterTextChanged(Editable editable) {
+                if (formatting) return;
+                String current = editable.toString();
+                int digitsBefore = MacEntry.digits(current.substring(0, Math.min(caret, current.length()))).length();
+                String raw = MacEntry.digits(current);
+                if (deletedColon && digitsBefore > 0) {
+                    raw = raw.substring(0, digitsBefore - 1) + raw.substring(digitsBefore);
+                    digitsBefore--;
+                }
+                String formatted = MacEntry.format(raw);
+                formatting = true;
+                try {
+                    if (!formatted.equals(current)) {
+                        editable.replace(0, editable.length(), formatted);
+                        input.setSelection(MacEntry.cursorAfterDigits(formatted, digitsBefore));
+                    }
+                    input.setError(null);
+                } finally { formatting = false; }
+            }
+        });
         input.setText(client.wakeMac());
+        input.setSelection(input.length());
         fields.addView(input);
+        fields.addView(text("Hexadezimal-Tastatur · lange auf die Adresse drücken zum Einfügen"));
+        for (int r = 0; r < 4; r++) {
+            LinearLayout keys = new LinearLayout(activity);
+            keys.setOrientation(LinearLayout.HORIZONTAL);
+            for (int c = 0; c < 4; c++) {
+                String digit = "0123456789ABCDEF".substring(r * 4 + c, r * 4 + c + 1);
+                addHexKey(keys, digit, () -> {
+                    int a = Math.max(0, input.getSelectionStart());
+                    int b = Math.max(0, input.getSelectionEnd());
+                    input.getText().replace(Math.min(a,b), Math.max(a,b), digit);
+                });
+            }
+            fields.addView(keys);
+        }
+        LinearLayout editing = new LinearLayout(activity);
+        editing.setOrientation(LinearLayout.HORIZONTAL);
+        addHexKey(editing, "Leeren", () -> input.setText(""));
+        addHexKey(editing, "⌫ Löschen", () -> {
+            int a = Math.max(0, input.getSelectionStart()), b = Math.max(0, input.getSelectionEnd());
+            int start = Math.min(a,b), end = Math.max(a,b);
+            if (start == end && start > 0) {
+                start--;
+                if (input.getText().charAt(start) == ':' && start > 0) start--;
+            }
+            if (start != end) input.getText().delete(start, end);
+        });
+        fields.addView(editing);
+        ScrollView wakeScroll = new ScrollView(activity);
+        wakeScroll.addView(fields);
         AlertDialog setup = new AlertDialog.Builder(activity).setTitle("Wake-on-LAN")
-            .setView(fields).setNegativeButton("Abbrechen", null)
+            .setView(wakeScroll).setNegativeButton("Abbrechen", null)
             .setPositiveButton("Speichern", null).create();
         setup.show();
+        if (setup.getWindow() != null)
+            setup.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+        input.requestFocus();
         setup.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             try {
                 client.rememberWakeMac(input.getText().toString());
@@ -284,6 +363,16 @@ public final class TvConnectionDialog {
                 input.setError(ex.getMessage() == null ? "Einstellung konnte nicht gespeichert werden." : ex.getMessage());
             }
         });
+    }
+
+    private void addHexKey(LinearLayout row, String label, Runnable action) {
+        Button key = button(label, action);
+        key.setMinWidth(0);
+        key.setMinimumWidth(0);
+        key.setPadding(dp(2), 0, dp(2), 0);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(48), 1f);
+        lp.setMargins(dp(2), dp(2), dp(2), dp(2));
+        row.addView(key, lp);
     }
 
     private void connectSound() {

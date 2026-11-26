@@ -193,7 +193,7 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
             color = bg,
             contentColor = foreground
         ) {
-            // Only confirmed standby shows the red wake button.
+            // Only confirmed standby shows the wake button.
             // Lost Wi-Fi connectivity is not the same as "powered off".
             if (!embedded && active && state.powerOn == false) {
                 StandbyPowerButton(onWake = { vm.setPower(true) })
@@ -235,11 +235,7 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
                         onClick = { state.powerOn?.let { vm.setPower(!it) } },
                         enabled = active && state.powerOn != null,
                         modifier = Modifier.size(48.dp)
-                            .background(when {
-                                !active || state.powerOn == null -> panel
-                                state.powerOn == false -> powerRed
-                                else -> powerGreen
-                            }, MaterialTheme.shapes.medium)
+                            .background(panel, MaterialTheme.shapes.medium)
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.PowerSettingsNew,
@@ -248,7 +244,11 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
                                 false -> "Soundbar einschalten"
                                 null -> "Powerstatus unbekannt"
                             },
-                            tint = if (active && state.powerOn != null) bg else muted,
+                            tint = when {
+                                !active || state.powerOn == null -> muted
+                                state.powerOn == true -> powerGreen
+                                else -> foreground
+                            },
                             modifier = Modifier.size(27.dp)
                         )
                     }
@@ -703,8 +703,10 @@ private fun Modifier.reserveSliderGesture(enabled: Boolean): Modifier {
 
 @Composable
 private fun StandbyPowerButton(onWake: () -> Unit) {
-    val powerGreen = Color(LocalCockpitPack.current.theme.accent)
-    val powerRed = Color(CockpitTheme.ERROR)
+    val theme = LocalCockpitPack.current.theme
+    val panel = Color(theme.panel)
+    val foreground = Color(theme.text)
+    val muted = Color(theme.muted)
     var justPressed by remember { mutableStateOf(false) }
     LaunchedEffect(justPressed) {
         if (justPressed) {
@@ -725,13 +727,13 @@ private fun StandbyPowerButton(onWake: () -> Unit) {
             },
             enabled = !justPressed,
             modifier = Modifier.size(172.dp)
-                .background(if (justPressed) powerGreen else powerRed, CircleShape)
+                .background(panel, CircleShape)
         ) {
             Icon(
                 imageVector = Icons.Outlined.PowerSettingsNew,
                 contentDescription = "Soundbar einschalten",
                 modifier = Modifier.size(92.dp),
-                tint = Color.White
+                tint = if (justPressed) muted else foreground
             )
         }
     }
