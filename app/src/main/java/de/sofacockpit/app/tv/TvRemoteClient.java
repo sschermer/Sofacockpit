@@ -74,6 +74,8 @@ public final class TvRemoteClient implements AutoCloseable {
     private Session current;
     private boolean closed;
     private final ForegroundRecovery recovery = new ForegroundRecovery();
+    private final RefreshIntent refreshIntent = new RefreshIntent();
+    private RefreshProbe refreshProbe;
 
     public TvRemoteClient(Context context, Listener listener) {
         prefs = context.getApplicationContext().getSharedPreferences("tv_pairing", Context.MODE_PRIVATE);
@@ -91,7 +93,9 @@ public final class TvRemoteClient implements AutoCloseable {
         recovery.cancel();
         String host = address == null ? "" : address.trim();
         if (!host.isEmpty()) localAddress(host);
+        boolean changed = !host.equals(lastAddress());
         if (!prefs.edit().putString(HOST, host).commit()) throw new IOException("TV-IP konnte nicht gespeichert werden.");
+        if (changed) refreshIntent.clear();
     }
 
     /** Invoked only by a user-initiated encrypted backup worker. */
@@ -150,6 +154,8 @@ public final class TvRemoteClient implements AutoCloseable {
     }
     private void setState(State next) {
         state = next;
+        if (next.connected() && current != null && paired() && current.host.equals(lastAddress()))
+            refreshIntent.confirmed(current.host, next.powerOn);
         listener.onState(state);
     }
     private void publish(Session s, Phase phase, String detail, boolean keys) {
@@ -179,6 +185,7 @@ public final class TvRemoteClient implements AutoCloseable {
         recovery.cancel();
         if (closed) return;
         String host = address == null ? "" : address.trim();
+        refreshIntent.begin(!pair && paired() && !host.isEmpty() ? host : null);
         if (host.isEmpty()) { update(Phase.ERROR, "Bitte eine TV-IP-Adresse auswählen oder eingeben.", false); return; }
         if (!pair && !paired()) { update(Phase.ERROR, "Noch kein Fernseher gekoppelt. Bitte zuerst koppeln.", false); return; }
         cancelCurrent();
@@ -199,6 +206,7 @@ public final class TvRemoteClient implements AutoCloseable {
         if (s.codes.offer(value)) update(Phase.VERIFYING, "Kopplungscode wird geprüft …", false);
     }
     public void disconnect() {
+        refreshIntent.clear();
         recovery.cancel();
         cancelCurrent();
         if (!closed) update(Phase.DISCONNECTED, "Nicht verbunden", false);
@@ -210,8 +218,72 @@ public final class TvRemoteClient implements AutoCloseable {
         writers.getQueue().clear();
     }
     @Override public void close() {
-        closed = true; recovery.cancel(); cancelCurrent();
+        closed = true; recovery.cancel(); refreshIntent.clear();
+        if (refreshProbe != null) { main.removeCallbacks(refreshProbe); refreshProbe = null; }
+        cancelCurrent();
         sessions.shutdownNow(); writers.shutdownNow(); watchdogs.shutdownNow();
+    }
+
+    /** Pull-to-refresh is user initiated. No invented TV status request or key event:
+     * observe a fresh inbound Remote-v2 frame, then reconnect once only if needed.
+     * Do not disturb a pairing, manual disconnect, changed address or known standby.
+     */
+    public void refreshConnection(java.util.function.Consumer<String> done) {
+        if (closed) { done.accept("TV: nicht verfügbar"); return; }
+        if (refreshProbe != null) { done.accept("TV: Prüfung läuft bereits"); return; }
+        if (state.phase == Phase.PAIRING || state.phase == Phase.CODE || state.phase == Phase.VERIFYING) {
+            done.accept("TV: Kopplung läuft"); return;
+        }
+        if (!refreshIntent.eligible(lastAddress(), paired())) {
+            done.accept(paired() ? "TV: keine gewünschte Verbindung" : "TV: zuerst koppeln"); return;
+        }
+        if (refreshIntent.standby()) { done.accept("TV: Standby, nicht aufgeweckt"); return; }
+        refreshProbe = new RefreshProbe(done);
+        refreshProbe.run();
+    }
+
+    private final class RefreshProbe implements Runnable {
+        private final java.util.function.Consumer<String> done;
+        private final long started = SystemClock.elapsedRealtime();
+        private long revision = refreshIntent.revision();
+        private long deadline = started + 32_000L;
+        private boolean restarted;
+        RefreshProbe(java.util.function.Consumer<String> done) { this.done = done; }
+
+        @Override public void run() {
+            if (closed || refreshProbe != this) return;
+            long now = SystemClock.elapsedRealtime();
+            if (revision != refreshIntent.revision() || !refreshIntent.eligible(lastAddress(), paired())) {
+                finish("TV: Verbindung geändert oder getrennt"); return;
+            }
+            if (refreshIntent.standby()) { finish("TV: Standby, nicht aufgeweckt"); return; }
+            Session s = current;
+            if (state.connected() && s != null && s.ready && s.liveness != null &&
+                s.liveness.receivedSince(started)) {
+                finish(restarted ? "TV: wieder verbunden" : "TV: Verbindung bestätigt"); return;
+            }
+            if (state.phase == Phase.PAIRING || state.phase == Phase.CODE || state.phase == Phase.VERIFYING) {
+                finish("TV: Kopplung läuft"); return;
+            }
+            if (!restarted && ((state.phase == Phase.ERROR && s == null) ||
+                (state.connected() && now - started >= 10_000L))) {
+                restarted = true;
+                start(lastAddress(), false);
+                revision = refreshIntent.revision();
+                deadline = now + 32_000L;
+            } else if (restarted && state.phase == Phase.ERROR && s == null) {
+                finish("TV: Wiederverbindung fehlgeschlagen"); return;
+            } else if (now >= deadline) {
+                finish("TV: keine neue Antwort bestätigt"); return;
+            }
+            main.postDelayed(this, 250L);
+        }
+        private void finish(String message) {
+            main.removeCallbacks(this);
+            if (refreshProbe != this) return;
+            refreshProbe = null;
+            done.accept(message);
+        }
     }
 
     public void sendKey(int key) {

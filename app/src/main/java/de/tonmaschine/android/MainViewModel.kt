@@ -40,6 +40,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val profileBusy = _profileBusy.asStateFlow()
     private var client: SoundbarClient? = null
     private var generation = 0
+    private var lastConfirmedPower: Boolean? = null
+    private var reportSequence = 0L
+    private val reportRevisions = mutableMapOf<String, Long>()
+    private val refreshReports = listOf("SPK_LIST_VIEW_INFO", "FUNC_VIEW_INFO", "EQ_VIEW_INFO", "SETTING_VIEW_INFO")
 
     init {
         try { _nasConnection.value = nasSettings.loadConnection() }
@@ -76,6 +80,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun disconnect() {
         generation++
+        lastConfirmedPower = null
         client?.stop()
         client = null
         _device.value = DeviceState()
@@ -133,6 +138,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         catch (e: Exception) { _message.value = "IP konnte nicht gespeichert werden: ${e.message}"; return }
         generation++
         val id = generation
+        lastConfirmedPower = null
         client?.stop()
         _device.value = DeviceState(connection = Connection.CONNECTING)
         _message.value = "Verbindung wird hergestellt …"
@@ -140,9 +146,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             onPacket = { packet ->
                 viewModelScope.launch {
                     if (generation == id) {
-                        val before = _device.value.connection
-                        _device.update { DeviceReducer.reduce(it, packet) }
-                        if (before != Connection.CONNECTED && _device.value.connection == Connection.CONNECTED)
+                        val previous = _device.value
+                        val next = DeviceReducer.reduce(previous, packet)
+                        if (next !== previous) {
+                            reportSequence++
+                            reportRevisions[packet.optString("msg")] = reportSequence
+                            next.powerOn?.let { lastConfirmedPower = it }
+                        }
+                        _device.value = next
+                        if (previous.connection != Connection.CONNECTED && next.connection == Connection.CONNECTED)
                             _message.value = "Verbunden"
                     }
                 }
@@ -159,6 +171,61 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refresh() { client?.refresh() }
+
+    /** Pull-to-refresh: only a previously requested client, never a new connection
+     * to a merely stored IP. Read real responses and expedite at most one retry.
+     */
+    fun refreshConnection(done: java.util.function.Consumer<String>) {
+        if (client == null) { done.accept("Soundbar: keine gewünschte Verbindung"); return }
+        if (lastConfirmedPower == false || _device.value.powerOn == false) {
+            done.accept("Soundbar: Standby, nicht aufgeweckt"); return
+        }
+        viewModelScope.launch {
+            var expectedGeneration = generation
+            var baseline = reportSequence
+            var restarted = false
+            fun changedIntent() = expectedGeneration != generation || client == null
+            fun standby() = lastConfirmedPower == false || _device.value.powerOn == false
+            fun receivedAll() = refreshReports.all { (reportRevisions[it] ?: 0L) > baseline }
+            fun responding() = reportSequence > baseline && _device.value.connection == Connection.CONNECTED
+
+            if (_device.value.connection == Connection.CONNECTING && _device.value.error != null) {
+                // Existing retry backoff can reach 30 seconds. Pulling explicitly expedites it.
+                connect()
+                expectedGeneration = generation
+                restarted = true
+            } else if (_device.value.connection == Connection.CONNECTED) {
+                client?.refresh()
+            }
+            // Give the existing connection a chance to answer before replacing it.
+            repeat(if (restarted) 40 else 24) {
+                delay(250)
+                if (changedIntent()) { done.accept("Soundbar: Verbindung geändert oder getrennt"); return@launch }
+                if (standby()) { done.accept("Soundbar: Standby, nicht aufgeweckt"); return@launch }
+                if (receivedAll() && responding()) {
+                    done.accept(if (restarted) "Soundbar: wieder verbunden, Werte aktualisiert" else "Soundbar: Werte aktualisiert")
+                    return@launch
+                }
+            }
+            if (responding()) {
+                done.accept(if (restarted) "Soundbar: wieder verbunden" else "Soundbar: Antwort erhalten")
+                return@launch
+            }
+            if (!restarted && !changedIntent() && !standby()) {
+                baseline = reportSequence
+                connect()
+                expectedGeneration = generation
+                repeat(40) {
+                    delay(250)
+                    if (changedIntent()) { done.accept("Soundbar: Verbindung geändert oder getrennt"); return@launch }
+                    if (standby()) { done.accept("Soundbar: Standby, nicht aufgeweckt"); return@launch }
+                    if (receivedAll() && responding()) { done.accept("Soundbar: wieder verbunden, Werte aktualisiert"); return@launch }
+                }
+                if (responding()) { done.accept("Soundbar: wieder verbunden"); return@launch }
+            }
+            done.accept("Soundbar: keine neue Antwort bestätigt")
+        }
+    }
 
     private fun send(packet: JSONObject, readBack: String? = null) {
         if (_device.value.connection != Connection.CONNECTED) return

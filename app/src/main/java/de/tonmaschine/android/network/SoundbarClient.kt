@@ -32,6 +32,7 @@ class SoundbarClient(
     private var task: Job? = null
     @Volatile private var active = false
     @Volatile private var connected = false
+    @Volatile private var currentSocket: Socket? = null
     @Volatile private var powerOn: Boolean? = null
     private val initialMessages = listOf(
         "SPK_LIST_VIEW_INFO", "FUNC_VIEW_INFO", "EQ_VIEW_INFO", "SETTING_VIEW_INFO"
@@ -47,6 +48,7 @@ class SoundbarClient(
         active = false
         task?.cancel()
         task = null
+        try { currentSocket?.close() } catch (_: Exception) {}
         queue.clear()
     }
 
@@ -68,6 +70,8 @@ class SoundbarClient(
             try {
                 onConnection(false, null)
                 socket = Socket()
+                currentSocket = socket
+                if (!active || !scope.isActive) break
                 socket.connect(InetSocketAddress(ip, port), 5000)
                 socket.soTimeout = 300
                 connected = true
@@ -112,6 +116,7 @@ class SoundbarClient(
             } finally {
                 connected = false
                 try { socket?.close() } catch (_: Exception) {}
+                if (currentSocket === socket) currentSocket = null
             }
             if (active) delay(retryMs)
         }

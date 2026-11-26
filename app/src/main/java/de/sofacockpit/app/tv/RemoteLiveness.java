@@ -23,6 +23,10 @@ final class RemoteLiveness {
         ready = confirmed;
     }
 
+    synchronized boolean receivedSince(long time) {
+        return ready && lastInbound >= time;
+    }
+
     synchronized void outbound(long now) {
         lastOutbound = Math.max(lastOutbound, now);
     }
