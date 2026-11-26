@@ -25,7 +25,8 @@ import javax.security.auth.x500.X500Principal;
 /**
  * One explicit pairing or control session at a time. All network I/O and key
  * generation run off the UI thread; callbacks and public methods use the UI thread.
- * No automatic discovery, pairing or connection at app start.
+ * No automatic discovery or pairing. A previously active control session may
+ * be restored once when returning to the foreground, not in the background.
  */
 public final class TvRemoteClient implements AutoCloseable {
     public enum Phase { DISCONNECTED, CONNECTING, PAIRING, CODE, VERIFYING, READY, ERROR }
@@ -72,6 +73,7 @@ public final class TvRemoteClient implements AutoCloseable {
     private State state = new State(Phase.DISCONNECTED, "Nicht verbunden", false);
     private Session current;
     private boolean closed;
+    private final ForegroundRecovery recovery = new ForegroundRecovery();
 
     public TvRemoteClient(Context context, Listener listener) {
         prefs = context.getApplicationContext().getSharedPreferences("tv_pairing", Context.MODE_PRIVATE);
@@ -86,6 +88,7 @@ public final class TvRemoteClient implements AutoCloseable {
     }
 
     public void rememberAddress(String address) throws IOException {
+        recovery.cancel();
         String host = address == null ? "" : address.trim();
         if (!host.isEmpty()) localAddress(host);
         if (!prefs.edit().putString(HOST, host).commit()) throw new IOException("TV-IP konnte nicht gespeichert werden.");
@@ -152,7 +155,28 @@ public final class TvRemoteClient implements AutoCloseable {
     private void publish(Session s, Phase phase, String detail, boolean keys) {
         main.post(() -> { if (!closed && current == s && !s.cancelled) update(phase, detail, keys); });
     }
+    /** Keep live sockets across pause; restore a lost active session only on resume. */
+    public void onBackground() {
+        if (closed) return;
+        recovery.background(current != null && state.connected() &&
+            !Boolean.FALSE.equals(state.powerOn) ? current.host : null);
+    }
+
+    public void onForeground(boolean networkAllowed) {
+        if (closed) return;
+        recovery.foreground(SystemClock.elapsedRealtime(), networkAllowed);
+        restoreForegroundSession();
+    }
+
+    private void restoreForegroundSession() {
+        if (closed) return;
+        String host = recovery.take(SystemClock.elapsedRealtime(),
+            state.phase == Phase.ERROR && current == null, paired() ? lastAddress() : null);
+        if (host != null) start(host, false);
+    }
+
     public void start(String address, boolean pair) {
+        recovery.cancel();
         if (closed) return;
         String host = address == null ? "" : address.trim();
         if (host.isEmpty()) { update(Phase.ERROR, "Bitte eine TV-IP-Adresse auswählen oder eingeben.", false); return; }
@@ -175,6 +199,7 @@ public final class TvRemoteClient implements AutoCloseable {
         if (s.codes.offer(value)) update(Phase.VERIFYING, "Kopplungscode wird geprüft …", false);
     }
     public void disconnect() {
+        recovery.cancel();
         cancelCurrent();
         if (!closed) update(Phase.DISCONNECTED, "Nicht verbunden", false);
     }
@@ -185,7 +210,7 @@ public final class TvRemoteClient implements AutoCloseable {
         writers.getQueue().clear();
     }
     @Override public void close() {
-        closed = true; cancelCurrent();
+        closed = true; recovery.cancel(); cancelCurrent();
         sessions.shutdownNow(); writers.shutdownNow(); watchdogs.shutdownNow();
     }
 
@@ -288,7 +313,7 @@ public final class TvRemoteClient implements AutoCloseable {
         } catch (EOFException ex) {
             error = "Der Fernseher hat die Verbindung beendet. Bitte erneut verbinden.";
         } catch (IOException | IllegalArgumentException ex) {
-            error = ex.getMessage() == null ? "TV-Verbindung fehlgeschlagen." : ex.getMessage();
+            error = s.stage + ": " + diagnostic(ex);
         } catch (SecurityException ex) {
             error = "Lokaler Netzwerkzugriff nicht erlaubt. Berechtigung in Android prüfen.";
         } catch (RuntimeException ex) {
@@ -302,6 +327,8 @@ public final class TvRemoteClient implements AutoCloseable {
                     current = null;
                     writers.getQueue().clear();
                     update(Phase.ERROR, reason, false);
+                    // The failure notification can reach the UI after resume.
+                    restoreForegroundSession();
                 }
             });
         }

@@ -164,7 +164,7 @@ public final class TvConnectionDialog {
         autoConnect.setChecked(options.getBoolean("auto_connect", false));
         autoConnect.setOnCheckedChangeListener((b, enabled) -> options.edit().putBoolean("auto_connect", enabled).apply());
         layout.addView(autoConnect);
-        layout.addView(text("Nur normale Verbindungen, keine Einschaltbefehle. Je nach Gerät kann bereits ein Netzwerkzugriff aufwecken. Standard: aus."));
+        layout.addView(text("Nur normale Verbindungen, keine Einschaltbefehle. Je nach Gerät kann bereits ein Netzwerkzugriff aufwecken. Standard: aus. Eine zuvor aktive TV-Sitzung kann nach Rückkehr aus dem Hintergrund einmal wiederhergestellt werden; manuell getrennte Geräte bleiben getrennt."));
         layout.addView(heading("Konfiguration", 18));
         layout.addView(text("Passwortgeschützte Datei mit TV-/Soundbar-Adresse, exportierbarer TV-Kopplung, Streaming-Auswahl und Auto-Verbindung. NAS- und Klangprofileinstellungen bleiben getrennt."));
         layout.addView(button("Konfiguration exportieren", exportBackup));

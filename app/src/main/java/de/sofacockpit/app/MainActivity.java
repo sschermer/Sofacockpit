@@ -151,8 +151,8 @@ public class MainActivity extends ComponentActivity {
         LinearLayout tvHeader = (LinearLayout) tvHomeStatus.getParent();
         tvDeviceHeader = tvHeader;
         tvHeader.setOnClickListener(v -> tvDialog.open());
-        tvHomeStatus.setTextColor(ACCENT);
-        tvHomeStatus.setContentDescription("Fernseher verbinden");
+        // Connection is shown by the TV chip; power by its icon.
+        tvHomeStatus.setVisibility(View.GONE);
         tvMute = new TvIconButton(false, KeyEvent.KEYCODE_VOLUME_MUTE);
         tvPower = new TvIconButton(true, KeyEvent.KEYCODE_POWER);
         tvHeader.addView(tvMute, new LinearLayout.LayoutParams(dp(48), dp(48)));
@@ -497,22 +497,6 @@ public class MainActivity extends ComponentActivity {
             state.phase == TvRemoteClient.Phase.PAIRING || state.phase == TvRemoteClient.Phase.CODE ||
             state.phase == TvRemoteClient.Phase.VERIFYING);
         if (tvDeviceHeader != null) tvDeviceHeader.setVisibility(state.connected() ? View.VISIBLE : View.GONE);
-        if (tvHomeStatus != null) {
-            String shortStatus;
-            switch (state.phase) {
-                case READY: shortStatus = state.powerOn == null ? "Verbunden" :
-                    (state.powerOn ? "Ein" : "Standby"); break;
-                case CONNECTING: shortStatus = "Verbinde …"; break;
-                case PAIRING: shortStatus = "Kopple …"; break;
-                case CODE: shortStatus = "Code eingeben"; break;
-                case VERIFYING: shortStatus = "Prüfe Code …"; break;
-                case ERROR: shortStatus = "Verbindungsfehler"; break;
-                default: shortStatus = "Nicht verbunden";
-            }
-            tvHomeStatus.setText(shortStatus);
-            tvHomeStatus.setTextColor(state.phase == TvRemoteClient.Phase.READY ? Color.rgb(66, 215, 146) : ACCENT);
-            tvHomeStatus.setContentDescription(shortStatus + " – Fernseher verbinden");
-        }
         if (tvHomeDetail != null) {
             boolean showDetail = state.phase == TvRemoteClient.Phase.ERROR ||
                 (state.connected() && !"Verbunden".equals(state.detail));
@@ -552,6 +536,18 @@ public class MainActivity extends ComponentActivity {
             } else volumeValue.setText("Pegel unbekannt");
         }
         if (tvDialog != null) tvDialog.render(state);
+    }
+
+    @Override protected void onPause() {
+        if (tv != null) tv.onBackground();
+        super.onPause();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (tv != null) tv.onForeground(Build.VERSION.SDK_INT < 37 ||
+            checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED);
     }
 
     @Override protected void onDestroy() {
