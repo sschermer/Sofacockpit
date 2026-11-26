@@ -75,6 +75,8 @@ public final class TvRemoteClient implements AutoCloseable {
     private State state = new State(Phase.DISCONNECTED, "Nicht verbunden", false);
     private Session current;
     private boolean closed;
+    // UI-only distinction between an expected passive loss and a failed deliberate attempt.
+    private boolean actionableConnectionFailure;
     private final ForegroundRecovery recovery = new ForegroundRecovery();
     private final RefreshIntent refreshIntent = new RefreshIntent();
     private RefreshProbe refreshProbe;
@@ -97,6 +99,13 @@ public final class TvRemoteClient implements AutoCloseable {
     public boolean wakeConfigured() { return !wakeMac().isEmpty(); }
     public boolean wakeInProgress() { return current != null && current.wakeMac != null && !state.connected(); }
     public boolean canWake() { return WakeOnLan.useWake(state.connected(), busy(), wakeConfigured()); }
+
+    public TvConnectionIndicator indicator() {
+        boolean connecting = state.phase == Phase.CONNECTING || state.phase == Phase.PAIRING ||
+            state.phase == Phase.CODE || state.phase == Phase.VERIFYING;
+        return TvConnectionIndicator.resolve(state.connected(), connecting, state.phase == Phase.ERROR,
+            wakeConfigured(), actionableConnectionFailure);
+    }
     private static SharedPreferences.Editor clearWake(SharedPreferences.Editor edit) {
         return edit.remove(WAKE_MAC).remove(WAKE_HOST).remove(WAKE_PIN);
     }
@@ -113,6 +122,7 @@ public final class TvRemoteClient implements AutoCloseable {
             edit.putString(WAKE_MAC, mac).putString(WAKE_HOST, host).putString(WAKE_PIN, pin);
         }
         if (!edit.commit()) throw new IOException("Wake-on-LAN-Einstellung konnte nicht gespeichert werden.");
+        actionableConnectionFailure = false;
         listener.onState(state);
     }
 
@@ -120,7 +130,7 @@ public final class TvRemoteClient implements AutoCloseable {
     public void requestPower() {
         if (closed) return;
         if (state.connected()) { sendKey(KeyEvent.KEYCODE_POWER); return; }
-        if (canWake()) startSession(lastAddress(), false, wakeMac());
+        if (canWake()) startSession(lastAddress(), false, wakeMac(), true);
     }
     public boolean hasPortablePairing() {
         return paired() && PORTABLE_ALIAS.equals(prefs.getString(KEY_ALIAS, "")) && prefs.contains(WRAPPED_IDENTITY);
@@ -134,7 +144,7 @@ public final class TvRemoteClient implements AutoCloseable {
         SharedPreferences.Editor edit = prefs.edit().putString(HOST, host);
         if (changed) clearWake(edit);
         if (!edit.commit()) throw new IOException("TV-IP konnte nicht gespeichert werden.");
-        if (changed) { refreshIntent.clear(); listener.onState(state); }
+        if (changed) { refreshIntent.clear(); actionableConnectionFailure = false; listener.onState(state); }
     }
 
     /** Invoked only by a user-initiated encrypted backup worker. */
@@ -195,6 +205,7 @@ public final class TvRemoteClient implements AutoCloseable {
     }
     private void setState(State next) {
         state = next;
+        if (next.connected()) actionableConnectionFailure = false;
         if (next.connected() && current != null && paired() && current.host.equals(lastAddress()))
             refreshIntent.confirmed(current.host, next.powerOn);
         listener.onState(state);
@@ -219,22 +230,28 @@ public final class TvRemoteClient implements AutoCloseable {
         if (closed) return;
         String host = recovery.take(SystemClock.elapsedRealtime(),
             state.phase == Phase.ERROR && current == null, paired() ? lastAddress() : null);
-        if (host != null) start(host, false);
+        if (host != null) startPassive(host);
     }
 
     public void start(String address, boolean pair) {
-        startSession(address, pair, null);
+        startSession(address, pair, null, true);
     }
 
-    private void startSession(String address, boolean pair, String wakeMac) {
+    /** Auto-connect, import and ordinary recovery are not explicit wake requests. */
+    public void startPassive(String address) {
+        startSession(address, false, null, false);
+    }
+
+    private void startSession(String address, boolean pair, String wakeMac, boolean explicit) {
         recovery.cancel();
         if (closed) return;
+        actionableConnectionFailure = false;
         String host = address == null ? "" : address.trim();
         refreshIntent.begin(!pair && paired() && !host.isEmpty() ? host : null);
-        if (host.isEmpty()) { update(Phase.ERROR, "Bitte eine TV-IP-Adresse auswählen oder eingeben.", false); return; }
-        if (!pair && !paired()) { update(Phase.ERROR, "Noch kein Fernseher gekoppelt. Bitte zuerst koppeln.", false); return; }
+        if (host.isEmpty()) { actionableConnectionFailure = true; update(Phase.ERROR, "Bitte eine TV-IP-Adresse auswählen oder eingeben.", false); return; }
+        if (!pair && !paired()) { actionableConnectionFailure = true; update(Phase.ERROR, "Noch kein Fernseher gekoppelt. Bitte zuerst koppeln.", false); return; }
         cancelCurrent();
-        Session s = new Session(host, pair, wakeMac);
+        Session s = new Session(host, pair, wakeMac, explicit);
         current = s;
         update(pair ? Phase.PAIRING : Phase.CONNECTING,
             pair ? "Kopplung wird vorbereitet …" :
@@ -252,6 +269,7 @@ public final class TvRemoteClient implements AutoCloseable {
         if (s.codes.offer(value)) update(Phase.VERIFYING, "Kopplungscode wird geprüft …", false);
     }
     public void disconnect() {
+        actionableConnectionFailure = false;
         refreshIntent.clear();
         recovery.cancel();
         cancelCurrent();
@@ -322,7 +340,7 @@ public final class TvRemoteClient implements AutoCloseable {
             if (!restarted && ((state.phase == Phase.ERROR && s == null) ||
                 (state.connected() && now - started >= 10_000L))) {
                 restarted = true;
-                start(lastAddress(), false);
+                startPassive(lastAddress());
                 revision = refreshIntent.revision();
                 deadline = now + 32_000L;
             } else if (restarted && state.phase == Phase.ERROR && s == null) {
@@ -397,6 +415,7 @@ public final class TvRemoteClient implements AutoCloseable {
 
     private void run(Session s) {
         String error = null;
+        boolean hardFailure = false;
         try {
             if (s.cancelled) return;
             InetAddress host = localAddress(s.host);
@@ -446,17 +465,23 @@ public final class TvRemoteClient implements AutoCloseable {
         } catch (SocketTimeoutException ex) {
             error = s.stage + ": Zeitüberschreitung. TV, Heimnetz und lokale Netzwerkberechtigung prüfen.";
         } catch (SSLException ex) {
+            // An ordinary socket close can accompany standby; certificate rejection cannot.
+            for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
+                if (cause instanceof CertificateException) { hardFailure = true; break; }
+            }
             error = s.stage + ": TLS-Verbindung fehlgeschlagen. " + diagnostic(ex);
         } catch (ConnectException | NoRouteToHostException ex) {
             error = s.wakeMac == null ? "TV nicht erreichbar. IP-Adresse, Netzwerk und eingeschalteten TV prüfen." :
                 "TV nach Aufweckversuch nicht erreichbar. LAN-MAC, Energiemodus und Heimnetz prüfen.";
         } catch (GeneralSecurityException ex) {
+            hardFailure = true;
             error = s.stage + ": Sicherer Schlüsselspeicher oder TLS konnte nicht eingerichtet werden. " + diagnostic(ex);
         } catch (EOFException ex) {
             error = "Der Fernseher hat die Verbindung beendet. Bitte erneut verbinden.";
         } catch (IOException | IllegalArgumentException ex) {
             error = s.stage + ": " + diagnostic(ex);
         } catch (SecurityException ex) {
+            hardFailure = true;
             error = "Lokaler Netzwerkzugriff nicht erlaubt. Berechtigung in Android prüfen.";
         } catch (RuntimeException ex) {
             error = s.stage + ": TV-Verbindung fehlgeschlagen. " + diagnostic(ex);
@@ -464,10 +489,12 @@ public final class TvRemoteClient implements AutoCloseable {
             s.ready = false; s.keys = false; s.apps = false; s.closeSocket();
             final String reason = s.writeFailed ? "TV-Befehl konnte nicht gesendet werden. Bitte erneut verbinden." :
                 (error == null ? "Verbindung beendet." : error);
+            final boolean reportFailure = hardFailure || (s.explicit && !s.everReady);
             main.post(() -> {
                 if (!closed && current == s && !s.cancelled) {
                     current = null;
                     writers.getQueue().clear();
+                    actionableConnectionFailure = reportFailure;
                     update(Phase.ERROR, reason, false);
                     // The failure notification can reach the UI after resume.
                     restoreForegroundSession();
@@ -566,6 +593,7 @@ public final class TvRemoteClient implements AutoCloseable {
                     if (reply != null) s.send(reply);
                     if (timedOut.get() != RemoteLiveness.Expiry.NONE) throw new IOException("TV-Zeitüberschreitung");
                     s.ready = handshake.ready();
+                    if (s.ready) s.everReady = true;
                     s.keys = handshake.supportsKeys();
                     s.apps = handshake.supportsApps();
                     if (s.ready && !announced) {
@@ -640,17 +668,17 @@ public final class TvRemoteClient implements AutoCloseable {
 
     private static final class Session {
         final String host;
-        final boolean pair;
+        final boolean pair, explicit;
         final String wakeMac;
         final BlockingQueue<String> codes = new ArrayBlockingQueue<>(1);
-        volatile boolean cancelled, ready, keys, apps, writeFailed;
+        volatile boolean cancelled, ready, keys, apps, writeFailed, everReady;
         String stage = "TV-Verbindung";
         volatile Socket raw;
         volatile SSLSocket tls;
         volatile RemoteLiveness liveness;
         final Object outputLock = new Object();
-        Session(String host, boolean pair, String wakeMac) {
-            this.host = host; this.pair = pair; this.wakeMac = wakeMac;
+        Session(String host, boolean pair, String wakeMac, boolean explicit) {
+            this.host = host; this.pair = pair; this.wakeMac = wakeMac; this.explicit = explicit;
         }
         void send(byte[] message) throws IOException {
             synchronized (outputLock) {

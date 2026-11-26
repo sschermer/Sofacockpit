@@ -21,6 +21,7 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import de.sofacockpit.app.tv.TvRemoteClient;
+import de.sofacockpit.app.tv.TvConnectionIndicator;
 import de.sofacockpit.app.tv.TvConnectionDialog;
 import java.util.ArrayList;
 import java.util.List;
@@ -63,9 +64,9 @@ public class MainActivity extends ComponentActivity {
     private SharedPreferences connectionOptions;
     private TextView tvConnectionButton, soundConnectionButton;
     private View tvDeviceHeader;
-    private TextView tvHomeStatus, tvHomeDetail, tvRemoteStatus, volumeValue;
+    private TextView tvHomeStatus, tvHomeDetail, tvRemoteStatus;
     private TvIconButton tvPower, tvMute;
-    private ProgressBar volumeLevel;
+    private final List<VolumeControl> volumeControls = new ArrayList<>();
     private LinearLayout streamRow;
     private HorizontalScrollView streamScroll;
     private LinearLayout sourcesAppList;
@@ -105,7 +106,7 @@ public class MainActivity extends ComponentActivity {
             // Opt-in only. No power command, wake packet, or automatic pairing.
             if (Build.VERSION.SDK_INT < 37 || checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") ==
                     android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                if (tv.paired() && !tv.lastAddress().isEmpty()) tv.start(tv.lastAddress(), false);
+                if (tv.paired() && !tv.lastAddress().isEmpty()) tv.startPassive(tv.lastAddress());
                 if (!soundbarModel.getIp().getValue().isEmpty() &&
                         soundbarModel.getDevice().getValue().getConnection() == Connection.DISCONNECTED) soundbarModel.connect();
             }
@@ -141,8 +142,9 @@ public class MainActivity extends ComponentActivity {
         BG=t.background; SURFACE=t.panel; SURFACE_ALT=t.control; TEXT=t.text; MUTED=t.muted; ACCENT=t.accent;
         tvKeys.clear();
         refreshLayouts.clear();
-        tvConnectionButton=soundConnectionButton=tvHomeStatus=tvHomeDetail=tvRemoteStatus=volumeValue=sourcesStatus=systemStatus=null;
-        tvDeviceHeader=null; tvPower=tvMute=null; volumeLevel=null; remoteDial=null;
+        volumeControls.clear();
+        tvConnectionButton=soundConnectionButton=tvHomeStatus=tvHomeDetail=tvRemoteStatus=sourcesStatus=systemStatus=null;
+        tvDeviceHeader=null; tvPower=tvMute=null; remoteDial=null;
         streamRow=sourcesAppList=null; streamScroll=null;
         java.util.Arrays.fill(categoryViews,null);
         java.util.Arrays.fill(categoryPagers,null);
@@ -376,36 +378,101 @@ public class MainActivity extends ComponentActivity {
         renderStreamingShortcuts();
 
         LinearLayout volume = section(content, "LAUTSTÄRKE");
-        LinearLayout volumeRow = new LinearLayout(this);
-        volumeRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView quieter = tvButton("−", KeyEvent.KEYCODE_VOLUME_DOWN);
-        quieter.setContentDescription("Leiser");
-        volumeRow.addView(quieter, new LinearLayout.LayoutParams(dp(54), dp(52)));
-        LinearLayout volumeReadout = new LinearLayout(this);
-        volumeReadout.setOrientation(LinearLayout.VERTICAL);
-        volumeReadout.setGravity(Gravity.CENTER);
-        volumeLevel = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
-        volumeLevel.setIndeterminate(false);
-        volumeLevel.setProgressTintList(ColorStateList.valueOf(ACCENT));
-        volumeLevel.setProgressBackgroundTintList(ColorStateList.valueOf(SURFACE_ALT));
-        volumeLevel.setContentDescription("Vom TV gemeldeter Lautstärkepegel");
-        volumeReadout.addView(volumeLevel, new LinearLayout.LayoutParams(-1, dp(12)));
-        volumeValue = label("Pegel unbekannt", 12, MUTED);
-        volumeValue.setGravity(Gravity.CENTER);
-        volumeReadout.addView(volumeValue);
-        LinearLayout.LayoutParams volumeLp = new LinearLayout.LayoutParams(0, -2, 1);
-        volumeLp.leftMargin = dp(8);
-        volumeLp.rightMargin = dp(8);
-        volumeRow.addView(volumeReadout, volumeLp);
-        TextView louder = tvButton("+", KeyEvent.KEYCODE_VOLUME_UP);
-        louder.setContentDescription("Lauter");
-        volumeRow.addView(louder, new LinearLayout.LayoutParams(dp(54), dp(52)));
-        volume.addView(volumeRow);
+        addVolumeControl(volume);
         LinearLayout.LayoutParams soundbarLp = new LinearLayout.LayoutParams(-1, -2);
         soundbarLp.topMargin = dp(2);
         soundbarLp.bottomMargin = dp(12);
         content.addView(SofacockpitComposeViewsKt.createSoundbarHomeComposeView(this, vm, theme), soundbarLp);
         return scroll;
+    }
+
+    /** Both screens use the same live model and TV-relative commands (CEC forwarding). */
+    private void addVolumeControl(LinearLayout parent) {
+        VolumeControl control = new VolumeControl();
+        volumeControls.add(control);
+        parent.addView(control.row, new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    private final class VolumeControl {
+        final LinearLayout row = new LinearLayout(MainActivity.this);
+        final TextView unknown, ambiguous;
+        final VolumeReading tvReading, soundReading;
+
+        VolumeControl() {
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            TextView quieter = tvButton("−", KeyEvent.KEYCODE_VOLUME_DOWN);
+            quieter.setContentDescription("Leiser über den Fernseher");
+            quieter.setTextSize(20 * theme.theme.fontScale);
+            row.addView(quieter, new LinearLayout.LayoutParams(dp(54), dp(52)));
+            LinearLayout readings = new LinearLayout(MainActivity.this);
+            readings.setOrientation(LinearLayout.VERTICAL);
+            readings.setGravity(Gravity.CENTER_VERTICAL);
+            unknown = label("TV · Pegel unbekannt", 12, MUTED);
+            unknown.setGravity(Gravity.CENTER);
+            readings.addView(unknown, new LinearLayout.LayoutParams(-1, -2));
+            tvReading = new VolumeReading(readings);
+            soundReading = new VolumeReading(readings);
+            ambiguous = label("Audioausgabe unklar", 11, MUTED);
+            ambiguous.setGravity(Gravity.CENTER);
+            ambiguous.setVisibility(View.GONE);
+            readings.addView(ambiguous, new LinearLayout.LayoutParams(-1, -2));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
+            lp.leftMargin = lp.rightMargin = dp(8);
+            row.addView(readings, lp);
+            TextView louder = tvButton("+", KeyEvent.KEYCODE_VOLUME_UP);
+            louder.setContentDescription("Lauter über den Fernseher");
+            louder.setTextSize(20 * theme.theme.fontScale);
+            row.addView(louder, new LinearLayout.LayoutParams(dp(54), dp(52)));
+        }
+
+        void render(TvRemoteClient.State t, DeviceState s, VolumePresentation.Mode mode) {
+            boolean showTv = mode == VolumePresentation.Mode.TV || mode == VolumePresentation.Mode.BOTH;
+            boolean showSound = mode == VolumePresentation.Mode.SOUNDBAR || mode == VolumePresentation.Mode.BOTH;
+            unknown.setVisibility(mode == VolumePresentation.Mode.UNKNOWN ? View.VISIBLE : View.GONE);
+            tvReading.group.setVisibility(showTv ? View.VISIBLE : View.GONE);
+            soundReading.group.setVisibility(showSound ? View.VISIBLE : View.GONE);
+            ambiguous.setVisibility(mode == VolumePresentation.Mode.BOTH ? View.VISIBLE : View.GONE);
+            if (showTv) tvReading.render("TV", t.volumeLevel, t.volumeMax, Boolean.TRUE.equals(t.muted));
+            if (showSound) soundReading.render("Soundbar · " + VolumePresentation.arcLabel(s.getCurrentInput()),
+                s.getVolume(), 100, false);
+        }
+    }
+
+    private final class VolumeReading {
+        final LinearLayout group = new LinearLayout(MainActivity.this);
+        final TextView value;
+        final ProgressBar bar;
+
+        VolumeReading(LinearLayout parent) {
+            group.setOrientation(LinearLayout.VERTICAL);
+            group.setVisibility(View.GONE);
+            value = label("", 12, TEXT);
+            value.setGravity(Gravity.CENTER);
+            group.addView(value, new LinearLayout.LayoutParams(-1, -2));
+            bar = new ProgressBar(MainActivity.this, null, android.R.attr.progressBarStyleHorizontal);
+            bar.setIndeterminate(false);
+            bar.setProgressTintList(ColorStateList.valueOf(ACCENT));
+            bar.setProgressBackgroundTintList(ColorStateList.valueOf(SURFACE_ALT));
+            // The adjacent text supplies the exact reported value to accessibility services.
+            bar.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            group.addView(bar, new LinearLayout.LayoutParams(-1, dp(10)));
+            parent.addView(group, new LinearLayout.LayoutParams(-1, -2));
+        }
+
+        void render(String source, int level, int max, boolean muted) {
+            value.setText(source + " · " + level + " / " + max + (muted ? " · Stumm" : ""));
+            bar.setMax(max);
+            bar.setProgress(level);
+            bar.setProgressTintList(ColorStateList.valueOf(muted ? MUTED : ACCENT));
+        }
+    }
+
+    private void renderVolumes(TvRemoteClient.State t) {
+        DeviceState s = soundbarModel.getDevice().getValue();
+        VolumePresentation.Mode mode = VolumePresentation.select(t.connected(), t.powerOn,
+            t.volumeLevel, t.volumeMax, s.getConnection() == Connection.CONNECTED,
+            s.getPowerOn(), s.getCurrentInput(), s.getVolume());
+        for (VolumeControl control : volumeControls) control.render(t, s, mode);
     }
 
     private void sizeStreamingTiles() {
@@ -612,21 +679,31 @@ public class MainActivity extends ComponentActivity {
         int[] directionKeys = {KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_RIGHT,
             KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_CENTER};
         remoteDial = new ThemedDial(this, theme, id -> tv.sendKey(directionKeys[id]));
-        LinearLayout.LayoutParams dialLp = new LinearLayout.LayoutParams(-1, 0, 1f);
-        dialLp.topMargin = dp(4);
-        dialLp.bottomMargin = dp(8);
+        // Natural square size, anchored below the header instead of centered in a weighted spacer.
+        // Keep the entire dial on narrow/short screens and allow vertical scrolling when needed.
+        LinearLayout.LayoutParams dialLp = new LinearLayout.LayoutParams(-1, -2);
+        dialLp.bottomMargin = dp(2);
         body.addView(remoteDial, dialLp);
         addTvKeyRow(body, new String[]{"Zurück", "Home"},
-            new int[]{KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_HOME}, 60);
+            new int[]{KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_HOME}, 52);
         addTvKeyRow(body, new String[]{"⏪", "▶ / Ⅱ", "⏩"},
             new int[]{KeyEvent.KEYCODE_MEDIA_REWIND, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
-                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD}, 58);
+                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD}, 48);
+        LinearLayout volume = new LinearLayout(this);
+        volume.setOrientation(LinearLayout.VERTICAL);
+        TextView title = label("LAUTSTÄRKE", 12, MUTED);
+        title.setTypeface(ThemeArt.typeface(theme.theme, Typeface.BOLD));
+        volume.addView(title, new LinearLayout.LayoutParams(-1, -2));
+        addVolumeControl(volume);
+        LinearLayout.LayoutParams volumeLp = new LinearLayout.LayoutParams(-1, -2);
+        volumeLp.topMargin = dp(8);
+        body.addView(volume, volumeLp);
         TextView keyboard = actionButton("Tastatur – in Vorbereitung", "");
         keyboard.setTextSize(13 * theme.theme.fontScale);
         keyboard.setEnabled(false);
         keyboard.setAlpha(.45f);
-        LinearLayout.LayoutParams keyboardLp = new LinearLayout.LayoutParams(-1, dp(44));
-        keyboardLp.topMargin = dp(8);
+        LinearLayout.LayoutParams keyboardLp = new LinearLayout.LayoutParams(-1, dp(48));
+        keyboardLp.topMargin = dp(6);
         body.addView(keyboard, keyboardLp);
         return scrollPage(body);
     }
@@ -814,32 +891,38 @@ public class MainActivity extends ComponentActivity {
         paintConnection(soundConnectionButton, "Sound", state.getConnection() == Connection.CONNECTED,
             state.getConnection() == Connection.CONNECTING && state.getError() == null);
         if (tvDialog != null) tvDialog.renderSound();
+        if (tv != null) renderVolumes(tv.state());
     }
     private void renderTvState(TvRemoteClient.State state) {
         boolean ready = state.connected() && state.keys;
-        paintConnection(tvConnectionButton, "TV", state.connected(), state.phase == TvRemoteClient.Phase.CONNECTING ||
-            state.phase == TvRemoteClient.Phase.PAIRING || state.phase == TvRemoteClient.Phase.CODE ||
-            state.phase == TvRemoteClient.Phase.VERIFYING);
+        TvConnectionIndicator indicator = tv.indicator();
+        int statusColor = indicator.color(theme.theme);
+        if (tvConnectionButton != null) {
+            tvConnectionButton.setTextColor(statusColor);
+            tvConnectionButton.setContentDescription("TV – " + indicator.label +
+                (indicator == TvConnectionIndicator.WAKE_READY ? ", Wake-on-LAN eingerichtet" : "") +
+                "; Verbindungen öffnen");
+        }
         boolean wakeConfigured = tv.wakeConfigured();
         if (tvDeviceHeader != null) tvDeviceHeader.setVisibility(state.connected() || wakeConfigured ? View.VISIBLE : View.GONE);
         if (tvHomeStatus != null) {
             tvHomeStatus.setVisibility(!state.connected() && wakeConfigured ? View.VISIBLE : View.GONE);
-            tvHomeStatus.setText(tv.wakeInProgress() ? "Aufwecken …" : "Nicht verbunden");
+            tvHomeStatus.setText(tv.wakeInProgress() ? "Aufwecken …" : indicator.label);
+            tvHomeStatus.setTextColor(statusColor);
         }
         if (tvHomeDetail != null) {
-            boolean showDetail = state.phase == TvRemoteClient.Phase.ERROR || tv.wakeInProgress() ||
+            boolean showDetail = indicator == TvConnectionIndicator.ERROR || tv.wakeInProgress() ||
                 (state.connected() && !"Verbunden".equals(state.detail));
             tvHomeDetail.setText(state.detail);
             tvHomeDetail.setVisibility(showDetail ? View.VISIBLE : View.GONE);
         }
-        String shortStatus = state.connected() ? "Verbunden" :
-            (state.phase == TvRemoteClient.Phase.ERROR ? "Verbindungsfehler" :
-                state.phase == TvRemoteClient.Phase.DISCONNECTED ? "Nicht verbunden" : "Verbinde …");
+        String shortStatus = tv.wakeInProgress() ? "Aufwecken …" : indicator.label;
         for (TextView status : new TextView[]{tvRemoteStatus, sourcesStatus, systemStatus}) {
             if (status == null) continue;
             status.setText(shortStatus);
-            status.setTextColor(state.connected() ? ACCENT : MUTED);
-            status.setContentDescription(state.detail + " – TV-Verbindung öffnen");
+            status.setTextColor(statusColor);
+            status.setContentDescription((indicator == TvConnectionIndicator.WAKE_READY
+                ? "Einschaltbereit – Wake-on-LAN eingerichtet" : state.detail) + " – TV-Verbindung öffnen");
         }
         if (remoteDial != null) remoteDial.setEnabled(ready);
         for (TextView key : tvKeys) {
@@ -864,16 +947,7 @@ public class MainActivity extends ComponentActivity {
                 (state.muted ? "Stummschaltung aufheben" : "Stummschaltung einschalten"));
             tvMute.invalidate();
         }
-        if (volumeLevel != null) {
-            boolean reported = state.connected() && state.volumeLevel != null && state.volumeMax != null;
-            volumeLevel.setVisibility(reported ? View.VISIBLE : View.GONE);
-            if (reported) {
-                volumeLevel.setMax(state.volumeMax);
-                volumeLevel.setProgress(state.volumeLevel);
-                volumeValue.setText(state.volumeLevel + " / " + state.volumeMax +
-                    (Boolean.TRUE.equals(state.muted) ? " · Stumm" : ""));
-            } else volumeValue.setText("Pegel unbekannt");
-        }
+        renderVolumes(state);
         if (tvDialog != null) tvDialog.render(state);
     }
 

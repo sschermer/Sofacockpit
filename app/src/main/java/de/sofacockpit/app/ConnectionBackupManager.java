@@ -246,7 +246,7 @@ final class ConnectionBackupManager implements AutoCloseable {
         // Do not replace a session the user has started in the meantime.
         boolean tvStarted = false, soundStarted = false;
         if (!plan.tvAddress.isEmpty() && plan.tvAddress.equals(tv.lastAddress()) && tv.paired() && !tv.busy()) {
-            try { tv.start(plan.tvAddress, false); tvStarted = true; }
+            try { tv.startPassive(plan.tvAddress); tvStarted = true; }
             catch (RuntimeException ignored) { /* Connection status remains authoritative. */ }
         }
         if (!plan.soundAddress.isEmpty() && plan.soundAddress.equals(soundbar.getIp().getValue()) &&

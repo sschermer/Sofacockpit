@@ -85,7 +85,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v1.1.2
+          name: Sofacockpit-Android-v1.1.3
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -94,9 +94,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create sofacockpit-v1.1.2 \
+          gh release create sofacockpit-v1.1.3 \
             dist/Sofacockpit.apk dist/*.sofatheme \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "Sofacockpit v1.1.2 (MAC-Eingabe, Power-Symbole, Soundbar-Verbindung)" \
-            --notes "Test-Patch: eigener Hex-Tastenblock mit automatischer MAC-Formatierung; einheitliche weiß/grüne Power-Symbole; einmaliger Vordergrundcheck für vorher bestätigte Soundbar-Verbindungen mit vorhandener begrenzter Wiederverbindung. Keine neuen Aufweckbefehle. Keine Änderungen an Verbindungsfarben oder Lautstärkezuordnung. Gerätetests zu Eingabe und Soundbar-Wiederverbindung offen. Signatur unverändert."
+            --title "Sofacockpit v1.1.3 (Einschaltbereit und Lautstärke)" \
+            --notes "Test-Patch: TV bei eingerichtetem Wake-on-LAN ohne aktive Sitzung neutral als einschaltbereit darstellen; ausdrücklich fehlgeschlagene Verbindungen/Aufwecken bleiben Fehler. Dynamische TV-/ARC/eARC-Soundbar-Pegelanzeige auf Start und TV-Fernbedienung; bei zwei gemeldeten Pegeln beide beschriftet. Steuerkreis nach oben, kompakte Medien-/Navigationstasten und zusätzliche Lautstärkekontrolle. Bestehende TV-Lautstärkebefehle und Soundbar-Steuerung unverändert. Gerätetest offen; Signatur unverändert."

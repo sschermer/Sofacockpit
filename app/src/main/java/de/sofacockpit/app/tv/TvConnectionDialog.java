@@ -214,9 +214,12 @@ public final class TvConnectionDialog {
         if (dialog == null || !dialog.isShowing()) return;
         boolean busy = client.busy();
         boolean paired = client.paired();
-        status.setText(state.detail);
-        status.setTextColor(state.connected() ? palette().accent :
-            (busy ? CockpitTheme.PENDING : CockpitTheme.ERROR));
+        TvConnectionIndicator indicator = client.indicator();
+        status.setText(indicator == TvConnectionIndicator.WAKE_READY
+            ? "Einschaltbereit – Wake-on-LAN eingerichtet. Keine aktive Steuerverbindung." +
+                (state.phase == TvRemoteClient.Phase.ERROR ? "\nLetzte Verbindung: " + state.detail : "")
+            : state.detail);
+        status.setTextColor(indicator.color(palette()));
         pairingStatus.setText(client.hasPortablePairing() ? "TV-Kopplung exportierbar" :
             (paired ? "Alte Kopplung – für Export einmal neu koppeln." : "Noch nicht gekoppelt"));
         connect.setText(paired ? "Verbinden" : "Koppeln");
