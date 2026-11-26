@@ -77,6 +77,28 @@ class SharedProfileRepository(
     /** Read-modify-write inside the *same directory lock* the Windows app uses. */
     fun update(name: String, newProfile: SoundProfile?, replaceExisting: Boolean = false): Map<String, SoundProfile> {
         require(name.isNotBlank())
+        return mutate { latest ->
+            if (newProfile == null) {
+                if (latest.remove(name) == null) throw IOException("Profil auf dem NAS nicht mehr vorhanden")
+            } else {
+                require(newProfile.valid())
+                if (name in latest && !replaceExisting) throw IOException("Profil existiert bereits – Überschreiben bestätigen")
+                latest[name] = newProfile
+            }
+        }
+    }
+
+    fun transfer(from: String, target: String, rename: Boolean): Map<String, SoundProfile> {
+        require(from.isNotBlank() && target.isNotBlank() && from != target && target.length <= 80)
+        return mutate { latest ->
+            val saved = latest[from] ?: throw IOException("Quellprofil nicht mehr vorhanden")
+            if (target in latest) throw IOException("Zielprofil existiert bereits")
+            latest[target] = saved
+            if (rename) latest.remove(from)
+        }
+    }
+
+    private fun mutate(change: (MutableMap<String, SoundProfile>) -> Unit): Map<String, SoundProfile> {
         files.ensureFolder()
         var acquired = false
         for (attempt in 0 until lockAttempts) {
@@ -86,13 +108,7 @@ class SharedProfileRepository(
         if (!acquired) throw IOException("Der NAS-Profilordner ist noch gesperrt (.Tonmaschine_write_lock)")
         try {
             val latest = load().toMutableMap()
-            if (newProfile == null) {
-                if (latest.remove(name) == null) throw IOException("Profil auf dem NAS nicht mehr vorhanden")
-            } else {
-                require(newProfile.valid())
-                if (name in latest && !replaceExisting) throw IOException("Profil existiert bereits – Überschreiben bestätigen")
-                latest[name] = newProfile
-            }
+            change(latest)
             files.writeAtomically(FILE_NAME, ProfileCodec.encode(latest))
             return latest
         } finally {

@@ -345,6 +345,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } else remoteUpdate(name, null)
     }
 
+    /** Copy/rename saved data, not current live device values; NAS changes use one lock. */
+    fun transferProfile(from: String, newName: String, rename: Boolean) {
+        val target = newName.trim()
+        if (_profileBusy.value || !canEditProfiles || target.isBlank() || target.length > 80 ||
+            from !in _profiles.value || target in _profiles.value) {
+            _message.value = "Profilname oder Speicherort prüfen"
+            return
+        }
+        if (_source.value == ProfileSource.LOCAL) {
+            try {
+                val updated = _profiles.value.toMutableMap()
+                updated[target] = updated.getValue(from)
+                if (rename) updated.remove(from)
+                store.save(updated)
+                _profiles.value = updated
+                if (rename && _selectedProfile.value == from) _selectedProfile.value = target
+                _message.value = if (rename) "Profil umbenannt" else "Profil kopiert"
+            } catch (e: Exception) { _message.value = "Profiländerung fehlgeschlagen: ${e.message}" }
+        } else {
+            val connection = _nasConnection.value
+            _profileBusy.value = true
+            viewModelScope.launch {
+                try {
+                    val result = withContext(Dispatchers.IO) {
+                        SmbProfileFiles(connection).use {
+                            SharedProfileRepository(it).transfer(from, target, rename)
+                        }
+                    }
+                    if (_source.value == ProfileSource.NAS && _nasConnection.value == connection) {
+                        _profiles.value = result
+                        if (rename && _selectedProfile.value == from) _selectedProfile.value = target
+                        _nasOnline.value = true
+                        _nasStatus.value = "NAS verbunden · ${result.size} Profile"
+                        _message.value = if (rename) "NAS-Profil umbenannt" else "NAS-Profil kopiert"
+                        try { withContext(Dispatchers.IO) { nasSettings.saveCache(result) } }
+                        catch (_: Exception) { _nasStatus.value += " · Cache nicht aktualisiert" }
+                    }
+                } catch (e: Exception) {
+                    _message.value = "NAS-Profiländerung nicht bestätigt: ${remoteError(e)}"
+                    _nasOnline.value = false
+                    _nasStatus.value = "NAS prüfen und Profile aktualisieren"
+                } finally { _profileBusy.value = false }
+            }
+        }
+    }
+
     private fun remoteUpdate(name: String, updatedProfile: SoundProfile?, overwrite: Boolean = false) {
         if (_profileBusy.value || !_nasOnline.value) return
         val connection = _nasConnection.value

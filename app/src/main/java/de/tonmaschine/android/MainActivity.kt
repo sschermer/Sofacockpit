@@ -74,8 +74,10 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, connectionSettings: (() -> Unit)? = null) {
+fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
+                connectionSettings: (() -> Unit)? = null) {
     val state by vm.device.collectAsState()
     val ip by vm.ip.collectAsState()
     val message by vm.message.collectAsState()
@@ -158,13 +160,26 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, connectionSettings: (() 
     var expanded by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<String?>(null) }
     var overwriteTarget by remember { mutableStateOf<String?>(null) }
+    var actionTarget by remember { mutableStateOf<String?>(null) }
+    var transferTarget by remember { mutableStateOf<String?>(null) }
+    var transferRename by remember { mutableStateOf(false) }
+    var transferName by remember { mutableStateOf("") }
+    var descending by remember { mutableStateOf(false) }
     var nasPath by remember(nasConfig.folder) { mutableStateOf(nasConfig.folder) }
     var nasUser by remember(nasConfig.user) { mutableStateOf(nasConfig.user) }
     var nasDomain by remember(nasConfig.domain) { mutableStateOf(nasConfig.domain) }
     var nasPassword by remember(nasConfig.password) { mutableStateOf(nasConfig.password) }
     val active = state.connection == Connection.CONNECTED
+    val controls = active && state.powerOn != false
+    val embedded = section != 0
+    val title = when (section) {
+        1 -> "Klangsteuerung"
+        2 -> "Klangprofile"
+        3 -> "Feinabstimmung"
+        else -> "TONMASCHINE"
+    }
     LaunchedEffect(state.powerOn) {
-        if (state.powerOn == false) settings = false
+        if (state.powerOn == false && !embedded) settings = false
     }
     MaterialTheme(colorScheme = darkColorScheme(
         primary = blue, onPrimary = Color(0xFF101B29),
@@ -184,13 +199,14 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, connectionSettings: (() 
         ) {
             // Only confirmed standby shows the red wake button.
             // Lost Wi-Fi connectivity is not the same as "powered off".
-            if (active && state.powerOn == false) {
+            if (!embedded && active && state.powerOn == false) {
                 StandbyPowerButton(onWake = { vm.setPower(true) })
             } else {
-            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+            Column(if (embedded) Modifier.fillMaxSize()
+                else Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("TONMASCHINE", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text("LG S95QR  ·  " + when (state.connection) {
                         Connection.CONNECTED -> "Verbunden"
                         Connection.CONNECTING -> "Verbinde …"
@@ -202,27 +218,39 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, connectionSettings: (() 
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
-                        onClick = { settings = !settings },
+                        onClick = {
+                            if (embedded && section != 2 && connectionSettings != null) connectionSettings()
+                            else settings = !settings
+                        },
                         modifier = Modifier.size(48.dp)
                             .background(panel, RoundedCornerShape(14.dp))
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Settings,
-                            contentDescription = if (settings) "Einstellungen schließen" else "Einstellungen",
+                            contentDescription = if (embedded && section != 2) "Verbindungen öffnen"
+                                else if (settings) "Einstellungen schließen" else "Einstellungen",
                             tint = foreground,
                             modifier = Modifier.size(27.dp)
                         )
                     }
                     IconButton(
-                        onClick = { vm.setPower(false) },
-                        enabled = active,
+                        onClick = { state.powerOn?.let { vm.setPower(!it) } },
+                        enabled = active && state.powerOn != null,
                         modifier = Modifier.size(48.dp)
-                            .background(if (active) powerGreen else panel, RoundedCornerShape(14.dp))
+                            .background(when {
+                                !active || state.powerOn == null -> panel
+                                state.powerOn == false -> powerRed
+                                else -> powerGreen
+                            }, RoundedCornerShape(14.dp))
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.PowerSettingsNew,
-                            contentDescription = "Soundbar ausschalten",
-                            tint = if (active) bg else muted,
+                            contentDescription = when (state.powerOn) {
+                                true -> "Soundbar ausschalten"
+                                false -> "Soundbar einschalten"
+                                null -> "Powerstatus unbekannt"
+                            },
+                            tint = if (active && state.powerOn != null) bg else muted,
                             modifier = Modifier.size(27.dp)
                         )
                     }
@@ -327,21 +355,22 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, connectionSettings: (() 
             } else {
                 LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    item {
+                    if (section == 0 || section == 1) item {
                         Panel("Gesamtlautstärke") {
-                            val actual = state.volume ?: 0
-                            var draft by remember(actual) { mutableFloatStateOf(actual.toFloat()) }
+                            val actual = state.volume
+                            val volumeReady = controls && actual != null
+                            var draft by remember(actual) { mutableFloatStateOf((actual ?: 0).toFloat()) }
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                TextButton(onClick = { vm.setVolume((actual - 1).coerceAtLeast(0)) }, enabled = active) { Text("−") }
+                                TextButton(onClick = { actual?.let { vm.setVolume((it - 1).coerceAtLeast(0)) } }, enabled = volumeReady) { Text("−") }
                                 Slider(draft, onValueChange = { draft = it },
-                                    onValueChangeFinished = { vm.setVolume(draft.toInt()) },
-                                    modifier = Modifier.weight(1f).reserveSliderGesture(active), valueRange = 0f..100f, enabled = active)
-                                TextButton(onClick = { vm.setVolume((actual + 1).coerceAtMost(100)) }, enabled = active) { Text("+") }
-                                Text("${draft.toInt()}", modifier = Modifier.width(35.dp), fontWeight = FontWeight.Bold)
+                                    onValueChangeFinished = { if (volumeReady) vm.setVolume(draft.toInt()) },
+                                    modifier = Modifier.weight(1f).reserveSliderGesture(volumeReady), valueRange = 0f..100f, enabled = volumeReady)
+                                TextButton(onClick = { actual?.let { vm.setVolume((it + 1).coerceAtMost(100)) } }, enabled = volumeReady) { Text("+") }
+                                Text(actual?.let { "${draft.toInt()}" } ?: "–", modifier = Modifier.width(35.dp), fontWeight = FontWeight.Bold)
                             }
                         }
                     }
-                    item {
+                    if (section == 0 || section == 1) item {
                         Panel("Eingang und Audioformat") {
                             var inputExpanded by remember { mutableStateOf(false) }
                             Row(
@@ -351,7 +380,7 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, connectionSettings: (() 
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text("Zuspieler", color = muted, style = MaterialTheme.typography.bodyMedium)
                                     Box {
-                                        OutlinedButton(onClick = { inputExpanded = true }, enabled = state.canSelectInput) {
+                                        OutlinedButton(onClick = { inputExpanded = true }, enabled = controls && state.canSelectInput) {
                                             Text(Catalog.inputs[state.currentInput] ?: "Nicht erkannt")
                                         }
                                         DropdownMenu(expanded = inputExpanded, onDismissRequest = { inputExpanded = false }) {
@@ -370,32 +399,32 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, connectionSettings: (() 
                             }
                         }
                     }
-                    item {
+                    if (section == 0 || section == 1) item {
                         Panel("Klangoptionen") {
-                            ToggleRow("Night Time", state.nightTime, active) { vm.setOption("b_night_time", it) }
-                            ToggleRow("DRC", state.drc, active) { vm.setOption("b_drc", it) }
-                            ToggleRow("Surround", state.surround, active) { vm.setOption("b_rear", it) }
+                            ToggleRow("Night Time", state.nightTime, controls) { vm.setOption("b_night_time", it) }
+                            ToggleRow("DRC", state.drc, controls) { vm.setOption("b_drc", it) }
+                            ToggleRow("Surround", state.surround, controls) { vm.setOption("b_rear", it) }
                         }
                     }
-                    item {
+                    if (section == 0 || section == 1) item {
                         Panel("Klangmodus") {
                             val modes = state.selectableModes.entries.toList()
                             modes.chunked(2).forEach { pair ->
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                     pair.forEach { (label, id) ->
                                         val checked = state.currentMode == id
-                                        if (checked) Button(onClick = { vm.chooseMode(id) }, enabled = active,
-                                            modifier = Modifier.weight(1f).height(64.dp)) { Text(label, maxLines = 2) }
-                                        else OutlinedButton(onClick = { vm.chooseMode(id) }, enabled = active,
-                                            modifier = Modifier.weight(1f).height(64.dp)) { Text(label, maxLines = 2) }
+                                        if (checked) Button(onClick = { vm.chooseMode(id) }, enabled = controls,
+                                            modifier = Modifier.weight(1f).height(if (embedded) 48.dp else 64.dp)) { Text(label, maxLines = 2) }
+                                        else OutlinedButton(onClick = { vm.chooseMode(id) }, enabled = controls,
+                                            modifier = Modifier.weight(1f).height(if (embedded) 48.dp else 64.dp)) { Text(label, maxLines = 2) }
                                     }
                                     if (pair.size == 1) Spacer(Modifier.weight(1f))
                                 }
                             }
-                            Text("Bass ${state.bass ?: "–"}  ·  Höhen ${state.treble ?: "–"}", color = muted)
+                            if (!embedded) Text("Bass ${state.bass ?: "–"}  ·  Höhen ${state.treble ?: "–"}", color = muted)
                         }
                     }
-                    item {
+                    if (section == 0 || section == 2) item {
                         Panel("Klangprofile") {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Text("${profiles.size} Profile · " + (if (profileSource == ProfileSource.NAS) "NAS" else "Lokal"),
@@ -409,29 +438,78 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, connectionSettings: (() 
                                 Text(nasStatus, color = if (nasOnline) Color(0xFF9DE4BC) else muted)
                                 if (!nasOnline) Text("Nur Lesekopie – Änderungen nicht möglich", color = muted)
                             }
-                            profiles.keys.sorted().forEach { title ->
-                                OutlinedButton(onClick = { vm.applyProfile(title) }, enabled = active,
+                            if (section == 2) {
+                                TextButton(onClick = { descending = !descending }) {
+                                    Text(if (descending) "Sortierung: Z–A" else "Sortierung: A–Z")
+                                }
+                                Button(onClick = { name = ""; profileDialog = true },
+                                    enabled = controls && !profileBusy && vm.canEditProfiles,
+                                    modifier = Modifier.fillMaxWidth()) { Text("Aktuelle Einstellungen speichern") }
+                                if (profiles.isEmpty()) Text("Noch keine Profile gespeichert.", color = muted)
+                                Text("Tippen: anwenden · lange drücken: verwalten", color = muted,
+                                    style = MaterialTheme.typography.bodySmall)
+                                val sorted = profiles.keys.sortedWith(String.CASE_INSENSITIVE_ORDER)
+                                (if (descending) sorted.reversed() else sorted).forEach { profileName ->
+                                    Surface(color = if (selected == profileName) Color(0xFF233D32) else Color(0xFF303746),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.fillMaxWidth().combinedClickable(
+                                            onClick = { if (controls) vm.applyProfile(profileName) },
+                                            onLongClick = { actionTarget = profileName }
+                                        )) {
+                                        Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically) {
+                                            Column(Modifier.weight(1f)) {
+                                                Text(profileName, fontWeight = FontWeight.SemiBold)
+                                                if (selected == profileName) Text("Zuletzt gewählt", color = muted,
+                                                    style = MaterialTheme.typography.bodySmall)
+                                            }
+                                            TextButton(onClick = { actionTarget = profileName }) { Text("⋮") }
+                                        }
+                                    }
+                                }
+                            } else profiles.keys.sorted().forEach { profileName ->
+                                OutlinedButton(onClick = { vm.applyProfile(profileName) }, enabled = controls,
                                     modifier = Modifier.fillMaxWidth()) {
-                                    Text((if (selected == title) "✓  " else "") + title)
+                                    Text((if (selected == profileName) "✓  " else "") + profileName)
                                 }
                             }
                         }
                     }
-                    item {
+                    if (section == 0 || section == 3) item {
                         Panel("Lautsprecherpegel") {
-                            TextButton(onClick = { expanded = !expanded }) {
+                            if (section != 3) TextButton(onClick = { expanded = !expanded }) {
                                 Text(if (expanded) "Pegel ausblenden" else "Alle 7 Pegel anzeigen")
                             }
-                            if (expanded) Catalog.levels.forEach { spec ->
+                            if (section == 3 || expanded) Catalog.levels.forEach { spec ->
                                 val value = state.levels[spec.field]
-                                Text("${spec.name}: ${value?.let { "%+d dB".format(it) } ?: "–"}")
+                                val levelReady = controls && value != null
                                 var draft by remember(spec.field, value) { mutableFloatStateOf((value ?: 0).toFloat()) }
-                                Slider(draft, onValueChange = { draft = it },
-                                    onValueChangeFinished = { vm.setLevel(spec, draft.toInt()) },
-                                    modifier = Modifier.reserveSliderGesture(active && value != null),
-                                    enabled = active && value != null, valueRange = spec.min.toFloat()..spec.max.toFloat(),
-                                    steps = (spec.max - spec.min - 1).coerceAtLeast(0))
+                                Text("${spec.name}: ${value?.let { "%+d dB".format(draft.toInt()) } ?: "–"}")
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    TextButton(onClick = { value?.let { vm.setLevel(spec, (it - 1).coerceAtLeast(spec.min)) } },
+                                        enabled = levelReady && value != spec.min) { Text("−") }
+                                    Slider(draft, onValueChange = { draft = it },
+                                        onValueChangeFinished = { if (levelReady) vm.setLevel(spec, draft.toInt()) },
+                                        modifier = Modifier.weight(1f).reserveSliderGesture(levelReady),
+                                        enabled = levelReady, valueRange = spec.min.toFloat()..spec.max.toFloat(),
+                                        steps = (spec.max - spec.min - 1).coerceAtLeast(0))
+                                    TextButton(onClick = { value?.let { vm.setLevel(spec, (it + 1).coerceAtMost(spec.max)) } },
+                                        enabled = levelReady && value != spec.max) { Text("+") }
+                                }
                             }
+                        }
+                    }
+                    if (section == 3) item {
+                        Panel("Equalizer") {
+                            Text("Bass: ${state.bass ?: "–"}")
+                            Text("Höhen: ${state.treble ?: "–"}")
+                            Text("Gemeldete Werte · direkte Änderung noch nicht implementiert.", color = muted)
+                        }
+                    }
+                    if (section == 3) item {
+                        Panel("Erweiterte Einstellungen") {
+                            Text("Neural:X und IMAX Enhanced", fontWeight = FontWeight.SemiBold)
+                            Text("Noch keine verifizierte Android-Steuerung verfügbar.", color = muted)
                         }
                     }
                 }
@@ -494,6 +572,43 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, connectionSettings: (() 
                 }
             )
         }
+        if (actionTarget != null) {
+            val target = actionTarget!!
+            AlertDialog(onDismissRequest = { actionTarget = null },
+                title = { Text(target) },
+                text = {
+                    Column {
+                        TextButton(onClick = { actionTarget = null; vm.applyProfile(target) },
+                            enabled = controls) { Text("Anwenden") }
+                        TextButton(onClick = {
+                            actionTarget = null; transferTarget = target; transferName = target; transferRename = true
+                        }, enabled = !profileBusy && vm.canEditProfiles) { Text("Umbenennen") }
+                        TextButton(onClick = {
+                            actionTarget = null; transferTarget = target; transferName = "$target – Kopie"; transferRename = false
+                        }, enabled = !profileBusy && vm.canEditProfiles) { Text("Kopieren") }
+                        TextButton(onClick = { actionTarget = null; overwriteTarget = target },
+                            enabled = controls && !profileBusy && vm.canEditProfiles) { Text("Mit aktuellen Werten überschreiben") }
+                        TextButton(onClick = { actionTarget = null; deleteTarget = target },
+                            enabled = !profileBusy && vm.canEditProfiles) { Text("Löschen") }
+                    }
+                }, confirmButton = { TextButton(onClick = { actionTarget = null }) { Text("Schließen") } })
+        }
+        if (transferTarget != null) {
+            val target = transferTarget!!
+            val clean = transferName.trim()
+            val validName = clean.isNotBlank() && clean !in profiles && clean.length <= 80
+            AlertDialog(onDismissRequest = { transferTarget = null },
+                title = { Text(if (transferRename) "Profil umbenennen" else "Profil kopieren") },
+                text = {
+                    OutlinedTextField(transferName, { transferName = it }, label = { Text("Neuer Name") },
+                        singleLine = true, isError = !validName)
+                },
+                confirmButton = {
+                    TextButton(onClick = { vm.transferProfile(target, clean, transferRename); transferTarget = null },
+                        enabled = validName && !profileBusy && vm.canEditProfiles) { Text("Speichern") }
+                },
+                dismissButton = { TextButton(onClick = { transferTarget = null }) { Text("Abbrechen") } })
+        }
         if (profileDialog) {
             AlertDialog(onDismissRequest = { profileDialog = false },
                 title = { Text("Klangprofile verwalten") },
@@ -507,7 +622,7 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, connectionSettings: (() 
                             val trimmed = name.trim()
                             if (trimmed in profiles) overwriteTarget = trimmed
                             else vm.saveProfile(trimmed)
-                        }, enabled = active && name.isNotBlank() && !profileBusy && vm.canEditProfiles) {
+                        }, enabled = controls && name.isNotBlank() && !profileBusy && vm.canEditProfiles) {
                             Text("Aktuelle Werte speichern")
                         }
                         HorizontalDivider()
@@ -529,7 +644,7 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, connectionSettings: (() 
                 text = { Text("Das Profil „${target}“ wird mit den momentan gemeldeten Soundbar-Einstellungen ersetzt. Bestehende Profile bleiben ansonsten unverändert.") },
                 confirmButton = {
                     TextButton(onClick = { vm.saveProfile(target, overwrite = true); overwriteTarget = null },
-                        enabled = !profileBusy && vm.canEditProfiles) { Text("Überschreiben") }
+                        enabled = controls && !profileBusy && vm.canEditProfiles) { Text("Überschreiben") }
                 },
                 dismissButton = { TextButton(onClick = { overwriteTarget = null }) { Text("Abbrechen") } }
             )
