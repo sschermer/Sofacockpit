@@ -2,14 +2,17 @@
 
 Sofacockpit ist eine Android-App, die einen **TCL-Fernseher mit Google TV** und die **LG-Soundbar S95QR** in einer Fernbedienung zusammenführt. Die App richtet sich zunächst an den TCL 85C89L, der im Gerätemenü als 85C8L angezeigt wird.
 
-## Bedienkonzept
+## Bedienkonzept (ab v0.6.0)
 
-Die App öffnet den **Startbildschirm** in der Mitte. Von dort sind die beiden Detailseiten mit einem Wisch erreichbar.
+Die drei Tabs **Start**, **TV** und **Sound** bleiben am oberen Bildschirmrand sichtbar. Kurzes Tippen öffnet den ersten Screen des jeweiligen Bereichs. Langes Drücken auf TV oder Sound öffnet ein Dropdown mit direkter Seitenauswahl. Die Pfeile an den beiden Tabs weisen auf das Schnellmenü hin. Die Wischgesten wechseln nur innerhalb der ausgewählten Kategorie; die Startseite hat keine Nachbarseiten. Die drei unteren Navigationspunkte sind in TV und Sound direkt anklickbar. Es gibt kein kategorienübergreifendes Wischen oder Umlaufen am Ende einer Kategorie.
 
-| Geste vom Startbildschirm | Seite |
-| --- | --- |
-| Nach rechts wischen | **Tonmaschine** für die erweiterten Soundbar-Einstellungen |
-| Nach links wischen | **TV-Steuerkreuz** mit vier Richtungen, OK, Zurück und Home |
+| Tab | Seite 1 | Seite 2 | Seite 3 |
+| --- | --- | --- | --- |
+| Start | Startbildschirm | – | – |
+| TV | Steuerkreuz | TV 2 | TV 3 |
+| Sound | Tonmaschine | Sound 2 | Sound 3 |
+
+Die Bezeichnungen und Inhalte der zusätzlichen vier Seiten werden später festgelegt. Sie sind bewusst Platzhalter. Die bisherigen funktionalen Screens und ihre Gerätesitzungen werden beim Navigieren nicht neu erstellt. Horizontale Lautstärke-/Kanalpegelregler erhalten Vorrang gegenüber dem Seitenwechsel; vertikales Scrollen bleibt möglich. Die tatsächliche Touch-Bedienung muss am Gerät geprüft werden.
 
 ### Startbildschirm
 
@@ -18,19 +21,19 @@ Die App öffnet den **Startbildschirm** in der Mitte. Von dort sind die beiden D
 - **Lautstärke** mit − und + für einzelne TV-Tastenschritte sowie einer Anzeige des tatsächlich gemeldeten Pegels, sofern verfügbar. Direktes Setzen eines absoluten Wertes ist noch nicht unterstützt.
 - **Soundbar** mit Ein/Aus, Night, DRC, Surround und Audioformat. Das Format wird aus der Soundbar-Meldung übernommen, nicht geschätzt.
 
-Wischen auf der Streaming-Leiste scrollt die Dienste. Der Lautstärkepegel ist zunächst nur eine Anzeige, kein absoluter Regler. Ein horizontaler Wisch auf der übrigen Fläche wechselt die Seite.
+Wischen auf der Streaming-Leiste scrollt die Dienste. Der Lautstärkepegel ist zunächst nur eine Anzeige, kein absoluter Regler. Die Startseite wechselt nicht durch horizontales Wischen in andere Kategorien.
 
 ### Tonmaschine
 
-Die linke Seite enthält den Android-Screen aus der bestehenden Tonmaschine mit Verbindungseinstellungen, Status, Klangmodi, Lautsprecherpegeln, Profilen, Nachtmodus, DRC, Surround und gemeldetem Audioformat. Die Tonmaschine wird erst verbunden, wenn du in ihren Einstellungen eine IP-Adresse eingibst und **Verbinden** auswählst. Die Wiederverwendung der bestehenden Android-Implementierung ist durch den Quellcode belegt; ein Test an der LG S95QR steht noch aus.
+Die erste Seite des Sound-Tabs enthält den Android-Screen aus der bestehenden Tonmaschine mit Verbindungseinstellungen, Status, Klangmodi, Lautsprecherpegeln, Profilen, Nachtmodus, DRC, Surround und gemeldetem Audioformat. Die Soundbar wird über die zentrale Verbindungsseite eingerichtet. Die Wiederverwendung der bestehenden Android-Implementierung ist durch den Quellcode belegt; ein Test an der LG S95QR steht noch aus.
 
-Der rechte D-Pad-Bereich nutzt eine große, runde Navigation mit OK sowie Zurück und Home. Die D-Pad-Tasten sind erst nach einer vom TV bestätigten Steuersitzung mit gemeldeter Tastenunterstützung aktiv.
+Die erste Seite des TV-Tabs nutzt eine große, runde Navigation mit OK sowie Zurück und Home. Die D-Pad-Tasten sind erst nach einer vom TV bestätigten Steuersitzung mit gemeldeter Tastenunterstützung aktiv.
 
 ## Verbindung und Projektstand
 
 Die Steuerung ist für das lokale Heimnetz geplant. Für den Fernseher ist der **Android TV Remote Service (Remote Protocol v2)** mit Kopplungscode implementiert. Die Schnittstelle ist nicht als offizielle Drittanbieter-API dokumentiert; Kompatibilität mit zukünftigen Service-Versionen kann nicht garantiert werden. Für die Soundbar soll Sofacockpit auf der bereits erprobten lokalen Steuerung der Tonmaschine aufbauen.
 
-Das Android-Projekt verbindet die native Sofacockpit-Navigation mit dem Compose-Screen der Tonmaschine. Beim Öffnen ist der Startbildschirm in der Mitte sichtbar. Er zeigt auf der Tonmaschine-Seite und auf dem Startbildschirm denselben Verbindungszustand. Die Streaming-Leiste und der Lautstärkeregler behalten ihre eigenen Gesten. Der Nutzer hat die TV-Steuerverbindung und das Steuerkreuz mit v0.3.3 am TCL bestätigt. Seit v0.4.0 sind App-Link-Start, relative TV-Lautstärke, Stumm und Power implementiert; Gerätetests dieser neuen Funktionen stehen aus.
+Das Android-Projekt verbindet die native Sofacockpit-Navigation mit dem Compose-Screen der Tonmaschine. Beim Öffnen ist standardmäßig der Startbildschirm sichtbar. Er zeigt auf der Tonmaschine-Seite und auf dem Startbildschirm denselben Verbindungszustand. Die Streaming-Leiste und der Lautstärkeregler behalten ihre eigenen Gesten. Der Nutzer hat die TV-Steuerverbindung und das Steuerkreuz mit v0.3.3 am TCL bestätigt. Seit v0.4.0 sind App-Link-Start, relative TV-Lautstärke, Stumm und Power implementiert; Gerätetests dieser neuen Funktionen stehen aus.
 
 Mit der offiziellen Google-TV-App wurden am TCL bereits die Navigation und die Weitergabe von Lautstärkebefehlen an die LG-Soundbar getestet. Dabei war das Handy per WLAN und der Fernseher per LAN im selben Heimnetz verbunden. Das ist kein Test von Sofacockpit.
 
@@ -88,9 +91,9 @@ Nutzertests zur Energieeinstellung: In „Optimiert“ ließ sich der TCL über 
 
 Oben auf dem Startbildschirm steht **Verbindung** mit den jederzeit anklickbaren Tasten **TV** und **Sound**. Grün bedeutet bestätigte Gerätesitzung beziehungsweise gültige Soundbar-Protokollantwort, rot getrennt/Fehler, gelb Verbindungsaufbau. Beide Tasten öffnen dieselbe bildschirmfüllende Verbindungsseite. TV-Suche, IP-Eingabe, Kopplung, Trennen sowie die separat speicherbare Soundbar-IP sind dort erreichbar. „Beide Geräte verbinden“ startet die jeweiligen normalen Verbindungen. Die Tonmaschine-Einstellungen verweisen für die Verbindung auf dieselbe Seite.
 
-„Beim App-Start automatisch verbinden“ ist standardmäßig aus. Bei Aktivierung werden nur bereits eingerichtete Geräte adressiert, keine Power-Befehle, Magic Packets oder automatische Kopplung ausgelöst. Einzelne Geräte können bereits durch einen normalen Netzwerkzugriff aufwachen; eine Garantie für unterbrechungsfreien Standby gibt es deshalb nicht. Falls der Fernseher dadurch unerwünscht aufwacht, die Option deaktivieren. Import und Speichern einer Adresse lösen keine Verbindung aus.
+„Beim App-Start automatisch verbinden“ ist standardmäßig aus. Bei Aktivierung werden nur bereits eingerichtete Geräte adressiert, keine Power-Befehle, Magic Packets oder automatische Kopplung ausgelöst. Einzelne Geräte können bereits durch einen normalen Netzwerkzugriff aufwachen; eine Garantie für unterbrechungsfreien Standby gibt es deshalb nicht. Falls der Fernseher dadurch unerwünscht aufwacht, die Option deaktivieren. Das Speichern einer Adresse löst keine Verbindung aus. Beim Import entscheidet die separate Bestätigungsoption über einen einmaligen Verbindungsaufbau.
 
-Die verschlüsselte Datei **Sofacockpit.sofacfg** enthält TV-Adresse, Soundbar-Adresse, Streaming-Liste samt Reihenfolge und Links sowie die Auto-Verbindungsoption. Bei einer neuen/portablen TV-Kopplung enthält sie auch den privaten RSA-Client-Schlüssel, sein Zertifikat und den TV-Zertifikatspin. Alte, nicht exportierbare TV-Schlüssel können nicht ausgelesen werden; einmalige Neukopplung erforderlich. Ohne portable Identität ist nur ein Einstellungsbackup möglich. Bei der Wiederherstellung einer portablen Identität bleibt die TV-Kopplung erhalten, sofern der TV die Identität weiterhin akzeptiert und die Adresse stimmt. Import validiert Daten und Schlüssel vor der Übernahme, fordert Bestätigung an und trennt beide Geräte; er sendet keine TV-Befehle. Ein Einstellungsbackup ohne Identität erhält eine alte Kopplung nur bei identischer Adresse. NAS-Zugangsdaten und Klangprofile werden durch diese Sicherung nicht ersetzt.
+Die verschlüsselte Datei **Sofacockpit.sofacfg** enthält TV-Adresse, Soundbar-Adresse, Streaming-Liste samt Reihenfolge und Links sowie die Auto-Verbindungsoption. Bei einer neuen/portablen TV-Kopplung enthält sie auch den privaten RSA-Client-Schlüssel, sein Zertifikat und den TV-Zertifikatspin. Alte, nicht exportierbare TV-Schlüssel können nicht ausgelesen werden; einmalige Neukopplung erforderlich. Ohne portable Identität ist nur ein Einstellungsbackup möglich. Bei der Wiederherstellung einer portablen Identität bleibt die TV-Kopplung erhalten, sofern der TV die Identität weiterhin akzeptiert und die Adresse stimmt. Import validiert Daten und Schlüssel vor der Übernahme, fordert Bestätigung an und trennt beide Geräte; er sendet keine TV-Steuerbefehle. Ein Einstellungsbackup ohne Identität erhält eine alte Kopplung nur bei identischer Adresse. NAS-Zugangsdaten und Klangprofile werden durch diese Sicherung nicht ersetzt.
 
 Die Datei ist ausschließlich passwortverschlüsselt (AES-256-GCM, zufälliges Salt und IV, PBKDF2-HMAC-SHA256 mit 600.000 Iterationen, mindestens 12 Passwortzeichen). Die lokale portable RSA-Identität ist mit einem separaten nicht exportierbaren AES-GCM-Schlüssel im Android Keystore geschützt. Keine Klartextdatei oder private Zugangsdaten im Repository. Der TV-Schlüssel ist anders als der frühere hardwaregeschützte RSA-Schlüssel nach Entschlüsselung im App-Prozess verfügbar, weil die Portabilität sonst nicht möglich ist. Die Sicherung enthält eine nutzbare Kopplungsidentität; Datei und Passwort sicher getrennt aufbewahren und nicht weitergeben. Bei Verlust des Passworts muss neu gekoppelt werden. JVM-Tests prüfen Verschlüsselung, Manipulation/falsches Passwort, Größenlimits sowie die RSA-Zertifikatswiederherstellung. Die neue Kopplung und Wiederherstellung nach Deinstallation müssen am TCL noch bestätigt werden.
 
@@ -101,6 +104,10 @@ Unter Android 15+ erzwingt das Ziel-SDK 36 ein Edge-to-Edge-Layout. In v0.5.0 ko
 ### TV-Verbindung bei Rückkehr zur App (v0.5.2)
 
 Beim Wechsel in den Android-Hintergrund wurde ein Verbindungsabbruch („Software caused connection abort“) beobachtet, während nach vollständigem App-Neustart die gespeicherte Kopplung wieder funktionierte. Der genaue Auslöser des Socketabbruchs ist nicht nachgewiesen. Der bisherige TV-Client schloss die Sitzung nicht bei onPause/onStop, bot aber keine Wiederverbindung bei onResume. Eine zuvor bestätigte TV-Sitzung (nicht zuletzt als Standby gemeldet) bleibt beim Pausieren zunächst unverändert bestehen. Wenn sie im Hintergrund oder innerhalb von 30 Sekunden nach Rückkehr durch einen Fehler beendet wird, versucht der Client einmalig, die vorhandene gepinnte TV-Identität am selben gespeicherten Host wiederzuverwenden. Eine gesunde Sitzung wird nicht ersetzt. Kein Wiederverbindungsversuch im Hintergrund, kein automatisches Koppeln, keine Power-Kommandos oder Wiederholungsschleifen. Manuelles Trennen, explizite Verbindungsversuche, Adressänderung und Import löschen die Wiederverbindungsabsicht. Die Auto-Verbindungsoption für einen neuen App-Start bleibt unverändert. Bei bestätigtem Standby kein solcher Wiederverbindungsversuch. JVM-Tests decken die Wiederverbindungsentscheidung ab; der konkrete Hintergrundwechsel muss auf dem Nutzergerät getestet werden. Auf dem Startbildschirm entfällt der Text „Ein/Standby“ neben den TV-Steuerungssymbolen.
+
+### Automatisch verbinden nach Konfigurationsimport (v0.6.0)
+
+Der Bestätigungsdialog für einen vollständig validierten Import enthält die standardmäßig aktivierte, abwählbare Option „TV und Soundbar nach dem Import automatisch verbinden“. Diese ist unabhängig von der persistenten Einstellung „Beim App-Start automatisch verbinden“. Erst nachdem sämtliche Einstellungen erfolgreich übernommen wurden, werden die vorhandene TV-Kopplung am importierten Host sowie die Soundbar-Adresse für einen einmaligen Verbindungsstart verwendet. Fehlt eine Adresse oder TV-Kopplung, wird das betreffende Gerät ausgelassen; die Soundbar kann trotzdem verbunden werden. Keine automatische Neukopplung. Fehlende lokale Netzwerkberechtigung wird gegebenenfalls angefragt, nach Freigabe werden die gespeicherten Adressen nochmals geprüft. Die normalen Verbindungsstatus zeigen bestätigte Verbindungen an. Keine Power- oder anderen Steuerbefehle; ein gewöhnlicher Netzwerkzugriff kann geräteabhängig aufwecken. Bei deaktivierter Option bleibt alles getrennt. Die Sicherungsdatei bleibt formatkompatibel mit v0.5.x. JVM-Tests prüfen die Verbindungsentscheidung, Touch-Navigation und Import-Wiederverbindung sind am echten Gerät zu testen.
 
 ### Dauerhafte APK-Signatur
 

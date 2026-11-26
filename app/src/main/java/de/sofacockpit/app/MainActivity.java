@@ -484,7 +484,11 @@ public class MainActivity extends ComponentActivity {
             addDpad(card);
         }
         outer.addView(card, new LinearLayout.LayoutParams(-1, -2));
-        return outer;
+        // With tabs visible, smaller displays must still reach the full D-pad.
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.addView(outer, new ScrollView.LayoutParams(-1, -2));
+        return scroll;
     }
 
     private void addDpad(LinearLayout card) {

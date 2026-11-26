@@ -3,6 +3,9 @@ package de.sofacockpit.app;
 import android.app.AlertDialog;
 import android.content.SharedPreferences;
 import android.net.Uri;
+import android.os.Build;
+import android.content.pm.PackageManager;
+import android.widget.CheckBox;
 import android.text.InputType;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -14,6 +17,7 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import de.sofacockpit.app.tv.TvRemoteClient;
 import de.tonmaschine.android.MainViewModel;
 import de.tonmaschine.android.model.Catalog;
+import de.tonmaschine.android.model.Connection;
 import org.json.JSONObject;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -33,6 +37,9 @@ final class ConnectionBackupManager implements AutoCloseable {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final ActivityResultLauncher<String> create;
     private final ActivityResultLauncher<String[]> open;
+    private static final String LOCAL_NETWORK = "android.permission.ACCESS_LOCAL_NETWORK";
+    private final ActivityResultLauncher<String> networkPermission;
+    private ImportConnectionPlan pendingConnection;
     private volatile boolean closed;
     private boolean busy;
 
@@ -44,6 +51,13 @@ final class ConnectionBackupManager implements AutoCloseable {
             uri -> { if (uri != null && !closed) password(uri, true); });
         open = activity.registerForActivityResult(new ActivityResultContracts.OpenDocument(),
             uri -> { if (uri != null && !closed) password(uri, false); });
+        networkPermission = activity.registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
+            ImportConnectionPlan plan = pendingConnection;
+            pendingConnection = null;
+            if (closed || activity.isFinishing() || plan == null) return;
+            if (Boolean.TRUE.equals(granted)) startImportedConnections(plan);
+            else toast("Konfiguration geladen. Lokaler Netzwerkzugriff nicht erlaubt.");
+        });
     }
 
     void requestExport() {
@@ -153,11 +167,23 @@ final class ConnectionBackupManager implements AutoCloseable {
                 TvRemoteClient.PreparedConfiguration tvConfig = tv.prepareConfiguration(root.getJSONObject("tv"));
                 activity.runOnUiThread(() -> {
                     if (closed || activity.isFinishing()) return;
+                    LinearLayout fields = new LinearLayout(activity);
+                    fields.setOrientation(LinearLayout.VERTICAL);
+                    int padding = (int)(20 * activity.getResources().getDisplayMetrics().density);
+                    fields.setPadding(padding, 0, padding, padding);
+                    CheckBox connectNow = new CheckBox(activity);
+                    connectNow.setText("TV und Soundbar nach dem Import automatisch verbinden");
+                    connectNow.setChecked(true);
+                    fields.addView(connectNow);
+                    TextView connectionNote = new TextView(activity);
+                    connectionNote.setText("Nur vorhandene Geräteadressen und TV-Kopplung verwenden. Keine automatische Neukopplung oder Einschaltbefehle; ein Netzwerkzugriff kann je nach Gerät aufwecken.");
+                    fields.addView(connectionNote);
                     AlertDialog confirmation = new AlertDialog.Builder(activity).setTitle("Konfiguration übernehmen?")
                         .setMessage("Geräteadressen, Streaming-Liste und Auto-Verbindung werden ersetzt. Beide Geräte werden getrennt. " +
                             (tvConfig.includesPairing() ? "Die gespeicherte TV-Identität wird wiederhergestellt." :
                             "Die Datei enthält keine TV-Kopplung. Eine vorhandene Kopplung bleibt nur bei identischer TV-Adresse erhalten.") +
-                            " Es werden keine Gerätebefehle gesendet.")
+                            " Es werden keine Steuerbefehle gesendet.")
+                        .setView(fields)
                         .setNegativeButton("Abbrechen", null)
                         .setPositiveButton("Übernehmen", (d,w) -> {
                             try {
@@ -167,10 +193,14 @@ final class ConnectionBackupManager implements AutoCloseable {
                                 shortcuts.replaceEntries(streams);
                                 options.edit().putBoolean("auto_connect", auto).apply();
                                 changed.run();
-                                toast("Konfiguration geladen. Jetzt Geräte verbinden.");
                             } catch (Exception ex) {
                                 toast("Import konnte nicht vollständig gespeichert werden. Einstellungen prüfen.");
+                                return;
                             }
+                            // Independent of the persistent auto-connect-on-start preference.
+                            ImportConnectionPlan plan = ImportConnectionPlan.create(connectNow.isChecked(),
+                                tv.paired(), tv.lastAddress(), soundbar.getIp().getValue());
+                            connectAfterImport(plan);
                         }).create();
                     confirmation.setOnDismissListener(d -> busy = false);
                     confirmation.show();
@@ -183,9 +213,48 @@ final class ConnectionBackupManager implements AutoCloseable {
             }
         });
     }
+    private void connectAfterImport(ImportConnectionPlan plan) {
+        if (!plan.hasTargets()) {
+            toast(plan.tvNeedsPairing ? "Konfiguration geladen. TV muss noch gekoppelt werden." :
+                "Konfiguration geladen.");
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 37 && activity.checkSelfPermission(LOCAL_NETWORK) != PackageManager.PERMISSION_GRANTED) {
+            pendingConnection = plan;
+            try { networkPermission.launch(LOCAL_NETWORK); }
+            catch (RuntimeException ex) {
+                pendingConnection = null;
+                toast("Konfiguration geladen. Netzwerkberechtigung bitte manuell prüfen.");
+            }
+            return;
+        }
+        startImportedConnections(plan);
+    }
+
+    private void startImportedConnections(ImportConnectionPlan plan) {
+        // Recheck the saved configuration after a possible permission dialog.
+        // Do not replace a session the user has started in the meantime.
+        boolean tvStarted = false, soundStarted = false;
+        if (!plan.tvAddress.isEmpty() && plan.tvAddress.equals(tv.lastAddress()) && tv.paired() && !tv.busy()) {
+            try { tv.start(plan.tvAddress, false); tvStarted = true; }
+            catch (RuntimeException ignored) { /* Connection status remains authoritative. */ }
+        }
+        if (!plan.soundAddress.isEmpty() && plan.soundAddress.equals(soundbar.getIp().getValue()) &&
+                soundbar.getDevice().getValue().getConnection() == Connection.DISCONNECTED) {
+            try { soundbar.connect(); soundStarted = true; }
+            catch (RuntimeException ignored) { /* The other device's connection is independent. */ }
+        }
+        String message = tvStarted && soundStarted ? "Konfiguration geladen. Verbinde TV und Soundbar …" :
+            tvStarted ? "Konfiguration geladen. Verbinde TV …" :
+            soundStarted ? "Konfiguration geladen. Verbinde Soundbar …" :
+            "Konfiguration geladen. Verbindungsstatus prüfen.";
+        if (plan.tvNeedsPairing) message += " TV muss noch gekoppelt werden.";
+        toast(message);
+    }
+
     private void finish(String message) {
         activity.runOnUiThread(() -> { busy = false; if (!closed && !activity.isFinishing()) toast(message); });
     }
     private void toast(String message) { Toast.makeText(activity,message,Toast.LENGTH_LONG).show(); }
-    @Override public void close() { closed = true; worker.shutdown(); }
+    @Override public void close() { closed = true; pendingConnection = null; worker.shutdown(); }
 }
