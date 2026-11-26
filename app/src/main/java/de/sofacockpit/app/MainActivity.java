@@ -854,6 +854,7 @@ public class MainActivity extends ComponentActivity {
 
     @Override protected void onPause() {
         if (updates != null) updates.onPause();
+        if (connectionRefresh != null) connectionRefresh.cancel();
         if (tv != null) tv.onBackground();
         super.onPause();
     }

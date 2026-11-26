@@ -219,7 +219,7 @@ public final class TvRemoteClient implements AutoCloseable {
     }
     @Override public void close() {
         closed = true; recovery.cancel(); refreshIntent.clear();
-        if (refreshProbe != null) { main.removeCallbacks(refreshProbe); refreshProbe = null; }
+        cancelConnectionRefresh();
         cancelCurrent();
         sessions.shutdownNow(); writers.shutdownNow(); watchdogs.shutdownNow();
     }
@@ -240,6 +240,13 @@ public final class TvRemoteClient implements AutoCloseable {
         if (refreshIntent.standby()) { done.accept("TV: Standby, nicht aufgeweckt"); return; }
         refreshProbe = new RefreshProbe(done);
         refreshProbe.run();
+    }
+
+    public void cancelConnectionRefresh() {
+        if (refreshProbe != null) {
+            main.removeCallbacks(refreshProbe);
+            refreshProbe = null;
+        }
     }
 
     private final class RefreshProbe implements Runnable {

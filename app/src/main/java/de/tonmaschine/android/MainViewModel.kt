@@ -7,6 +7,7 @@ import de.tonmaschine.android.model.*
 import de.tonmaschine.android.network.SoundbarClient
 import de.tonmaschine.android.storage.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,6 +42,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var client: SoundbarClient? = null
     private var generation = 0
     private var lastConfirmedPower: Boolean? = null
+    private var connectionRefreshJob: Job? = null
     private var reportSequence = 0L
     private val reportRevisions = mutableMapOf<String, Long>()
     private val refreshReports = listOf("SPK_LIST_VIEW_INFO", "FUNC_VIEW_INFO", "EQ_VIEW_INFO", "SETTING_VIEW_INFO")
@@ -175,12 +177,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Pull-to-refresh: only a previously requested client, never a new connection
      * to a merely stored IP. Read real responses and expedite at most one retry.
      */
+    fun cancelConnectionRefresh() {
+        connectionRefreshJob?.cancel()
+        connectionRefreshJob = null
+    }
+
     fun refreshConnection(done: java.util.function.Consumer<String>) {
+        cancelConnectionRefresh()
         if (client == null) { done.accept("Soundbar: keine gewünschte Verbindung"); return }
         if (lastConfirmedPower == false || _device.value.powerOn == false) {
             done.accept("Soundbar: Standby, nicht aufgeweckt"); return
         }
-        viewModelScope.launch {
+        connectionRefreshJob = viewModelScope.launch {
             var expectedGeneration = generation
             var baseline = reportSequence
             var restarted = false
@@ -505,5 +513,5 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _message.value = "Profil übertragen – Rückmeldung abwarten"
         }
     }
-    override fun onCleared() { client?.stop(); super.onCleared() }
+    override fun onCleared() { cancelConnectionRefresh(); client?.stop(); super.onCleared() }
 }

@@ -4,6 +4,19 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class RemoteLivenessTest {
+    @Test public void refreshRequiresNewInboundFrameNotJustOutboundTraffic() {
+        RemoteLiveness live = new RemoteLiveness(1000);
+        assertFalse(live.receivedSince(1000));
+        live.inbound(2000, true);
+        assertFalse(live.receivedSince(3000));
+        live.outbound(4000);
+        assertFalse(live.receivedSince(3000));
+        live.inbound(5000, true);
+        assertTrue(live.receivedSince(3000));
+        live.inbound(6000, false);
+        assertFalse(live.receivedSince(3000));
+    }
+
     @Test public void handshakeHasFixedDeadlineDespitePingsAndWrites() {
         RemoteLiveness live = new RemoteLiveness(1000);
         live.inbound(10_000, false);

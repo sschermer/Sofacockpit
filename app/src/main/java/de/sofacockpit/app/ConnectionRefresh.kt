@@ -25,10 +25,9 @@ class ConnectionRefresh(
     private val mutableRefreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = mutableRefreshing.asStateFlow()
     private var closed = false
-    private var sequence = 0
     private var batch: Batch? = null
 
-    private class Batch(val id: Int, val started: Long, val targets: Set<String>) {
+    private class Batch(val started: Long, val targets: Set<String>) {
         val results = linkedMapOf<String, String>()
         var finishing = false
     }
@@ -41,7 +40,7 @@ class ConnectionRefresh(
             CockpitNavigation.SOUND -> setOf("Soundbar")
             else -> return
         }
-        val b = Batch(++sequence, SystemClock.elapsedRealtime(), targets)
+        val b = Batch(SystemClock.elapsedRealtime(), targets)
         batch = b
         setRefreshing(true)
         updates.setConnectionRefreshBusy(true)
@@ -52,7 +51,7 @@ class ConnectionRefresh(
                 finish(b)
             }
         }, 45_000L)
-        if (!networkAllowed.asBoolean) {
+        if (!networkAllowed.getAsBoolean()) {
             targets.forEach { complete(b, it, "$it: Netzwerkberechtigung fehlt") }
             return
         }
@@ -81,11 +80,19 @@ class ConnectionRefresh(
         mutableRefreshing.value = active
         stateChanged.accept(active)
     }
-    override fun close() {
-        closed = true
+    /** Do not start a delayed reconnect after the user has left the foreground. */
+    fun cancel() {
+        if (batch == null) return
         batch = null
         handler.removeCallbacksAndMessages(null)
-        mutableRefreshing.value = false
+        tv.cancelConnectionRefresh()
+        sound.cancelConnectionRefresh()
+        setRefreshing(false)
         updates.setConnectionRefreshBusy(false)
+    }
+    override fun close() {
+        cancel()
+        closed = true
+        handler.removeCallbacksAndMessages(null)
     }
 }
