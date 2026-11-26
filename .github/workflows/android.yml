@@ -85,7 +85,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v1.0.0
+          name: Sofacockpit-Android-v1.0.1
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -94,9 +94,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create sofacockpit-v1.0.0 \
+          gh release create sofacockpit-v1.0.1 \
             dist/Sofacockpit.apk dist/*.sofatheme \
             --target "$GITHUB_SHA" \
             --latest \
-            --title "Sofacockpit v1.0.0" \
-            --notes "Erstes reguläres Release: TV- und Soundbar-Steuerung, sechs Geräte-Screens, lokale/NAS-Klangprofile, fünf Themes, gesicherte Konfiguration und integrierte Software-Updates. Neu: Pull-to-Refresh prüft die gewünschte Geräteverbindung (Start: beide Geräte, TV/Sound: jeweiliges Gerät), aktualisiert Soundbar-Werte und versucht bei ausbleibender Antwort einmal die Wiederverbindung. Zusätzlich optionale Updateprüfung. Keine erneute TV-Kopplung oder Einschaltbefehle. Bekannte noch nicht unterstützte Funktionen siehe README. Gerätetest der neuen Refresh-Geste offen; Signatur unverändert."
+            --title "Sofacockpit v1.0.1 (Kompakte HDMI-Auswahl)" \
+            --notes "Kompakterer Quellen-Screen: HDMI-Schnellwahltasten mit 48 dp Mindesthöhe statt 70 dp, kleinere Zeilenabstände, TV-Eingangsauswahl in derselben kompakten Höhe. Die Tasten können bei längeren Bezeichnungen oder großer Systemschrift mitwachsen. Anordnung, HDMI-Befehle, Umbenennen per langem Drücken, Apps-Bereich, Navigation und Updatefunktion bleiben unverändert. Reguläres Release mit unveränderter Signatur."

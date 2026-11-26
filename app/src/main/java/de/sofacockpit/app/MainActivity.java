@@ -645,22 +645,25 @@ public class MainActivity extends ComponentActivity {
             KeyEvent.KEYCODE_TV_INPUT_HDMI_3, KeyEvent.KEYCODE_TV_INPUT_HDMI_4};
         for (int rowIndex=0; rowIndex<2; rowIndex++) {
             LinearLayout row = new LinearLayout(this);
+            row.setGravity(Gravity.CENTER_VERTICAL);
             for (int col=0; col<2; col++) {
                 final int port = rowIndex*2+col+1;
                 TextView tile = tvButton(hdmiLabel(port),keys[port-1]);
                 tile.setTextSize(15 * theme.theme.fontScale);
+                compactInputButton(tile);
                 tile.setContentDescription("HDMI " + port + ": " + hdmiLabel(port) + "; lange drücken zum Umbenennen");
                 tile.setOnLongClickListener(v -> { editHdmiLabel(port,tile); return true; });
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,dp(70),1f);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f);
                 if (col>0) lp.leftMargin=dp(8);
                 row.addView(tile,lp);
             }
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1,-2);
-            lp.bottomMargin=dp(8);
+            lp.bottomMargin=dp(6);
             inputs.addView(row,lp);
         }
         TextView chooser = tvButton("TV-Eingangsauswahl",KeyEvent.KEYCODE_TV_INPUT);
-        inputs.addView(chooser,new LinearLayout.LayoutParams(-1,dp(48)));
+        compactInputButton(chooser);
+        inputs.addView(chooser,new LinearLayout.LayoutParams(-1,ViewGroup.LayoutParams.WRAP_CONTENT));
         inputs.addView(label("Lange drücken: HDMI-Eingang benennen. Direktwahl am TCL noch zu testen.",12,MUTED));
         LinearLayout apps = section(body,"APPS");
         TextView add = actionButton("+ Eigene App / Favorit","");
@@ -672,6 +675,14 @@ public class MainActivity extends ComponentActivity {
         apps.addView(sourcesAppList,new LinearLayout.LayoutParams(-1,-2));
         renderSourcesApps();
         return scrollPage(body);
+    }
+
+    /** Compact source selection, while retaining a 48 dp minimum touch target.
+     * Wrap-content allows custom HDMI labels and larger accessibility fonts to grow.
+     */
+    private void compactInputButton(TextView button) {
+        button.setMinHeight(dp(48));
+        button.setPadding(dp(6),dp(4),dp(6),dp(4));
     }
 
     private String hdmiLabel(int port) {
