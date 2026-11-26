@@ -173,8 +173,8 @@ public final class UpdateManager implements AutoCloseable {
 
     /** Explicit settings entry; preferences are applied immediately. */
     public void showSettings(){
-        if(closed||activity.isFinishing())return;
-        if(downloading||verifiedApk!=null||permissionRelease!=null){toast("Ein Update wird bereits vorbereitet.");return;}
+        if(closed||activity.isFinishing()||activeDialog!=null)return;
+        if(downloading||verifiedApk!=null||permissionRelease!=null||approvedDownload!=null){toast("Ein Update wird bereits vorbereitet.");return;}
         CockpitTheme t=palette();LinearLayout b=body();
         b.addView(text("Installiert: v"+installedName,18,t.text,true));
         CheckBox auto=new CheckBox(activity);auto.setText("Beim App-Start automatisch nach Updates suchen");

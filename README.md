@@ -39,7 +39,7 @@ Alle Sound-Seiten verwenden denselben vorhandenen MainViewModel. Die zentrale Ve
 
 ## Themes (ab v0.8.0)
 
-**Start kurz antippen** öffnet weiterhin die Startseite. **Start lange drücken** öffnet die Theme-Galerie mit gerenderten Miniaturvorschauen und Kennzeichnung des ausgewählten Designs. Die Auswahl wird gespeichert und baut nur die Präsentationsoberfläche neu auf; der TV-Client, das Soundbar-ViewModel und die aktuelle Kategorie/Seite bleiben bestehen. Lokale Scrollpositionen und nicht abgeschlossene UI-Entwürfe können beim Wechsel zurückgesetzt werden. Keine Gerätebefehle oder neue Verbindungen durch den reinen Designwechsel.
+**Start kurz antippen** öffnet weiterhin die Startseite. **Start lange drücken → Design auswählen** öffnet die Theme-Galerie mit gerenderten Miniaturvorschauen und Kennzeichnung des ausgewählten Designs. Die Auswahl wird gespeichert und baut nur die Präsentationsoberfläche neu auf; der TV-Client, das Soundbar-ViewModel und die aktuelle Kategorie/Seite bleiben bestehen. Lokale Scrollpositionen und nicht abgeschlossene UI-Entwürfe können beim Wechsel zurückgesetzt werden. Keine Gerätebefehle oder neue Verbindungen durch den reinen Designwechsel.
 
 Vorinstallierte Designs (alle als echte .sofatheme-Pakete in app/src/main/assets/themes):
 
@@ -100,6 +100,24 @@ Optionale Dateien (jeweils PNG **oder** WebP, nicht beide):
 - icons/arrow.png / icons/arrow.webp (bis 128 × 128), nach oben zeigendes Pfeilsymbol, das für die anderen Richtungen gedreht wird.
 
 Maximal 1 MiB Archivgröße, 1,5 MiB entpackte Daten, 16 KiB pro JSON. Nur erlaubte Pfade und Formate werden akzeptiert; fehlerhafte, zu große, inkompatible, doppelte oder kontrastarme Themes werden abgewiesen. Keine frei importierbaren Schriftdateien, beliebigen Icons oder zusätzlichen Layout-/Animationsdefinitionen in Schema 1.
+
+## Software-Updates (ab v0.9.0)
+
+**Start lange drücken → Software-Updates** öffnet die Update-Einstellungen. Das App-Menü enthält außerdem Design auswählen, Verbindungen und Über Sofacockpit. Kurzes Antippen von Start bleibt unverändert.
+
+- Automatische Prüfung beim Kaltstart der App (standardmäßig an), keine Hintergrunddienste und keine regelmäßigen Netzwerkabfragen im Hintergrund.
+- Kanal **Releases und Pre-Releases** (Standard für die Entwicklungsphase) oder **Nur stabile Releases**. Die reguläre GitHub-Releases-Liste wird seitenweise geprüft; Entwürfe sowie Releases ohne vollständig hochgeladene Sofacockpit.apk werden ignoriert. Gültige Tags sind sofacockpit-vMAJOR.MINOR.PATCH oder vMAJOR.MINOR.PATCH mit drei numerischen Komponenten. Die höchste passende Versionsnummer gewinnt, nicht das Veröffentlichungsdatum oder die Reihenfolge. GitHubs Boolean prerelease entscheidet über den Typ.
+- Das Popup zeigt den Typ (gelbe Entwicklungswarnung bzw. stabiles Release), alte/neue Versionsnummer, Dateigröße und Release-Notizen als reinen Text.
+- **Aktualisieren**: Download erst nach Zustimmung und ggf. Freigabe der Android-Installationsberechtigung für Sofacockpit. **Später** (oder Schließen): nächster Kaltstart. **Überspringen**: automatische Hinweise für diese und ältere Versionen im gewählten Kanal unterdrücken. Die manuelle Prüfung kann übersprungene Versionen wieder anbieten. Einstellungen bleiben lokal gespeichert.
+- Bei fehlendem Internet, GitHub-Abfragelimit oder ungültiger Antwort bleibt die App nutzbar. Die automatische Prüfung unterbricht den Start nicht; die manuelle Prüfung meldet Fehler. Das Popup wird nur im Vordergrund gezeigt, nicht über andere Dialoge.
+
+### Sicherheit und Installation
+
+Es wird ohne Token ausschließlich das öffentliche Repository sschermer/Sofacockpit über HTTPS abgefragt. Downloads sind auf das exakte Release-Asset Sofacockpit.apk und die vorgesehenen GitHub-Download-Hosts begrenzt. Die Dateigröße wird kontrolliert (max. 128 MiB), die von GitHub bereitgestellte SHA-256-Prüfsumme falls vorhanden verglichen. Androids Paketmanager überprüft die APK-Informationen: Paketname de.sofacockpit.app, zur angebotenen Version passende versionName, strikt höherer versionCode und fest hinterlegtes Zertifikat (SHA-256 wie bei der CI-Signatur); auch die installierte App muss mit diesem Zertifikat signiert sein. Kein Downgrade, kein Update einer Debug-Signatur. Unvollständige und abgelehnte Downloads werden verworfen.
+
+Die geprüfte APK liegt im privaten Cache, wird nur über einen eng begrenzten FileProvider mit Leseberechtigung an den Android-Installer übergeben und kann dort zusätzlich geprüft werden. Kein Umgehen der Installationsbestätigung, Play Protect oder Android-Richtlinien. Die Installation erfolgt als normales Paketupdate ohne Deinstallation; TV-Kopplung, Themes, NAS-Einstellungen und andere gespeicherte Einstellungen bleiben erhalten. Wenn Android ablehnt oder der Benutzer abbricht, bleibt die alte Version installiert. Bei einer Activity-Neuerstellung während Download oder Berechtigungsdialog kann ein erneutes Anstoßen erforderlich sein. Alte Update-Cache-Dateien werden bei weiteren Downloads nach zwei Tagen entfernt.
+
+Die Release-Workflows müssen weiterhin monoton steigende versionCode-Werte, zur Tag-Version passende versionName und die feste Signatur verwenden. Pre-Releases werden wie bisher mit --prerelease veröffentlicht; für eine reguläre Freigabe dieses Flag entfernen. Die Update-Funktion selbst muss einmal über das manuelle Update auf v0.9.0 installiert werden. Der Ablauf mit Installationsfreigabe und Play Protect ist am realen Android-Gerät zu testen.
 
 ## Verbindung und Projektstand
 

@@ -31,7 +31,7 @@ final class GithubUpdates {
             HttpsURLConnection conn=connect(url);
             try{
                 conn.setRequestProperty("Accept","application/vnd.github+json");
-                conn.setRequestProperty("X-GitHub-Api-Version","2022-11-28");
+                conn.setRequestProperty("X-GitHub-Api-Version","2026-03-10");
                 int code=conn.getResponseCode();
                 if(code==403||code==429)throw new IOException("GitHub-Abfragelimit oder Zugriffsbeschränkung. Später erneut versuchen.");
                 if(code!=200)throw new IOException("GitHub antwortet mit HTTP "+code+".");

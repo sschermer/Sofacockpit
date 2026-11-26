@@ -85,7 +85,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v0.8.0
+          name: Sofacockpit-Android-v0.9.0
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -94,9 +94,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create sofacockpit-v0.8.0 \
+          gh release create sofacockpit-v0.9.0 \
             dist/Sofacockpit.apk dist/*.sofatheme \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "Sofacockpit v0.8.0 (Theme-Wähler und Vier-Sektoren-Steuerkreuz)" \
-            --notes "Fünf vorinstallierte und separat herunterladbare Themes. Lange Start drücken für Vorschau-Galerie, Import/Export und Auswahl ohne Neustart. Gemeinsame Theme-Oberflächen für native und Compose-Screens, großes zusammenhängendes Steuerkreuz mit vier Sektoren. Datenbasierte .sofatheme-Dateien mit begrenzten optionalen Bildern; Konfigurationsdatei speichert Theme-ID. Signatur bleibt unverändert. Gerätetest offen."
+            --title "Sofacockpit v0.9.0 (Software-Updates)" \
+            --notes "Automatische Updateprüfung beim App-Start, wählbarer Kanal für stabile Releases oder einschließlich Pre-Releases, Update-Popup mit Aktualisieren/Später/Überspringen, geprüfter APK-Download und Übergabe an den Android-Installer. Start lange drücken öffnet das App-Menü mit Designauswahl, Software-Updates, Verbindungen und Über Sofacockpit. Kein Download ohne Zustimmung, keine Umgehung von Play Protect. Feste Signatur unverändert. Gerätetest offen."

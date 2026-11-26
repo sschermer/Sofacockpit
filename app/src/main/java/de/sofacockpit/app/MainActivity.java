@@ -16,6 +16,7 @@ import android.graphics.drawable.Drawable;
 import android.content.res.ColorStateList;
 import androidx.compose.ui.platform.ComposeView;
 import de.sofacockpit.app.theme.*;
+import de.sofacockpit.app.update.UpdateManager;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -42,6 +43,7 @@ public class MainActivity extends ComponentActivity {
     private ThemeStore themes;
     private ThemePack theme;
     private ThemePicker themePicker;
+    private UpdateManager updates;
     private LinearLayout shell;
     private ThemedDial remoteDial;
     private final CockpitNavigation navigation = new CockpitNavigation();
@@ -84,6 +86,7 @@ public class MainActivity extends ComponentActivity {
             if (tvDialog != null) tvDialog.reloadAddresses();
         });
         tvDialog = new TvConnectionDialog(this, tv, soundbarModel, connectionOptions, backups::requestExport, backups::requestImport, () -> theme);
+        updates = new UpdateManager(this, () -> theme);
         int savedCategory = savedInstanceState == null ? 0 : savedInstanceState.getInt("navigation_category", 0);
         int savedPage = savedInstanceState == null ? 0 : savedInstanceState.getInt("navigation_page", 0);
         if (!CockpitNavigation.valid(savedCategory, savedPage)) { savedCategory = 0; savedPage = 0; }
@@ -98,6 +101,7 @@ public class MainActivity extends ComponentActivity {
                         soundbarModel.getDevice().getValue().getConnection() == Connection.DISCONNECTED) soundbarModel.connect();
             }
         }
+        if (savedInstanceState == null) updates.startAutomaticCheck();
     }
 
     private void applySelectedTheme() {
@@ -187,7 +191,7 @@ public class MainActivity extends ComponentActivity {
             tab.setFocusable(true);
             tab.setOnClickListener(v -> selectScreen(group, 0));
             tab.setOnLongClickListener(v -> {
-                if (group == 0) themePicker.show();
+                if (group == 0) showStartMenu(v);
                 else showQuickMenu(group, v);
                 return true; // native long-press haptic feedback
             });
@@ -197,6 +201,28 @@ public class MainActivity extends ComponentActivity {
             row.addView(tab, lp);
         }
         return row;
+    }
+
+    private void showStartMenu(View anchor) {
+        if (quickMenu != null) quickMenu.dismiss();
+        PopupMenu popup = new PopupMenu(this, anchor, Gravity.CENTER);
+        String[] items={"Design auswählen","Software-Updates","Verbindungen","Über Sofacockpit"};
+        for (int i=0;i<items.length;i++) popup.getMenu().add(0,i+1,i,items[i]);
+        popup.setOnMenuItemClickListener(item -> {
+            switch(item.getItemId()) {
+                case 1: themePicker.show(); return true;
+                case 2: updates.showSettings(); return true;
+                case 3: tvDialog.open(); return true;
+                case 4:
+                    new AlertDialog.Builder(this).setTitle("Sofacockpit")
+                        .setMessage("Version "+updates.versionName()+"\n\nTV- und Soundbar-Steuerung.\nÖffentliches Projekt: github.com/sschermer/Sofacockpit")
+                        .setPositiveButton("Schließen",null).show();
+                    return true;
+                default: return false;
+            }
+        });
+        popup.setOnDismissListener(menu -> { if(quickMenu==menu) quickMenu=null; });
+        quickMenu=popup;popup.show();
     }
 
     private void showQuickMenu(int category, View anchor) {
@@ -239,7 +265,7 @@ public class MainActivity extends ComponentActivity {
             tabs[i].setTextColor(selected ? ACCENT : MUTED);
             tabs[i].setSelected(selected);
             tabs[i].setContentDescription(CockpitNavigation.tabLabel(i) + (selected ? ", ausgewählt" : "") +
-                (i == 0 ? ", lange drücken für Designauswahl" : ", lange drücken für Seitenauswahl"));
+                (i == 0 ? ", lange drücken für App-Menü" : ", lange drücken für Seitenauswahl"));
         }
         footer.setVisibility(category == 0 ? View.GONE : View.VISIBLE);
         for (int i = 0; i < dots.length; i++) {
@@ -790,13 +816,20 @@ public class MainActivity extends ComponentActivity {
         if (tvDialog != null) tvDialog.render(state);
     }
 
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && updates != null) updates.onWindowFocus();
+    }
+
     @Override protected void onPause() {
+        if (updates != null) updates.onPause();
         if (tv != null) tv.onBackground();
         super.onPause();
     }
 
     @Override protected void onResume() {
         super.onResume();
+        if (updates != null) updates.onResume();
         if (tv != null) tv.onForeground(Build.VERSION.SDK_INT < 37 ||
             checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED);
@@ -804,6 +837,7 @@ public class MainActivity extends ComponentActivity {
 
     @Override protected void onDestroy() {
         if (quickMenu != null) quickMenu.dismiss();
+        if (updates != null) updates.close();
         if (themePicker != null) themePicker.close();
         if (tvDialog != null) tvDialog.close();
         if (backups != null) backups.close();
