@@ -20,6 +20,7 @@ permissions:
 
 jobs:
   android:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -45,28 +46,49 @@ jobs:
       - name: Run JVM unit tests
         run: gradle --no-daemon :app:testDebugUnitTest --stacktrace
 
-      - name: Build debug APK
-        run: gradle --no-daemon :app:assembleDebug --stacktrace
+      - name: Build unsigned release APK
+        run: gradle --no-daemon :app:assembleRelease --stacktrace
 
-      - name: Verify APK signature
+      - name: Sign release APK and verify fixed certificate
+        shell: bash
+        env:
+          SOFACOCKPIT_KEYSTORE_BASE64: ${{ secrets.SOFACOCKPIT_KEYSTORE_BASE64 }}
+          SOFACOCKPIT_KEYSTORE_PASSWORD: ${{ secrets.SOFACOCKPIT_KEYSTORE_PASSWORD }}
         run: |
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose app/build/outputs/apk/debug/app-debug.apk
+          set -euo pipefail
+          umask 077
+          test -n "$SOFACOCKPIT_KEYSTORE_BASE64" || { echo "Missing signing keystore secret"; exit 1; }
+          test -n "$SOFACOCKPIT_KEYSTORE_PASSWORD" || { echo "Missing signing password secret"; exit 1; }
+          keyfile=$(mktemp "$RUNNER_TEMP/sofacockpit-signing.XXXXXXXX.p12")
+          trap 'rm -f "$keyfile"' EXIT
+          printf '%s' "$SOFACOCKPIT_KEYSTORE_BASE64" | base64 --decode > "$keyfile"
+          unset SOFACOCKPIT_KEYSTORE_BASE64
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          mkdir -p dist
+          "$tools/apksigner" sign --ks "$keyfile" --ks-type PKCS12 \
+            --ks-key-alias sofacockpit \
+            --ks-pass env:SOFACOCKPIT_KEYSTORE_PASSWORD \
+            --key-pass env:SOFACOCKPIT_KEYSTORE_PASSWORD \
+            --out dist/Sofacockpit.apk \
+            app/build/outputs/apk/release/app-release-unsigned.apk
+          unset SOFACOCKPIT_KEYSTORE_PASSWORD
+          "$tools/apksigner" verify --verbose --print-certs dist/Sofacockpit.apk | tee "$RUNNER_TEMP/apk-signature.txt"
+          grep -Fx 'Signer #1 certificate SHA-256 digest: 6bc8b1ff2f2f2bc6db4c56d4ffa53c080c05f48089dab7b66ccb7d74fa54ac83' "$RUNNER_TEMP/apk-signature.txt"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v0.4.1-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: Sofacockpit-Android-v0.5.0
+          path: dist/Sofacockpit.apk
           if-no-files-found: error
           retention-days: 90
 
       - name: Publish installable APK
-        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create sofacockpit-v0.4.1 \
-            app/build/outputs/apk/debug/app-debug.apk \
+          gh release create sofacockpit-v0.5.0 \
+            dist/Sofacockpit.apk \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "Sofacockpit v0.4.1 (stabilere TV-Steuersitzung)" \
-            --notes "Behebt empfangsseitigen 16-Sekunden-Timeout bei aktiver TV-Bedienung: bidirektionaler Aktivitäts-Watchdog mit festen Handshake- und Inaktivitätsgrenzen, zusätzliche Regressionstests. TCL-Gerätetest noch offen. Keine automatische Wiederverbindung oder Änderung der Kopplung."
+            --title "Sofacockpit v0.5.0 (Verbindungen und dauerhafte Signatur)" \
+            --notes "Zentrale Verbindungsseite, getrennte Geräteadressen, optionales Auto-Verbinden, verschlüsselte Konfigurationsdatei mit portabler TV-Identität. Erstmals fest signierte Release-APK; bisherige Debug-Version muss einmalig ersetzt werden. Kopplung und Wiederherstellung am TCL noch zu testen."

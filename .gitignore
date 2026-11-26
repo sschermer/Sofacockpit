@@ -3,3 +3,12 @@ local.properties
 **/build/
 *.apk
 *.aab
+
+# Never commit app-signing or local credential files
+*.p12
+*.jks
+*.keystore
+*signing-password*.txt
+*signing-keystore-base64*.txt
+*.sofacfg
+/dist/

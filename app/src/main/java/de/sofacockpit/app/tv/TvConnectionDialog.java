@@ -171,6 +171,7 @@ public final class TvConnectionDialog {
 
         dialog = new Dialog(activity, android.R.style.Theme_Material_NoActionBar);
         dialog.setContentView(scroll);
+        if (dialog.getWindow() != null) dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         dialog.setOnDismissListener(d -> {
             stopSearch();
             code.setText("");
