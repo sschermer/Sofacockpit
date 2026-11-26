@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="432" height="432" viewBox="0 0 108 108">
+  <!-- Transparent adaptive-icon foreground. All art stays within Android's safe area. -->
+  <g fill="none" stroke="#F4F0E7" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 49V41c0-6.4 4.7-10.6 11-10.6h22c6.3 0 11 4.2 11 10.6v8"/>
+    <path d="M32 46.5c-5.1 0-8.8 3.9-8.8 9v6.1c0 5.3 3.6 8.8 9 8.8h3.3M76 46.5c5.1 0 8.8 3.9 8.8 9v6.1c0 5.3-3.6 8.8-9 8.8h-3.3"/>
+    <path d="M33 59.5h42v10H33z"/>
+    <path d="M37 70v7M71 70v7"/>
+    <path d="M44.5 48.5a10.1 10.1 0 0 1 19 0M48 51a6.5 6.5 0 0 1 12 0"/>
+    <circle cx="54" cy="59" r="8.3"/>
+  </g>
+  <path fill="#43B8AA" d="M54 37.2a1.5 1.5 0 0 1 1.5 1.5v1.7h-3v-1.7a1.5 1.5 0 0 1 1.5-1.5z"/>
+  <path fill="#F4F0E7" d="M52.4 55.4c0-.6.6-.9 1.1-.6l3.8 3.4c.4.4.4 1 0 1.4l-3.8 3.4c-.5.4-1.1 0-1.1-.6z"/>
+</svg>

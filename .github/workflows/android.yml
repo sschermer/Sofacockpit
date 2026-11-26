@@ -85,7 +85,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v1.1.0
+          name: Sofacockpit-Android-v1.1.1
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -94,9 +94,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create sofacockpit-v1.1.0 \
+          gh release create sofacockpit-v1.1.1 \
             dist/Sofacockpit.apk dist/*.sofatheme \
             --target "$GITHUB_SHA" \
-            --prerelease \
-            --title "Sofacockpit v1.1.0 (Wake-on-LAN)" \
-            --notes "Testversion: TV über LAN im optimierten Standby aufwecken. LAN-MAC einmalig unter Verbindungen speichern. Power startet bei fehlender TV-Sitzung gezielt Magic Packets und begrenzte Wiederverbindung mit vorhandener Kopplung; keine Aufweckpakete durch App-Start oder Refresh. Aufwecken am TCL über FRITZ!Box und Windows bestätigt, Android-Gerätetest und längerer Standby noch offen. Feste Signatur unverändert."
+            --latest \
+            --title "Sofacockpit v1.1.1 (Wake-on-LAN und App-Icon)" \
+            --notes "Reguläres Release: Wake-on-LAN im optimierten LAN-Standby am TCL mit Sofacockpit v1.1.0 vom Nutzer bestätigt. Aufwecken und Wiederverbindung unverändert übernommen. Neu: eigenes adaptives Sofacockpit-App-Icon mit runder und thematischer Variante. Keine Änderungen an Bedienung, Kopplung, gespeicherten Einstellungen oder Signatur. Langzeit-Standby und separate WLAN-Regression noch zu prüfen."

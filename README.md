@@ -119,15 +119,19 @@ Die geprüfte APK liegt im privaten Cache, wird nur über einen eng begrenzten F
 
 Die Release-Workflows müssen weiterhin monoton steigende versionCode-Werte, zur Tag-Version passende versionName und die feste Signatur verwenden. Pre-Releases werden wie bisher mit --prerelease veröffentlicht; für eine reguläre Freigabe dieses Flag entfernen. Die Update-Funktion wurde beim Wechsel von v0.9.0 auf v0.9.1 auf dem realen Gerät erfolgreich getestet. Das erste reguläre Release ist v1.0.0; die neue Pull-to-Refresh-Geste steht noch zum Gerätetest an.
 
-## Wake-on-LAN (v1.1.0, Pre-Release)
+## App-Icon (v1.1.1)
 
-Am TCL 85C89L wurde im Energiemodus **Optimiert** mit LAN und deaktiviertem TV-WLAN ein erfolgreiches Aufwecken über die FRITZ!Box nach zwei Minuten Standby bestätigt. Auch ein separates Windows-Skript mit UDP-Magic-Packet an den Subnetz-Broadcast (Port 9) funktionierte. Das Verhalten der Android-App und nach längerem Standby ist noch am Gerät zu bestätigen.
+Das vom Nutzer ausgewählte positive Liniengrafik-Design ist als skalierbares adaptives Launcher-Icon eingebunden: cremefarbene Linien auf petrolfarbenem Hintergrund mit türkisgrünem Akzent. Runde und andere systemseitige Icon-Formen werden unterstützt, ab Android 13 zusätzlich der einfarbige Layer für thematische System-Icons. Die ursprünglichen SVG-Dateien liegen unter `artwork/launcher/`. Die App-internen Themes bleiben unverändert; die tatsächliche Launcher-Darstellung ist noch am Gerät zu prüfen.
+
+## Wake-on-LAN (ab v1.1.0; regulär freigegeben mit v1.1.1)
+
+Am TCL 85C89L wurde im Energiemodus **Optimiert** mit LAN und deaktiviertem TV-WLAN ein erfolgreiches Aufwecken über die FRITZ!Box nach zwei Minuten Standby bestätigt. Auch ein separates Windows-Skript mit UDP-Magic-Packet an den Subnetz-Broadcast (Port 9) funktionierte. Der Nutzer hat anschließend auch das Aufwecken mit Sofacockpit v1.1.0 am TCL bestätigt. Damit wird Wake-on-LAN mit v1.1.1 regulär freigegeben. Das Verhalten nach längerem Standby bleibt zu prüfen.
 
 **Einrichten:** TV per LAN verbinden, vorhandene Kopplung/Steuerverbindung an der LAN-IPv4-Adresse verwenden. In der FRITZ!Box die LAN-MAC-Adresse (nicht WLAN-MAC) ablesen; eine dauerhaft zugewiesene IPv4-Adresse ist sinnvoll. Start lange drücken → Verbindungen → Wake-on-LAN einrichten. MAC eingeben und speichern; leeres Feld deaktiviert die Funktion. Keine Portfreigabe und kein Start bei Internetzugriff nötig. Die Einstellung ist lokal in app-privaten Einstellungen gespeichert, an IPv4-Adresse und TV-Zertifikat gebunden; bei anderer Adresse/anderem Zertifikat wird sie gelöscht. Sie wird in dieser ersten Version nicht in .sofacfg exportiert.
 
 **Benutzung:** Mit aktiver Steuersitzung sendet Power den bisherigen Remote-v2-Befehl. Ohne Sitzung und mit konfiguriertem Wake-on-LAN bleibt Power sichtbar und startet ausschließlich auf Antippen einen Aufweckversuch: bis zu drei Magic Packets per UDP/9 über WLAN/LAN im tatsächlich ermittelten gemeinsamen IPv4-Teilnetz; danach bis zu drei TCP-Verbindungsversuche am Port 6466, anschließend unveränderte TLS-/Protokollaushandlung mit vorhandener Kopplung. Kein hartcodiertes Subnetz, keine Neukopplung, kein zusätzlicher Power-Umschaltbefehl nach dem Aufwecken. Ein bestätigtes Power-On wird ausschließlich aus dem Remote-Protokoll übernommen. Meldet der TV noch Standby, kann Power erneut ausdrücklich gedrückt werden. Bei einer noch als verbunden angezeigten, aber bereits verlorenen Sitzung gegebenenfalls den Verbindungsabbruch abwarten und Power erneut drücken.
 
-Kein Wake-Paket bei App-Start, Pull-to-Refresh, Import, Theme-Wechsel, gewöhnlichem Verbinden oder Wiederverbinden. Ohne konfiguriertes Wake-on-LAN bleibt das bisherige Verhalten unverändert. Ein laufender Aufweckvorgang kann über die Verbindungsseite abgebrochen werden; schon gesendete Pakete lassen sich nicht zurücknehmen. Keine zusätzlichen Berechtigungen oder Hintergrunddienste. Die vorhandene TLS-Pin-Prüfung bleibt unverändert. Android-Gerätetest, längerer Standby und WLAN-Regression stehen aus.
+Kein Wake-Paket bei App-Start, Pull-to-Refresh, Import, Theme-Wechsel, gewöhnlichem Verbinden oder Wiederverbinden. Ohne konfiguriertes Wake-on-LAN bleibt das bisherige Verhalten unverändert. Ein laufender Aufweckvorgang kann über die Verbindungsseite abgebrochen werden; schon gesendete Pakete lassen sich nicht zurücknehmen. Keine zusätzlichen Berechtigungen oder Hintergrunddienste. Die vorhandene TLS-Pin-Prüfung bleibt unverändert. Der grundlegende Android-Aufwecktest war erfolgreich; längerer Standby und ein separater WLAN-Regressionstest stehen noch aus.
 
 ## Pull-to-Refresh (v1.0.0)
 
@@ -195,7 +199,7 @@ Der Nutzer meldete bei v0.4.0 einen Abbruch nach 10–20 s Benutzung. Die Diagno
 
 Die App verwendet jetzt eine unabhängige Überwachung mit 20 s fester Aushandlungsfrist und 25 s Inaktivitätsfrist nach bestätigter Sitzung. Vollständig verarbeitete eingehende Frames und erfolgreich geschriebene ausgehende Frames gelten als Aktivität; die Frist für die Aushandlung wird durch Pings nicht verlängert. Der Watchdog schließt bei Ablauf den Socket vollständig, damit keine teilweise gelesenen Frames verloren gehen. TCP-Keepalive ist ergänzend aktiviert. Verbindungsabbruch und fehlende Bestätigung werden weiterhin angezeigt, es gibt keine automatische Wiederverbindung oder erneute Kopplung. Fünf zusätzliche JVM-Tests prüfen die Fristen. Die tatsächliche Wirkung am TCL ist noch zu prüfen; der genaue Auslöser des ausbleibenden Empfangs ist nicht zweifelsfrei belegt.
 
-Nutzertests zur Energieeinstellung: In „Optimiert“ ließ sich der TCL über WLAN aus Sofacockpit einschalten, über LAN dagegen nicht; in „Erhöht“ funktionierte das Einschalten auch über LAN. Langzeit-Standby und ein separater LAN-Aufweckmechanismus sind noch nicht verifiziert. Für die Fehlerkorrektur werden weder Energiemodus noch Aufweckmechanismus verändert.
+Historischer Stand v0.4.1: In „Optimiert“ ließ sich der TCL über WLAN aus Sofacockpit einschalten, über LAN dagegen nicht; in „Erhöht“ funktionierte das Einschalten auch über LAN. Seit v1.1.0 gibt es einen getrennten, am TCL bestätigten Wake-on-LAN-Mechanismus für LAN + Optimiert (siehe oben). Langzeit-Standby bleibt zu prüfen.
 
 ### Zentrale Verbindungen und Sicherung (ab v0.5.0)
 
