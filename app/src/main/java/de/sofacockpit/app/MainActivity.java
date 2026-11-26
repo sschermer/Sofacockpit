@@ -60,6 +60,9 @@ public class MainActivity extends ComponentActivity {
     private ProgressBar volumeLevel;
     private LinearLayout streamRow;
     private HorizontalScrollView streamScroll;
+    private LinearLayout sourcesAppList;
+    private TextView sourcesStatus, systemStatus;
+    private final List<TextView> hdmiTiles = new ArrayList<>();
     private StreamingShortcuts shortcuts;
     private final List<TextView> tvKeys = new ArrayList<>();
 
@@ -88,13 +91,15 @@ public class MainActivity extends ComponentActivity {
             SwipeCategoryPager pager = new SwipeCategoryPager(this, index -> onPageChanged(group, index));
             categoryPagers[group] = pager;
             categoryViews[group] = pager;
-            if (group == CockpitNavigation.TV)
-                pager.addPage(page("TV-Steuerkreuz", "Fernbedienung", "Nicht verbunden"));
-            else
-                pager.addPage(SofacockpitComposeViewsKt.createTonmaschineComposePage(this, soundbarModel, tvDialog::open));
-            for (int index = 1; index < CockpitNavigation.pageCount(group); index++)
-                pager.addPage(page(CockpitNavigation.pageLabel(group, index),
-                    CockpitNavigation.tabLabel(group), "Platzhalter – Inhalt folgt."));
+            if (group == CockpitNavigation.TV) {
+                pager.addPage(remotePage());
+                pager.addPage(sourcesPage());
+                pager.addPage(systemPage());
+            } else {
+                for (int section = 1; section <= 3; section++)
+                    pager.addPage(SofacockpitComposeViewsKt.createTonmaschineComposePage(
+                        this, soundbarModel, tvDialog::open, section));
+            }
         }
         for (View view : categoryViews) pages.addView(view, new FrameLayout.LayoutParams(-1, -1));
         footer = new LinearLayout(this);
@@ -318,17 +323,7 @@ public class MainActivity extends ComponentActivity {
             tile.setTextSize(12);
             tile.setPadding(dp(3), 0, dp(3), 0);
             tile.setContentDescription(entry.name + " starten; lange drücken zum Bearbeiten");
-            tile.setOnClickListener(v -> {
-                TvRemoteClient.State state = tv.state();
-                if (!state.connected() || !state.apps) {
-                    Toast.makeText(this, !state.connected() ? "Zuerst TV verbinden." :
-                        "TV meldet keine App-Link-Unterstützung.", Toast.LENGTH_LONG).show();
-                    return;
-                }
-                tv.launchApp(entry.link, entry.name);
-                if (entry.link.startsWith("market://"))
-                    Toast.makeText(this, "Experimenteller App-Start; ggf. öffnet sich der Play Store.", Toast.LENGTH_LONG).show();
-            });
+            tile.setOnClickListener(v -> launchStreaming(entry));
             tile.setOnLongClickListener(v -> { shortcutOptions(entry); return true; });
             streamRow.addView(tile);
         }
@@ -339,6 +334,18 @@ public class MainActivity extends ComponentActivity {
             streamRow.addView(empty);
         }
         sizeStreamingTiles();
+        renderSourcesApps();
+    }
+    private void launchStreaming(StreamingShortcuts.Entry entry) {
+        TvRemoteClient.State state = tv.state();
+        if (!state.connected() || !state.apps) {
+            Toast.makeText(this, !state.connected() ? "Zuerst TV verbinden." :
+                "TV meldet keine App-Link-Unterstützung.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        tv.launchApp(entry.link, entry.name);
+        if (entry.link.startsWith("market://"))
+            Toast.makeText(this, "Experimenteller App-Start; ggf. öffnet sich der Play Store.", Toast.LENGTH_LONG).show();
     }
     private void saveStreamingShortcuts() {
         shortcuts.save();
@@ -454,90 +461,243 @@ public class MainActivity extends ComponentActivity {
         }
     }
 
-    private View page(String heading, String eyebrow, String description) {
-        LinearLayout outer = new LinearLayout(this);
-        outer.setPadding(dp(20), dp(22), dp(20), dp(20));
-        outer.setGravity(Gravity.CENTER);
-        outer.setOrientation(LinearLayout.VERTICAL);
-        outer.setBackgroundColor(BG);
-        LinearLayout card = card();
-        card.setGravity(Gravity.CENTER);
-        card.setPadding(dp(24), dp(30), dp(24), dp(30));
-        TextView tag = label(eyebrow.toUpperCase(), 12, ACCENT);
-        tag.setGravity(Gravity.CENTER);
-        card.addView(tag);
-        TextView title = label(heading, 26, TEXT);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        title.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(-1, -2);
-        titleLp.topMargin = dp(10);
-        card.addView(title, titleLp);
-        TextView note = label(description, 15, MUTED);
-        note.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams noteLp = new LinearLayout.LayoutParams(-1, -2);
-        noteLp.topMargin = dp(12);
-        card.addView(note, noteLp);
-        if (heading.equals("TV-Steuerkreuz")) {
-            tvRemoteStatus = note;
-            note.setOnClickListener(v -> tvDialog.open());
-            note.setContentDescription("TV-Verbindungsstatus und Einstellungen");
-            addDpad(card);
-        }
-        outer.addView(card, new LinearLayout.LayoutParams(-1, -2));
-        // With tabs visible, smaller displays must still reach the full D-pad.
+    private LinearLayout fullPage() {
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(dp(12), dp(6), dp(12), dp(8));
+        body.setBackgroundColor(BG);
+        return body;
+    }
+
+    private ScrollView scrollPage(LinearLayout body) {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
-        scroll.addView(outer, new ScrollView.LayoutParams(-1, -2));
+        scroll.setClipToPadding(false);
+        scroll.addView(body, new ScrollView.LayoutParams(-1, -2));
         return scroll;
     }
 
-    private void addDpad(LinearLayout card) {
-        int dialSize = dp(284);
-        FrameLayout dial = new FrameLayout(this);
-        GradientDrawable dialBg = shape(SURFACE_ALT, 200);
-        dialBg.setShape(GradientDrawable.OVAL);
-        dialBg.setStroke(dp(1), Color.rgb(65, 79, 99));
-        dial.setBackground(dialBg);
-        LinearLayout.LayoutParams dialLp = new LinearLayout.LayoutParams(dialSize, dialSize);
-        dialLp.gravity = Gravity.CENTER_HORIZONTAL;
-        dialLp.topMargin = dp(16);
-        card.addView(dial, dialLp);
-        int arrowSize = dp(82);
-        addDialButton(dial, "↑", "oben", arrowSize, Gravity.TOP | Gravity.CENTER_HORIZONTAL, KeyEvent.KEYCODE_DPAD_UP);
-        addDialButton(dial, "↓", "unten", arrowSize, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL, KeyEvent.KEYCODE_DPAD_DOWN);
-        addDialButton(dial, "←", "links", arrowSize, Gravity.CENTER_VERTICAL | Gravity.LEFT, KeyEvent.KEYCODE_DPAD_LEFT);
-        addDialButton(dial, "→", "rechts", arrowSize, Gravity.CENTER_VERTICAL | Gravity.RIGHT, KeyEvent.KEYCODE_DPAD_RIGHT);
-        addDialButton(dial, "OK", "OK", dp(88), Gravity.CENTER, KeyEvent.KEYCODE_DPAD_CENTER);
-        LinearLayout actions = new LinearLayout(this);
-        actions.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams actionLp = new LinearLayout.LayoutParams(-1, -2);
-        actionLp.topMargin = dp(12);
-        card.addView(actions, actionLp);
-        actions.addView(tvButton("Zurück", KeyEvent.KEYCODE_BACK), new LinearLayout.LayoutParams(0, dp(58), 1));
-        View gap = new View(this);
-        actions.addView(gap, new LinearLayout.LayoutParams(dp(10), dp(1)));
-        actions.addView(tvButton("Home", KeyEvent.KEYCODE_HOME), new LinearLayout.LayoutParams(0, dp(58), 1));
-        TextView hint = actionButton("TV-Verbindung", "");
-        hint.setOnClickListener(v -> tvDialog.open());
-        hint.setMinHeight(dp(46));
-        hint.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams hintLp = new LinearLayout.LayoutParams(-1, -2);
-        hintLp.topMargin = dp(10);
-        card.addView(hint, hintLp);
+    private TextView compactStatus(LinearLayout parent, String title) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        TextView heading = label(title, 19, TEXT);
+        heading.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        row.addView(heading, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView status = actionButton("Nicht verbunden", "");
+        status.setTextSize(13);
+        status.setMaxLines(1);
+        status.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        status.setPadding(dp(10),0,dp(10),0);
+        status.setOnClickListener(v -> tvDialog.open());
+        row.addView(status, new LinearLayout.LayoutParams(dp(145), dp(44)));
+        parent.addView(row, new LinearLayout.LayoutParams(-1, dp(48)));
+        return status;
     }
 
-    private void addDialButton(FrameLayout dial, String text, String description, int size, int gravity, int key) {
-        TextView button = tvButton(text, key);
-        GradientDrawable circle = shape(Color.rgb(48, 58, 72), 100);
-        circle.setShape(GradientDrawable.OVAL);
-        circle.setStroke(dp(1), Color.rgb(79, 96, 118));
-        button.setBackground(circle);
-        button.setTextSize(text.equals("OK") ? 15 : 26);
-        button.setContentDescription(description);
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(size, size, gravity);
-        int inset = dp(10);
-        lp.setMargins(inset, inset, inset, inset);
-        dial.addView(button, lp);
+    private View remotePage() {
+        LinearLayout body = fullPage();
+        tvRemoteStatus = compactStatus(body, "Fernbedienung");
+        RemoteDial dial = new RemoteDial();
+        LinearLayout.LayoutParams dialLp = new LinearLayout.LayoutParams(-1, 0, 1f);
+        dialLp.topMargin = dp(4);
+        dialLp.bottomMargin = dp(8);
+        body.addView(dial, dialLp);
+        addTvKeyRow(body, new String[]{"Zurück", "Home"},
+            new int[]{KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_HOME}, 60);
+        addTvKeyRow(body, new String[]{"⏪", "▶ / Ⅱ", "⏩"},
+            new int[]{KeyEvent.KEYCODE_MEDIA_REWIND, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD}, 58);
+        TextView keyboard = actionButton("Tastatur – in Vorbereitung", "");
+        keyboard.setTextSize(13);
+        keyboard.setEnabled(false);
+        keyboard.setAlpha(.45f);
+        LinearLayout.LayoutParams keyboardLp = new LinearLayout.LayoutParams(-1, dp(44));
+        keyboardLp.topMargin = dp(8);
+        body.addView(keyboard, keyboardLp);
+        return scrollPage(body);
+    }
+
+    /** Square dial measures to the available width, not a fixed 284dp. On a
+     * compact/landscape display the containing ScrollView keeps all keys reachable.
+     */
+    private final class RemoteDial extends FrameLayout {
+        private final FrameLayout dial;
+        private final TextView[] buttons = new TextView[5];
+        private int side;
+
+        RemoteDial() {
+            super(MainActivity.this);
+            setMinimumHeight(dp(240));
+            dial = new FrameLayout(MainActivity.this);
+            GradientDrawable bg = shape(SURFACE_ALT, 200);
+            bg.setShape(GradientDrawable.OVAL);
+            bg.setStroke(dp(1), Color.rgb(65, 79, 99));
+            dial.setBackground(bg);
+            addView(dial, new FrameLayout.LayoutParams(-2, -2));
+            String[] labels = {"↑", "↓", "←", "→", "OK"};
+            String[] names = {"Oben", "Unten", "Links", "Rechts", "OK"};
+            int[] keys = {KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER};
+            int[] gravities = {Gravity.TOP|Gravity.CENTER_HORIZONTAL, Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL,
+                Gravity.LEFT|Gravity.CENTER_VERTICAL, Gravity.RIGHT|Gravity.CENTER_VERTICAL, Gravity.CENTER};
+            for (int i=0; i<buttons.length; i++) {
+                TextView key = tvButton(labels[i], keys[i]);
+                GradientDrawable circle = shape(Color.rgb(48,58,72), 100);
+                circle.setShape(GradientDrawable.OVAL);
+                circle.setStroke(dp(1), Color.rgb(79,96,118));
+                key.setBackground(circle);
+                key.setTextSize(i == 4 ? 20 : 32);
+                key.setContentDescription(names[i]);
+                buttons[i] = key;
+                dial.addView(key, new FrameLayout.LayoutParams(-2,-2,gravities[i]));
+            }
+        }
+        @Override protected void onMeasure(int widthSpec, int heightSpec) {
+            int width = MeasureSpec.getSize(widthSpec);
+            int height = MeasureSpec.getMode(heightSpec) == MeasureSpec.UNSPECIFIED
+                ? width : resolveSize(width, heightSpec);
+            side = Math.max(0, Math.min(width, height));
+            int margin = Math.round(side * .036f);
+            for (int i=0; i<buttons.length; i++) {
+                FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) buttons[i].getLayoutParams();
+                lp.width = lp.height = Math.round(side * (i == 4 ? .30f : .282f));
+                lp.setMargins(margin,margin,margin,margin);
+            }
+            dial.measure(MeasureSpec.makeMeasureSpec(side, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(side, MeasureSpec.EXACTLY));
+            setMeasuredDimension(width,height);
+        }
+        @Override protected void onLayout(boolean changed,int l,int t,int r,int b) {
+            int x=(r-l-side)/2, y=(b-t-side)/2;
+            dial.layout(x,y,x+side,y+side);
+        }
+    }
+
+    private void addTvKeyRow(LinearLayout parent, String[] labels, int[] keys, int height) {
+        LinearLayout row = new LinearLayout(this);
+        for (int i=0;i<labels.length;i++) {
+            TextView button = tvButton(labels[i], keys[i]);
+            if (keys[i] == KeyEvent.KEYCODE_MEDIA_REWIND) button.setContentDescription("Zurückspulen");
+            if (keys[i] == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) button.setContentDescription("Wiedergabe / Pause");
+            if (keys[i] == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD) button.setContentDescription("Vorspulen");
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,dp(height),1f);
+            if(i>0) lp.leftMargin=dp(8);
+            row.addView(button,lp);
+        }
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1,-2);
+        lp.topMargin=dp(8);
+        parent.addView(row,lp);
+    }
+
+    private View sourcesPage() {
+        LinearLayout body = fullPage();
+        sourcesStatus = compactStatus(body, "Quellen");
+        LinearLayout inputs = section(body, "HDMI-EINGÄNGE");
+        int[] keys = {KeyEvent.KEYCODE_TV_INPUT_HDMI_1, KeyEvent.KEYCODE_TV_INPUT_HDMI_2,
+            KeyEvent.KEYCODE_TV_INPUT_HDMI_3, KeyEvent.KEYCODE_TV_INPUT_HDMI_4};
+        for (int rowIndex=0; rowIndex<2; rowIndex++) {
+            LinearLayout row = new LinearLayout(this);
+            for (int col=0; col<2; col++) {
+                final int port = rowIndex*2+col+1;
+                TextView tile = tvButton(hdmiLabel(port),keys[port-1]);
+                tile.setTextSize(15);
+                tile.setOnLongClickListener(v -> { editHdmiLabel(port,tile); return true; });
+                hdmiTiles.add(tile);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,dp(70),1f);
+                if (col>0) lp.leftMargin=dp(8);
+                row.addView(tile,lp);
+            }
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1,-2);
+            lp.bottomMargin=dp(8);
+            inputs.addView(row,lp);
+        }
+        TextView chooser = tvButton("TV-Eingangsauswahl",KeyEvent.KEYCODE_TV_INPUT);
+        inputs.addView(chooser,new LinearLayout.LayoutParams(-1,dp(48)));
+        inputs.addView(label("Lange drücken: HDMI-Eingang benennen. Direktwahl am TCL noch zu testen.",12,MUTED));
+        LinearLayout apps = section(body,"APPS");
+        TextView add = actionButton("+ Eigene App / Favorit","");
+        add.setOnClickListener(v -> addStreamingShortcut());
+        apps.addView(add,new LinearLayout.LayoutParams(-1,dp(48)));
+        apps.addView(label("Lokaler App-Katalog, keine automatisch ausgelesene TV-App-Liste. ★ = Startscreen-Favorit. Lange drücken zum Verwalten.",12,MUTED));
+        sourcesAppList = new LinearLayout(this);
+        sourcesAppList.setOrientation(LinearLayout.VERTICAL);
+        apps.addView(sourcesAppList,new LinearLayout.LayoutParams(-1,-2));
+        renderSourcesApps();
+        return scrollPage(body);
+    }
+
+    private String hdmiLabel(int port) {
+        return connectionOptions.getString("hdmi_name_" + port, "HDMI " + port);
+    }
+    private void editHdmiLabel(int port, TextView tile) {
+        EditText name = new EditText(this);
+        name.setSingleLine(true);
+        name.setText(hdmiLabel(port));
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("HDMI " + port + " benennen")
+            .setView(name).setNegativeButton("Abbrechen",null).setPositiveButton("Speichern",null).create();
+        dialog.show();
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String value = name.getText().toString().trim();
+            if (value.isEmpty() || value.length()>40) { name.setError("1–40 Zeichen"); return; }
+            connectionOptions.edit().putString("hdmi_name_" + port,value).apply();
+            tile.setText(value);
+            tile.setContentDescription("HDMI " + port + ": " + value + "; lange drücken zum Umbenennen");
+            dialog.dismiss();
+        });
+    }
+    private void renderSourcesApps() {
+        if (sourcesAppList == null) return;
+        sourcesAppList.removeAllViews();
+        List<StreamingShortcuts.Entry> entries = new ArrayList<>(shortcuts.entries);
+        for (StreamingShortcuts.Entry entry : StreamingShortcuts.CATALOG)
+            if (!shortcuts.contains(entry)) entries.add(entry);
+        for (int i=0;i<entries.size();i+=2) {
+            LinearLayout row = new LinearLayout(this);
+            for (int j=0;j<2;j++) {
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,dp(56),1f);
+                if(j>0) lp.leftMargin=dp(8);
+                if(i+j>=entries.size()) { row.addView(new View(this),lp); continue; }
+                StreamingShortcuts.Entry entry = entries.get(i+j);
+                boolean favorite = shortcuts.entries.contains(entry);
+                TextView tile = actionButton((favorite?"★  ":"") + entry.name,"");
+                tile.setTextSize(13);
+                tile.setContentDescription(entry.name + (favorite?", Favorit":"") + "; lange drücken zum Verwalten");
+                tile.setOnClickListener(v -> launchStreaming(entry));
+                tile.setOnLongClickListener(v -> {
+                    if(favorite) shortcutOptions(entry);
+                    else new AlertDialog.Builder(this).setTitle(entry.name)
+                        .setItems(new String[]{"Zum Startscreen hinzufügen"},(d,which) -> {
+                            if (shortcuts.entries.size()>=50) {
+                                Toast.makeText(this,"Maximal 50 Schnellwahltasten.",Toast.LENGTH_SHORT).show();
+                            } else if (!shortcuts.contains(entry)) {
+                                shortcuts.entries.add(entry); saveStreamingShortcuts();
+                            }
+                        }).setNegativeButton("Schließen",null).show();
+                    return true;
+                });
+                row.addView(tile,lp);
+            }
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1,-2);
+            lp.topMargin=dp(8);
+            sourcesAppList.addView(row,lp);
+        }
+    }
+    private View systemPage() {
+        LinearLayout body = fullPage();
+        systemStatus = compactStatus(body,"Bild & System");
+        LinearLayout settings = section(body,"TV-EINSTELLUNGEN");
+        TextView open = tvButton("TV-Einstellungen öffnen",KeyEvent.KEYCODE_SETTINGS);
+        settings.addView(open,new LinearLayout.LayoutParams(-1,dp(56)));
+        settings.addView(label("Öffnet die Einstellungen am Fernseher, sofern der TCL den Android-Tastenbefehl annimmt.",13,MUTED));
+        LinearLayout picture = section(body,"BILD");
+        picture.addView(label("Bildmodus, Helligkeit, Kontrast und persönliche Bildprofile",16,TEXT));
+        picture.addView(label("Direkte Steuerung noch nicht verfügbar. Die TCL-Schnittstelle muss untersucht werden.",13,MUTED));
+        LinearLayout system = section(body,"SYSTEM");
+        system.addView(label("Sleep-Timer und Energiesparmodus: vorerst über das TV-Einstellungsmenü.",14,MUTED));
+        TextView connection = actionButton("TV-Verbindung","");
+        connection.setOnClickListener(v -> tvDialog.open());
+        system.addView(connection,new LinearLayout.LayoutParams(-1,dp(52)));
+        return scrollPage(body);
     }
 
     private TextView deviceHeader(LinearLayout parent, String name, String status) {
@@ -595,9 +755,14 @@ public class MainActivity extends ComponentActivity {
             tvHomeDetail.setText(state.detail);
             tvHomeDetail.setVisibility(showDetail ? View.VISIBLE : View.GONE);
         }
-        if (tvRemoteStatus != null) {
-            tvRemoteStatus.setText(state.detail);
-            tvRemoteStatus.setContentDescription(state.detail + " – TV-Verbindung öffnen");
+        String shortStatus = state.connected() ? "Verbunden" :
+            (state.phase == TvRemoteClient.Phase.ERROR ? "Verbindungsfehler" :
+                state.phase == TvRemoteClient.Phase.DISCONNECTED ? "Nicht verbunden" : "Verbinde …");
+        for (TextView status : new TextView[]{tvRemoteStatus, sourcesStatus, systemStatus}) {
+            if (status == null) continue;
+            status.setText(shortStatus);
+            status.setTextColor(state.connected() ? Color.rgb(66,215,146) : MUTED);
+            status.setContentDescription(state.detail + " – TV-Verbindung öffnen");
         }
         for (TextView key : tvKeys) {
             key.setEnabled(ready);

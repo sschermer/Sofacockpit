@@ -261,7 +261,12 @@ public final class TvRemoteClient implements AutoCloseable {
             key == KeyEvent.KEYCODE_DPAD_LEFT || key == KeyEvent.KEYCODE_DPAD_RIGHT ||
             key == KeyEvent.KEYCODE_DPAD_CENTER || key == KeyEvent.KEYCODE_POWER ||
             key == KeyEvent.KEYCODE_VOLUME_UP || key == KeyEvent.KEYCODE_VOLUME_DOWN ||
-            key == KeyEvent.KEYCODE_VOLUME_MUTE;
+            key == KeyEvent.KEYCODE_VOLUME_MUTE ||
+            key == KeyEvent.KEYCODE_MEDIA_REWIND || key == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE ||
+            key == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD || key == KeyEvent.KEYCODE_SETTINGS ||
+            key == KeyEvent.KEYCODE_TV_INPUT || key == KeyEvent.KEYCODE_TV_INPUT_HDMI_1 ||
+            key == KeyEvent.KEYCODE_TV_INPUT_HDMI_2 || key == KeyEvent.KEYCODE_TV_INPUT_HDMI_3 ||
+            key == KeyEvent.KEYCODE_TV_INPUT_HDMI_4;
     }
 
     private void run(Session s) {

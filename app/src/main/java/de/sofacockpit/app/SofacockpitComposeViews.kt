@@ -50,7 +50,7 @@ private val cockpitGreen = Color(0xFF42D792)
 private val cockpitRed = Color(0xFFEB5353)
 
 /** Hosts the existing Tonmaschine Compose screen and its real device controls. */
-fun createTonmaschineComposePage(context: Context, vm: MainViewModel, openConnections: Runnable): ComposeView =
+fun createTonmaschineComposePage(context: Context, vm: MainViewModel, openConnections: Runnable, section: Int): ComposeView =
     ComposeView(context).apply {
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         setContent {
@@ -67,7 +67,7 @@ fun createTonmaschineComposePage(context: Context, vm: MainViewModel, openConnec
                     vm.connect()
                 }
             }
-            Tonmaschine(vm, connect) { openConnections.run() }
+            Tonmaschine(vm, connect, section = section, connectionSettings = { openConnections.run() })
         }
     }
 
