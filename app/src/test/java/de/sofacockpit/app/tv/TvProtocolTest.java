@@ -7,6 +7,24 @@ import java.math.BigInteger;
 import java.security.interfaces.RSAPublicKey;
 
 public class TvProtocolTest {
+    @Test public void newRemoteKeysAreExplicitlyAllowedAndEncodeCorrectly() throws Exception {
+        int[] keys = {android.view.KeyEvent.KEYCODE_MEDIA_REWIND,
+            android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            android.view.KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
+            android.view.KeyEvent.KEYCODE_SETTINGS,
+            android.view.KeyEvent.KEYCODE_TV_INPUT,
+            android.view.KeyEvent.KEYCODE_TV_INPUT_HDMI_1,
+            android.view.KeyEvent.KEYCODE_TV_INPUT_HDMI_2,
+            android.view.KeyEvent.KEYCODE_TV_INPUT_HDMI_3,
+            android.view.KeyEvent.KEYCODE_TV_INPUT_HDMI_4};
+        for (int key : keys) {
+            assertTrue(TvRemoteClient.allowedKey(key));
+            TvProtocol.Message encoded = TvProtocol.parse(TvProtocol.key(key)).child(10);
+            assertEquals(key, encoded.integer(1,-1));
+            assertEquals(3, encoded.integer(2,-1));
+        }
+        assertFalse(TvRemoteClient.allowedKey(android.view.KeyEvent.KEYCODE_UNKNOWN));
+    }
     @Test public void pairingWireFields() throws Exception {
         TvProtocol.Message p = TvProtocol.parse(TvProtocol.pairRequest());
         assertEquals(2, p.integer(1, -1));

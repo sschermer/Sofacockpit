@@ -2,17 +2,17 @@
 
 Sofacockpit ist eine Android-App, die einen **TCL-Fernseher mit Google TV** und die **LG-Soundbar S95QR** in einer Fernbedienung zusammenführt. Die App richtet sich zunächst an den TCL 85C89L, der im Gerätemenü als 85C8L angezeigt wird.
 
-## Bedienkonzept (ab v0.6.0)
+## Bedienkonzept (ab v0.7.0)
 
 Die drei Tabs **Start**, **TV** und **Sound** bleiben am oberen Bildschirmrand sichtbar. Kurzes Tippen öffnet den ersten Screen des jeweiligen Bereichs. Langes Drücken auf TV oder Sound öffnet ein Dropdown mit direkter Seitenauswahl. Die Pfeile an den beiden Tabs weisen auf das Schnellmenü hin. Die Wischgesten wechseln nur innerhalb der ausgewählten Kategorie; die Startseite hat keine Nachbarseiten. Die drei unteren Navigationspunkte sind in TV und Sound direkt anklickbar. Es gibt kein kategorienübergreifendes Wischen oder Umlaufen am Ende einer Kategorie.
 
 | Tab | Seite 1 | Seite 2 | Seite 3 |
 | --- | --- | --- | --- |
 | Start | Startbildschirm | – | – |
-| TV | Steuerkreuz | TV 2 | TV 3 |
-| Sound | Tonmaschine | Sound 2 | Sound 3 |
+| TV | Fernbedienung | Quellen | Bild & System |
+| Sound | Klangsteuerung | Klangprofile | Feinabstimmung |
 
-Die Bezeichnungen und Inhalte der zusätzlichen vier Seiten werden später festgelegt. Sie sind bewusst Platzhalter. Die bisherigen funktionalen Screens und ihre Gerätesitzungen werden beim Navigieren nicht neu erstellt. Horizontale Lautstärke-/Kanalpegelregler erhalten Vorrang gegenüber dem Seitenwechsel; vertikales Scrollen bleibt möglich. Die tatsächliche Touch-Bedienung muss am Gerät geprüft werden.
+Alle sechs Gerätescreens sind angelegt. Nicht unterstützte Funktionen sind als noch offen gekennzeichnet; sie senden keine simulierten Befehle. Die bisherigen funktionalen Screens und ihre Gerätesitzungen werden beim Navigieren nicht neu erstellt. Horizontale Lautstärke-/Kanalpegelregler erhalten Vorrang gegenüber dem Seitenwechsel; vertikales Scrollen bleibt möglich. Die tatsächliche Touch-Bedienung muss am Gerät geprüft werden.
 
 ### Startbildschirm
 
@@ -23,11 +23,19 @@ Die Bezeichnungen und Inhalte der zusätzlichen vier Seiten werden später festg
 
 Wischen auf der Streaming-Leiste scrollt die Dienste. Der Lautstärkepegel ist zunächst nur eine Anzeige, kein absoluter Regler. Die Startseite wechselt nicht durch horizontales Wischen in andere Kategorien.
 
-### Tonmaschine
+### TV
 
-Die erste Seite des Sound-Tabs enthält den Android-Screen aus der bestehenden Tonmaschine mit Verbindungseinstellungen, Status, Klangmodi, Lautsprecherpegeln, Profilen, Nachtmodus, DRC, Surround und gemeldetem Audioformat. Die Soundbar wird über die zentrale Verbindungsseite eingerichtet. Die Wiederverwendung der bestehenden Android-Implementierung ist durch den Quellcode belegt; ein Test an der LG S95QR steht noch aus.
+- **Fernbedienung:** keine äußere Karte und keine feste 284-dp-Größe mehr. Das runde Steuerkreuz nutzt die verfügbare Breite, bei ausreichend Platz mit nur 12 dp seitlichem Rand. Zurück/Home, Wiedergabe/Pause und Spultasten darunter. Für kleine oder querformatige Displays bleibt Scrollen möglich. Eine kompakte Statusanzeige öffnet die Verbindung. Die Tastatur ist sichtbar als noch nicht implementiert gekennzeichnet; Mauszeiger später.
+- **Quellen:** Android-Standardtasten für HDMI 1–4 und die Eingangsauswahl. HDMI-Bezeichnungen können lokal durch langes Drücken geändert werden; sie sind noch nicht Teil der Sicherungsdatei. App-Katalog aus eingebauten Diensten und der vorhandenen Favoritenliste, kein Inventar installierter Apps. Antippen sendet einen App-Link, langes Drücken verwaltet Favoriten. Eigene Apps werden derzeit über die Favoritenliste angelegt.
+- **Bild & System:** Tastenbefehl zum Öffnen der TV-Einstellungen. Direkte Bildmodus-, Helligkeits-, Kontrast-, Timer- und Energieparameter noch nicht implementiert; kein erfundener Status. Standard-Keycodes entsprechen der [Android KeyEvent-Dokumentation](https://developer.android.com/reference/android/view/KeyEvent) und der [Remote-v2-Protokollreferenz](https://github.com/tronikos/androidtvremote2/blob/main/src/androidtvremote2/remotemessage.proto). Unterstützung der neuen Tasten am TCL und in einzelnen Apps muss am Gerät getestet werden.
 
-Die erste Seite des TV-Tabs nutzt eine große, runde Navigation mit OK sowie Zurück und Home. Die D-Pad-Tasten sind erst nach einer vom TV bestätigten Steuersitzung mit gemeldeter Tastenunterstützung aktiv.
+### Sound (Tonmaschine)
+
+- **Klangsteuerung:** Lautstärke, gemeldete Eingänge und Audioformat, Night Time/DRC/Surround, unterstützte Klangmodi, Power. Unbekannte Werte werden nicht als bestätigte Werte dargestellt. Direkter Soundbar-Mute-Befehl noch nicht implementiert.
+- **Klangprofile:** bestehende lokale oder NAS-Profile bleiben im unveränderten Windows-kompatiblen Format. Antippen wählt ein Profil zur Übertragung, langes Drücken oder ⋮ öffnet Anwenden, Umbenennen, Kopieren, Überschreiben und Löschen. A–Z/Z–A-Sortierung. Kopieren/Umbenennen verwendet gespeicherte Werte und bei NAS dieselbe Schreibsperre wie bisher; kein Überschreiben fremder Profile. Einstellungen für den Profilspeicher sind über das Zahnrad erreichbar.
+- **Feinabstimmung:** sieben gemeldete Kanalpegel mit Schieberegler und Plus/Minus gemäß gerätespezifischen Wertebereichen. Bass/Höhen werden aus den Antworten angezeigt; direkte Änderung, Neural:X und IMAX Enhanced noch nicht in der Android-Implementierung verifiziert.
+
+Alle Sound-Seiten verwenden denselben vorhandenen MainViewModel. Die zentrale Verbindung und der verschlüsselte Konfigurationsimport bleiben erhalten. Gerätetests von Layout, neuen Befehlen, Touch-Gesten und NAS-Änderungen stehen aus.
 
 ## Verbindung und Projektstand
 
@@ -44,7 +52,7 @@ Zu prüfen sind insbesondere das Aufwecken des TV nach längerem Standby, das di
 ### TV verbinden (ab v0.3.0)
 
 1. Fernseher einschalten, Handy im gleichen Heimnetz (kein isoliertes Gast-WLAN) verbinden.
-2. Auf dem Startbildschirm den TV-Status antippen oder auf der Steuerkreuz-Seite **TV-Verbindung** wählen.
+2. Auf dem Startbildschirm den TV-Status antippen oder auf der Fernbedienung den Verbindungsstatus antippen.
 3. **Fernseher suchen** antippen und den gefundenen TV auswählen. Alternativ die lokale IP-Adresse manuell eingeben.
 4. **Koppeln** wählen und den am TV angezeigten sechsstelligen Hex-Code eingeben (0–9, A–F). Anschließend den Code bestätigen.
 5. Erst nach **Verbunden** und gemeldeter Tastenunterstützung sind die sieben Navigationstasten aktiv.

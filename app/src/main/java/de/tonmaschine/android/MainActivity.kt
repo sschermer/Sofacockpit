@@ -448,7 +448,7 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
                                 if (profiles.isEmpty()) Text("Noch keine Profile gespeichert.", color = muted)
                                 Text("Tippen: anwenden · lange drücken: verwalten", color = muted,
                                     style = MaterialTheme.typography.bodySmall)
-                                val sorted = profiles.keys.sortedWith(String.CASE_INSENSITIVE_ORDER)
+                                val sorted = profiles.keys.sortedBy { it.lowercase(java.util.Locale.ROOT) }
                                 (if (descending) sorted.reversed() else sorted).forEach { profileName ->
                                     Surface(color = if (selected == profileName) Color(0xFF233D32) else Color(0xFF303746),
                                         shape = RoundedCornerShape(12.dp),

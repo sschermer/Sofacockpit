@@ -255,7 +255,7 @@ public final class TvRemoteClient implements AutoCloseable {
             if (!closed && current == s) commandDetail("Zu viele TV-Befehle. Bitte kurz warten.");
         }
     }
-    private static boolean allowedKey(int key) {
+    static boolean allowedKey(int key) {
         return key == KeyEvent.KEYCODE_BACK || key == KeyEvent.KEYCODE_HOME ||
             key == KeyEvent.KEYCODE_DPAD_UP || key == KeyEvent.KEYCODE_DPAD_DOWN ||
             key == KeyEvent.KEYCODE_DPAD_LEFT || key == KeyEvent.KEYCODE_DPAD_RIGHT ||

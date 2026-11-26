@@ -62,7 +62,6 @@ public class MainActivity extends ComponentActivity {
     private HorizontalScrollView streamScroll;
     private LinearLayout sourcesAppList;
     private TextView sourcesStatus, systemStatus;
-    private final List<TextView> hdmiTiles = new ArrayList<>();
     private StreamingShortcuts shortcuts;
     private final List<TextView> tvKeys = new ArrayList<>();
 
@@ -601,8 +600,8 @@ public class MainActivity extends ComponentActivity {
                 final int port = rowIndex*2+col+1;
                 TextView tile = tvButton(hdmiLabel(port),keys[port-1]);
                 tile.setTextSize(15);
+                tile.setContentDescription("HDMI " + port + ": " + hdmiLabel(port) + "; lange drücken zum Umbenennen");
                 tile.setOnLongClickListener(v -> { editHdmiLabel(port,tile); return true; });
-                hdmiTiles.add(tile);
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,dp(70),1f);
                 if (col>0) lp.leftMargin=dp(8);
                 row.addView(tile,lp);

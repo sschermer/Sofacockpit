@@ -82,7 +82,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v0.6.0
+          name: Sofacockpit-Android-v0.7.0
           path: dist/Sofacockpit.apk
           if-no-files-found: error
           retention-days: 90
@@ -91,9 +91,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create sofacockpit-v0.6.0 \
+          gh release create sofacockpit-v0.7.0 \
             dist/Sofacockpit.apk \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "Sofacockpit v0.6.0 (Tabs und automatischer Konfigurationsimport)" \
-            --notes "Dauerhafte Tabs Start, TV, Sound; drei horizontale Seiten je Gerätekategorie mit Direktwahl per langem Drücken und anklickbaren Punkten. Vier zusätzliche Seiten sind bewusst Platzhalter. Bestätigter Konfigurationsimport bietet standardmäßig aktivierte einmalige Verbindung zu TV und Soundbar; keine automatische Neukopplung. Unveränderte feste APK-Signatur; Gerätetest offen."
+            --title "Sofacockpit v0.7.0 (Sechs Geräte-Screens)" \
+            --notes "Neue TV- und Sound-Seiten: großes dynamisches Steuerkreuz, Medienbefehle, HDMI-Direktwahl (Gerätetest offen), App-Katalog, TV-Einstellungsaufruf; Klangsteuerung, lokale/NAS-Profile und sieben Kanalpegel. Nicht implementierte direkte TV-Bildparameter und Tastatur sowie weitere Sound-Optionen sind als offen gekennzeichnet. Feste Signatur unverändert."
