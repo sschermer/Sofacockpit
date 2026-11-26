@@ -12,7 +12,10 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.Drawable;
+import android.content.res.ColorStateList;
+import androidx.compose.ui.platform.ComposeView;
+import de.sofacockpit.app.theme.*;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -35,12 +38,12 @@ import android.widget.Toast;
 import android.widget.PopupMenu;
 
 public class MainActivity extends ComponentActivity {
-    private static final int BG = Color.rgb(11, 14, 19);
-    private static final int SURFACE = Color.rgb(23, 28, 36);
-    private static final int SURFACE_ALT = Color.rgb(32, 39, 49);
-    private static final int TEXT = Color.rgb(242, 245, 249);
-    private static final int MUTED = Color.rgb(151, 163, 179);
-    private static final int ACCENT = Color.rgb(112, 190, 255);
+    private int BG, SURFACE, SURFACE_ALT, TEXT, MUTED, ACCENT;
+    private ThemeStore themes;
+    private ThemePack theme;
+    private ThemePicker themePicker;
+    private LinearLayout shell;
+    private ThemedDial remoteDial;
     private final CockpitNavigation navigation = new CockpitNavigation();
     private final View[] categoryViews = new View[3];
     private final SwipeCategoryPager[] categoryPagers = new SwipeCategoryPager[3];
@@ -72,12 +75,64 @@ public class MainActivity extends ComponentActivity {
         tv = new TvRemoteClient(this, this::renderTvState);
         shortcuts = new StreamingShortcuts(this);
         connectionOptions = getSharedPreferences("connection_options", MODE_PRIVATE);
-        backups = new ConnectionBackupManager(this, tv, soundbarModel, shortcuts, connectionOptions, () -> {
+        themes = new ThemeStore(this, connectionOptions);
+        theme = themes.selected();
+        themePicker = new ThemePicker(this, themes, this::applySelectedTheme);
+        backups = new ConnectionBackupManager(this, tv, soundbarModel, shortcuts, connectionOptions, themes, () -> {
+            applySelectedTheme();
             renderStreamingShortcuts();
             if (tvDialog != null) tvDialog.reloadAddresses();
         });
-        tvDialog = new TvConnectionDialog(this, tv, soundbarModel, connectionOptions, backups::requestExport, backups::requestImport);
-        LinearLayout shell = new LinearLayout(this);
+        tvDialog = new TvConnectionDialog(this, tv, soundbarModel, connectionOptions, backups::requestExport, backups::requestImport, () -> theme);
+        int savedCategory = savedInstanceState == null ? 0 : savedInstanceState.getInt("navigation_category", 0);
+        int savedPage = savedInstanceState == null ? 0 : savedInstanceState.getInt("navigation_page", 0);
+        if (!CockpitNavigation.valid(savedCategory, savedPage)) { savedCategory = 0; savedPage = 0; }
+        buildShell(savedCategory, savedPage);
+        SofacockpitComposeViewsKt.observeSoundbarConnection(this, soundbarModel, this::renderSoundConnection);
+        if (savedInstanceState == null && connectionOptions.getBoolean("auto_connect", false)) {
+            // Opt-in only. No power command, wake packet, or automatic pairing.
+            if (Build.VERSION.SDK_INT < 37 || checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                if (tv.paired() && !tv.lastAddress().isEmpty()) tv.start(tv.lastAddress(), false);
+                if (!soundbarModel.getIp().getValue().isEmpty() &&
+                        soundbarModel.getDevice().getValue().getConnection() == Connection.DISCONNECTED) soundbarModel.connect();
+            }
+        }
+    }
+
+    private void applySelectedTheme() {
+        ThemePack next = themes.selected();
+        if (next == theme) return;
+        theme = next;
+        buildShell(navigation.category(), navigation.page());
+    }
+
+    private void disposeCompose(View view) {
+        if (view instanceof ComposeView) { ((ComposeView)view).disposeComposition(); return; }
+        if (view instanceof ViewGroup) {
+            ViewGroup group=(ViewGroup)view;
+            for(int i=0;i<group.getChildCount();i++) disposeCompose(group.getChildAt(i));
+        }
+    }
+
+    /** Rebuild presentation only; keep the Activity, TV client and sound ViewModel. */
+    private void buildShell(int categoryToShow, int pageToShow) {
+        if (quickMenu != null) quickMenu.dismiss();
+        if (shell != null) {
+            // Detach first so disposed ComposeViews cannot recreate their compositions in layout.
+            View old=shell;
+            setContentView(new FrameLayout(this));
+            disposeCompose(old);
+        }
+        CockpitTheme t=theme.theme;
+        BG=t.background; SURFACE=t.panel; SURFACE_ALT=t.control; TEXT=t.text; MUTED=t.muted; ACCENT=t.accent;
+        tvKeys.clear();
+        tvConnectionButton=soundConnectionButton=tvHomeStatus=tvHomeDetail=tvRemoteStatus=volumeValue=sourcesStatus=systemStatus=null;
+        tvDeviceHeader=null; tvPower=tvMute=null; volumeLevel=null; remoteDial=null;
+        streamRow=sourcesAppList=null; streamScroll=null;
+        java.util.Arrays.fill(categoryViews,null);
+        java.util.Arrays.fill(categoryPagers,null);
+        shell = new LinearLayout(this);
         shell.setOrientation(LinearLayout.VERTICAL);
         shell.setBackgroundColor(BG);
 
@@ -97,7 +152,7 @@ public class MainActivity extends ComponentActivity {
             } else {
                 for (int section = 1; section <= 3; section++)
                     pager.addPage(SofacockpitComposeViewsKt.createTonmaschineComposePage(
-                        this, soundbarModel, tvDialog::open, section));
+                        this, soundbarModel, tvDialog::open, section, theme));
             }
         }
         for (View view : categoryViews) pages.addView(view, new FrameLayout.LayoutParams(-1, -1));
@@ -115,22 +170,9 @@ public class MainActivity extends ComponentActivity {
         shell.addView(footer, new LinearLayout.LayoutParams(-1, dp(44)));
         SystemBarInsets.install(getWindow(), shell);
         setContentView(shell);
-        int savedCategory = savedInstanceState == null ? 0 : savedInstanceState.getInt("navigation_category", 0);
-        int savedPage = savedInstanceState == null ? 0 : savedInstanceState.getInt("navigation_page", 0);
-        if (!CockpitNavigation.valid(savedCategory, savedPage)) { savedCategory = 0; savedPage = 0; }
-        selectScreen(savedCategory, savedPage);
+        selectScreen(categoryToShow, pageToShow);
         renderTvState(tv.state());
-        SofacockpitComposeViewsKt.observeSoundbarConnection(this, soundbarModel, this::renderSoundConnection);
         renderSoundConnection();
-        if (savedInstanceState == null && connectionOptions.getBoolean("auto_connect", false)) {
-            // Opt-in only. No power command, wake packet, or automatic pairing.
-            if (Build.VERSION.SDK_INT < 37 || checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") ==
-                    android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                if (tv.paired() && !tv.lastAddress().isEmpty()) tv.start(tv.lastAddress(), false);
-                if (!soundbarModel.getIp().getValue().isEmpty() &&
-                        soundbarModel.getDevice().getValue().getConnection() == Connection.DISCONNECTED) soundbarModel.connect();
-            }
-        }
     }
 
     private View createTabs() {
@@ -139,13 +181,14 @@ public class MainActivity extends ComponentActivity {
         row.setPadding(dp(12), dp(8), dp(12), dp(4));
         for (int category = 0; category < tabs.length; category++) {
             final int group = category;
-            TextView tab = label(CockpitNavigation.tabLabel(group) + (group == 0 ? "" : "  ▾"), 15, TEXT);
+            TextView tab = label(CockpitNavigation.tabLabel(group) + "  ▾", 15, TEXT);
             tab.setGravity(Gravity.CENTER);
-            tab.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            tab.setTypeface(ThemeArt.typeface(theme.theme, Typeface.BOLD));
             tab.setFocusable(true);
             tab.setOnClickListener(v -> selectScreen(group, 0));
-            if (group != 0) tab.setOnLongClickListener(v -> {
-                showQuickMenu(group, v);
+            tab.setOnLongClickListener(v -> {
+                if (group == 0) themePicker.show();
+                else showQuickMenu(group, v);
                 return true; // native long-press haptic feedback
             });
             tabs[group] = tab;
@@ -191,16 +234,17 @@ public class MainActivity extends ComponentActivity {
         int category = navigation.category();
         for (int i = 0; i < tabs.length; i++) {
             boolean selected = i == category;
-            tabs[i].setBackground(shape(selected ? Color.rgb(35,61,50) : SURFACE_ALT, 12));
-            tabs[i].setTextColor(selected ? Color.rgb(66,215,146) : MUTED);
+            tabs[i].setBackground(ThemeArt.surface(theme,selected?theme.theme.selected:SURFACE_ALT,
+                theme.theme.cornerDp,getResources().getDisplayMetrics().density,selected,true));
+            tabs[i].setTextColor(selected ? ACCENT : MUTED);
             tabs[i].setSelected(selected);
             tabs[i].setContentDescription(CockpitNavigation.tabLabel(i) + (selected ? ", ausgewählt" : "") +
-                (i == 0 ? "" : ", lange drücken für Seitenauswahl"));
+                (i == 0 ? ", lange drücken für Designauswahl" : ", lange drücken für Seitenauswahl"));
         }
         footer.setVisibility(category == 0 ? View.GONE : View.VISIBLE);
         for (int i = 0; i < dots.length; i++) {
             boolean selected = i == navigation.page();
-            dots[i].setTextColor(selected ? Color.rgb(66,215,146) : MUTED);
+            dots[i].setTextColor(selected ? ACCENT : MUTED);
             dots[i].setSelected(selected);
             if (category != 0) dots[i].setContentDescription(CockpitNavigation.pageLabel(category, i) +
                 (selected ? ", ausgewählt" : ""));
@@ -217,7 +261,7 @@ public class MainActivity extends ComponentActivity {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(false);
         scroll.setClipToPadding(false);
-        scroll.setPadding(dp(20), dp(20), dp(20), dp(18));
+        scroll.setPadding(dp(theme.theme.paddingDp), dp(12), dp(theme.theme.paddingDp), dp(12));
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -226,7 +270,7 @@ public class MainActivity extends ComponentActivity {
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = label("Verbindung", 21, TEXT);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        title.setTypeface(ThemeArt.typeface(theme.theme, Typeface.BOLD));
         titleRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         tvConnectionButton = connectionButton("TV");
         soundConnectionButton = connectionButton("Sound");
@@ -285,6 +329,8 @@ public class MainActivity extends ComponentActivity {
         volumeReadout.setGravity(Gravity.CENTER);
         volumeLevel = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         volumeLevel.setIndeterminate(false);
+        volumeLevel.setProgressTintList(ColorStateList.valueOf(ACCENT));
+        volumeLevel.setProgressBackgroundTintList(ColorStateList.valueOf(SURFACE_ALT));
         volumeLevel.setContentDescription("Vom TV gemeldeter Lautstärkepegel");
         volumeReadout.addView(volumeLevel, new LinearLayout.LayoutParams(-1, dp(12)));
         volumeValue = label("Pegel unbekannt", 12, MUTED);
@@ -301,7 +347,7 @@ public class MainActivity extends ComponentActivity {
         LinearLayout.LayoutParams soundbarLp = new LinearLayout.LayoutParams(-1, -2);
         soundbarLp.topMargin = dp(2);
         soundbarLp.bottomMargin = dp(12);
-        content.addView(SofacockpitComposeViewsKt.createSoundbarHomeComposeView(this, vm), soundbarLp);
+        content.addView(SofacockpitComposeViewsKt.createSoundbarHomeComposeView(this, vm, theme), soundbarLp);
         return scroll;
     }
 
@@ -319,7 +365,7 @@ public class MainActivity extends ComponentActivity {
         streamRow.removeAllViews();
         for (StreamingShortcuts.Entry entry : shortcuts.entries) {
             TextView tile = actionButton(entry.name, "");
-            tile.setTextSize(12);
+            tile.setTextSize(12 * theme.theme.fontScale);
             tile.setPadding(dp(3), 0, dp(3), 0);
             tile.setContentDescription(entry.name + " starten; lange drücken zum Bearbeiten");
             tile.setOnClickListener(v -> launchStreaming(entry));
@@ -463,7 +509,7 @@ public class MainActivity extends ComponentActivity {
     private LinearLayout fullPage() {
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
-        body.setPadding(dp(12), dp(6), dp(12), dp(8));
+        body.setPadding(dp(theme.theme.paddingDp), dp(6), dp(theme.theme.paddingDp), dp(8));
         body.setBackgroundColor(BG);
         return body;
     }
@@ -480,10 +526,10 @@ public class MainActivity extends ComponentActivity {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
         TextView heading = label(title, 19, TEXT);
-        heading.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        heading.setTypeface(ThemeArt.typeface(theme.theme, Typeface.BOLD));
         row.addView(heading, new LinearLayout.LayoutParams(0, -2, 1f));
         TextView status = actionButton("Nicht verbunden", "");
-        status.setTextSize(13);
+        status.setTextSize(13 * theme.theme.fontScale);
         status.setMaxLines(1);
         status.setEllipsize(android.text.TextUtils.TruncateAt.END);
         status.setPadding(dp(10),0,dp(10),0);
@@ -496,80 +542,26 @@ public class MainActivity extends ComponentActivity {
     private View remotePage() {
         LinearLayout body = fullPage();
         tvRemoteStatus = compactStatus(body, "Fernbedienung");
-        RemoteDial dial = new RemoteDial();
+        int[] directionKeys = {KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_CENTER};
+        remoteDial = new ThemedDial(this, theme, id -> tv.sendKey(directionKeys[id]));
         LinearLayout.LayoutParams dialLp = new LinearLayout.LayoutParams(-1, 0, 1f);
         dialLp.topMargin = dp(4);
         dialLp.bottomMargin = dp(8);
-        body.addView(dial, dialLp);
+        body.addView(remoteDial, dialLp);
         addTvKeyRow(body, new String[]{"Zurück", "Home"},
             new int[]{KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_HOME}, 60);
         addTvKeyRow(body, new String[]{"⏪", "▶ / Ⅱ", "⏩"},
             new int[]{KeyEvent.KEYCODE_MEDIA_REWIND, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
                 KeyEvent.KEYCODE_MEDIA_FAST_FORWARD}, 58);
         TextView keyboard = actionButton("Tastatur – in Vorbereitung", "");
-        keyboard.setTextSize(13);
+        keyboard.setTextSize(13 * theme.theme.fontScale);
         keyboard.setEnabled(false);
         keyboard.setAlpha(.45f);
         LinearLayout.LayoutParams keyboardLp = new LinearLayout.LayoutParams(-1, dp(44));
         keyboardLp.topMargin = dp(8);
         body.addView(keyboard, keyboardLp);
         return scrollPage(body);
-    }
-
-    /** Square dial measures to the available width, not a fixed 284dp. On a
-     * compact/landscape display the containing ScrollView keeps all keys reachable.
-     */
-    private final class RemoteDial extends FrameLayout {
-        private final FrameLayout dial;
-        private final TextView[] buttons = new TextView[5];
-        private int side;
-
-        RemoteDial() {
-            super(MainActivity.this);
-            setMinimumHeight(dp(240));
-            dial = new FrameLayout(MainActivity.this);
-            GradientDrawable bg = shape(SURFACE_ALT, 200);
-            bg.setShape(GradientDrawable.OVAL);
-            bg.setStroke(dp(1), Color.rgb(65, 79, 99));
-            dial.setBackground(bg);
-            addView(dial, new FrameLayout.LayoutParams(-2, -2));
-            String[] labels = {"↑", "↓", "←", "→", "OK"};
-            String[] names = {"Oben", "Unten", "Links", "Rechts", "OK"};
-            int[] keys = {KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
-                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER};
-            int[] gravities = {Gravity.TOP|Gravity.CENTER_HORIZONTAL, Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL,
-                Gravity.LEFT|Gravity.CENTER_VERTICAL, Gravity.RIGHT|Gravity.CENTER_VERTICAL, Gravity.CENTER};
-            for (int i=0; i<buttons.length; i++) {
-                TextView key = tvButton(labels[i], keys[i]);
-                GradientDrawable circle = shape(Color.rgb(48,58,72), 100);
-                circle.setShape(GradientDrawable.OVAL);
-                circle.setStroke(dp(1), Color.rgb(79,96,118));
-                key.setBackground(circle);
-                key.setTextSize(i == 4 ? 20 : 32);
-                key.setContentDescription(names[i]);
-                buttons[i] = key;
-                dial.addView(key, new FrameLayout.LayoutParams(-2,-2,gravities[i]));
-            }
-        }
-        @Override protected void onMeasure(int widthSpec, int heightSpec) {
-            int width = MeasureSpec.getSize(widthSpec);
-            int height = MeasureSpec.getMode(heightSpec) == MeasureSpec.UNSPECIFIED
-                ? width : resolveSize(width, heightSpec);
-            side = Math.max(0, Math.min(width, height));
-            int margin = Math.round(side * .036f);
-            for (int i=0; i<buttons.length; i++) {
-                FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) buttons[i].getLayoutParams();
-                lp.width = lp.height = Math.round(side * (i == 4 ? .30f : .282f));
-                lp.setMargins(margin,margin,margin,margin);
-            }
-            dial.measure(MeasureSpec.makeMeasureSpec(side, MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(side, MeasureSpec.EXACTLY));
-            setMeasuredDimension(width,height);
-        }
-        @Override protected void onLayout(boolean changed,int l,int t,int r,int b) {
-            int x=(r-l-side)/2, y=(b-t-side)/2;
-            dial.layout(x,y,x+side,y+side);
-        }
     }
 
     private void addTvKeyRow(LinearLayout parent, String[] labels, int[] keys, int height) {
@@ -599,7 +591,7 @@ public class MainActivity extends ComponentActivity {
             for (int col=0; col<2; col++) {
                 final int port = rowIndex*2+col+1;
                 TextView tile = tvButton(hdmiLabel(port),keys[port-1]);
-                tile.setTextSize(15);
+                tile.setTextSize(15 * theme.theme.fontScale);
                 tile.setContentDescription("HDMI " + port + ": " + hdmiLabel(port) + "; lange drücken zum Umbenennen");
                 tile.setOnLongClickListener(v -> { editHdmiLabel(port,tile); return true; });
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,dp(70),1f);
@@ -659,7 +651,7 @@ public class MainActivity extends ComponentActivity {
                 StreamingShortcuts.Entry entry = entries.get(i+j);
                 boolean favorite = shortcuts.entries.contains(entry);
                 TextView tile = actionButton((favorite?"★  ":"") + entry.name,"");
-                tile.setTextSize(13);
+                tile.setTextSize(13 * theme.theme.fontScale);
                 tile.setContentDescription(entry.name + (favorite?", Favorit":"") + "; lange drücken zum Verwalten");
                 tile.setOnClickListener(v -> launchStreaming(entry));
                 tile.setOnLongClickListener(v -> {
@@ -707,7 +699,7 @@ public class MainActivity extends ComponentActivity {
         rowLp.bottomMargin = dp(10);
         parent.addView(row, rowLp);
         TextView title = label(name, 12, MUTED);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        title.setTypeface(ThemeArt.typeface(theme.theme, Typeface.BOLD));
         row.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         TextView statusView = label(status, 13, MUTED);
         statusView.setPadding(dp(8), dp(8), 0, dp(8));
@@ -717,22 +709,25 @@ public class MainActivity extends ComponentActivity {
 
     private TextView tvButton(String text, int key) {
         TextView button = actionButton(text, "");
-        button.setOnClickListener(v -> tv.sendKey(key));
+        button.setOnClickListener(v -> {
+            v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
+            tv.sendKey(key);
+        });
         tvKeys.add(button);
         return button;
     }
 
     private TextView connectionButton(String name) {
         TextView button = actionButton(name, "");
-        button.setTextSize(15);
+        button.setTextSize(15 * theme.theme.fontScale);
         button.setFocusable(true);
         button.setOnClickListener(v -> tvDialog.open());
         return button;
     }
     private void paintConnection(TextView button, String name, boolean connected, boolean connecting) {
         if (button == null) return;
-        button.setTextColor(connected ? Color.rgb(66,215,146) :
-            (connecting ? Color.rgb(240,195,76) : Color.rgb(235,83,83)));
+        button.setTextColor(connected ? ACCENT :
+            (connecting ? CockpitTheme.PENDING : CockpitTheme.ERROR));
         button.setContentDescription(name + " – " + (connected ? "Verbunden" :
             (connecting ? "Verbindungsaufbau" : "Nicht verbunden")) + "; Verbindungen öffnen");
     }
@@ -760,23 +755,24 @@ public class MainActivity extends ComponentActivity {
         for (TextView status : new TextView[]{tvRemoteStatus, sourcesStatus, systemStatus}) {
             if (status == null) continue;
             status.setText(shortStatus);
-            status.setTextColor(state.connected() ? Color.rgb(66,215,146) : MUTED);
+            status.setTextColor(state.connected() ? ACCENT : MUTED);
             status.setContentDescription(state.detail + " – TV-Verbindung öffnen");
         }
+        if (remoteDial != null) remoteDial.setEnabled(ready);
         for (TextView key : tvKeys) {
             key.setEnabled(ready);
             key.setAlpha(ready ? 1f : .42f);
         }
         if (tvPower != null) {
             tvPower.setVisibility(state.connected() ? View.VISIBLE : View.GONE);
-            tvPower.setTextColor(Boolean.TRUE.equals(state.powerOn) ? Color.rgb(66,215,146) : TEXT);
+            tvPower.setTextColor(Boolean.TRUE.equals(state.powerOn) ? ACCENT : TEXT);
             tvPower.setContentDescription(state.powerOn == null ? "Fernseher ein oder aus, Zustand unbekannt" :
                 (state.powerOn ? "Fernseher ausschalten" : "Fernseher einschalten"));
             tvPower.invalidate();
         }
         if (tvMute != null) {
             tvMute.setVisibility(state.connected() ? View.VISIBLE : View.GONE);
-            tvMute.setTextColor(Boolean.TRUE.equals(state.muted) ? Color.rgb(66,215,146) : TEXT);
+            tvMute.setTextColor(Boolean.TRUE.equals(state.muted) ? ACCENT : TEXT);
             tvMute.setContentDescription(state.muted == null ? "Stummschaltung, Zustand unbekannt" :
                 (state.muted ? "Stummschaltung aufheben" : "Stummschaltung einschalten"));
             tvMute.invalidate();
@@ -808,6 +804,7 @@ public class MainActivity extends ComponentActivity {
 
     @Override protected void onDestroy() {
         if (quickMenu != null) quickMenu.dismiss();
+        if (themePicker != null) themePicker.close();
         if (tvDialog != null) tvDialog.close();
         if (backups != null) backups.close();
         if (tv != null) tv.close();
@@ -822,7 +819,7 @@ public class MainActivity extends ComponentActivity {
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
         TextView heading = label(name, 12, MUTED);
-        heading.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        heading.setTypeface(ThemeArt.typeface(theme.theme, Typeface.BOLD));
         header.addView(heading);
         card.addView(header);
         LinearLayout.LayoutParams innerLp = new LinearLayout.LayoutParams(-1, -2);
@@ -839,14 +836,16 @@ public class MainActivity extends ComponentActivity {
     private LinearLayout card() {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(14), dp(14), dp(14), dp(14));
-        card.setBackground(shape(SURFACE, 18));
+        int inset=dp(theme.theme.paddingDp);
+        card.setPadding(inset,inset,inset,inset);
+        card.setBackground(ThemeArt.surface(theme,SURFACE,theme.theme.cornerDp,
+            getResources().getDisplayMetrics().density,false,false));
         return card;
     }
 
     private TextView actionButton(String text, String message) {
         TextView button = label(text, 14, TEXT);
-        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setTypeface(ThemeArt.typeface(theme.theme, Typeface.BOLD));
         button.setGravity(Gravity.CENTER);
         button.setBackground(shape(SURFACE_ALT, 14));
         button.setOnClickListener(v -> Toast.makeText(this, message, Toast.LENGTH_SHORT).show());
@@ -855,7 +854,7 @@ public class MainActivity extends ComponentActivity {
 
     private TextView pill(String text) {
         TextView view = label(text, 10, MUTED);
-        view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        view.setTypeface(ThemeArt.typeface(theme.theme, Typeface.BOLD));
         view.setGravity(Gravity.CENTER);
         view.setPadding(dp(9), dp(7), dp(9), dp(7));
         view.setBackground(shape(SURFACE_ALT, 30));
@@ -865,16 +864,14 @@ public class MainActivity extends ComponentActivity {
     private TextView label(String text, int size, int color) {
         TextView view = new TextView(this);
         view.setText(text);
-        view.setTextSize(size);
+        view.setTextSize(size * theme.theme.fontScale);
+        view.setTypeface(ThemeArt.typeface(theme.theme,Typeface.NORMAL));
         view.setTextColor(color);
         return view;
     }
 
-    private GradientDrawable shape(int color, int radius) {
-        GradientDrawable d = new GradientDrawable();
-        d.setColor(color);
-        d.setCornerRadius(radius * getResources().getDisplayMetrics().density);
-        return d;
+    private Drawable shape(int color, int radius) {
+        return ThemeArt.surface(theme,color,theme.theme.cornerDp,getResources().getDisplayMetrics().density,false,true);
     }
 
     private int dp(int value) {

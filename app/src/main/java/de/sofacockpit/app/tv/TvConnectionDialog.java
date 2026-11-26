@@ -4,6 +4,9 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
 import de.sofacockpit.app.SystemBarInsets;
+import de.sofacockpit.app.theme.*;
+import java.util.function.Supplier;
+import android.content.res.ColorStateList;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -40,6 +43,9 @@ public final class TvConnectionDialog {
     private final MainViewModel soundbar;
     private final SharedPreferences options;
     private final Runnable exportBackup, importBackup;
+    private final Supplier<ThemePack> theme;
+    private ThemePack pack() { return theme.get(); }
+    private CockpitTheme palette() { return pack().theme; }
     private TextView soundStatus, pairingStatus;
     private EditText soundAddress;
     private Button soundConnect, soundDisconnect, soundSave, tvSave, bothConnect;
@@ -50,13 +56,14 @@ public final class TvConnectionDialog {
     private LinearLayout found, codeArea;
     private Discovery discovery;
     public TvConnectionDialog(Activity activity, TvRemoteClient client, MainViewModel soundbar,
-                              SharedPreferences options, Runnable exportBackup, Runnable importBackup) {
+                              SharedPreferences options, Runnable exportBackup, Runnable importBackup, Supplier<ThemePack> theme) {
         this.activity = activity;
         this.client = client;
         this.soundbar = soundbar;
         this.options = options;
         this.exportBackup = exportBackup;
         this.importBackup = importBackup;
+        this.theme = theme;
     }
     public void open() {
         if (dialog != null && dialog.isShowing()) return;
@@ -65,7 +72,7 @@ public final class TvConnectionDialog {
         layout.setPadding(dp(20), dp(12), dp(20), dp(12));
         ScrollView scroll = new ScrollView(activity);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(Color.rgb(11,14,19));
+        scroll.setBackgroundColor(palette().background);
         scroll.addView(layout);
         Button back = button("‹  Zurück zur Fernbedienung", this::close);
         layout.addView(back);
@@ -76,6 +83,9 @@ public final class TvConnectionDialog {
         pairingStatus = text("");
         layout.addView(pairingStatus);
         address = new EditText(activity);
+        address.setTextColor(palette().text);
+        address.setHintTextColor(palette().muted);
+        address.setBackgroundTintList(ColorStateList.valueOf(palette().accent));
         address.setSingleLine(true);
         address.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         address.setHint("TV-IP-Adresse");
@@ -117,6 +127,9 @@ public final class TvConnectionDialog {
         codeArea.setOrientation(LinearLayout.VERTICAL);
         codeArea.addView(text("Code vom TV (6 Zeichen, 0–9 und A–F)"));
         code = new EditText(activity);
+        code.setTextColor(palette().text);
+        code.setHintTextColor(palette().muted);
+        code.setBackgroundTintList(ColorStateList.valueOf(palette().accent));
         code.setSingleLine(true);
         code.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS |
             InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
@@ -135,6 +148,9 @@ public final class TvConnectionDialog {
         soundStatus = text("");
         layout.addView(soundStatus);
         soundAddress = new EditText(activity);
+        soundAddress.setTextColor(palette().text);
+        soundAddress.setHintTextColor(palette().muted);
+        soundAddress.setBackgroundTintList(ColorStateList.valueOf(palette().accent));
         soundAddress.setSingleLine(true);
         soundAddress.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         soundAddress.setHint("Soundbar-IPv4-Adresse");
@@ -160,13 +176,15 @@ public final class TvConnectionDialog {
         layout.addView(bothConnect);
         autoConnect = new CheckBox(activity);
         autoConnect.setText("Beim App-Start automatisch verbinden");
-        autoConnect.setTextColor(Color.WHITE);
+        autoConnect.setTextColor(palette().text);
+        autoConnect.setButtonTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},
+            new int[]{palette().accent,palette().muted}));
         autoConnect.setChecked(options.getBoolean("auto_connect", false));
         autoConnect.setOnCheckedChangeListener((b, enabled) -> options.edit().putBoolean("auto_connect", enabled).apply());
         layout.addView(autoConnect);
         layout.addView(text("Nur normale Verbindungen, keine Einschaltbefehle. Je nach Gerät kann bereits ein Netzwerkzugriff aufwecken. Standard: aus. Eine zuvor aktive TV-Sitzung kann nach Rückkehr aus dem Hintergrund einmal wiederhergestellt werden; manuell getrennte Geräte bleiben getrennt."));
         layout.addView(heading("Konfiguration", 18));
-        layout.addView(text("Passwortgeschützte Datei mit TV-/Soundbar-Adresse, exportierbarer TV-Kopplung, Streaming-Auswahl und Auto-Verbindung. NAS- und Klangprofileinstellungen bleiben getrennt."));
+        layout.addView(text("Passwortgeschützte Datei mit TV-/Soundbar-Adresse, exportierbarer TV-Kopplung, Streaming-Auswahl, Auto-Verbindung und gewähltem Theme. Eigene Theme-Dateien, NAS- und Klangprofileinstellungen bleiben getrennt."));
         layout.addView(button("Konfiguration exportieren", exportBackup));
         layout.addView(button("Konfiguration importieren", importBackup));
 
@@ -193,8 +211,8 @@ public final class TvConnectionDialog {
         boolean busy = client.busy();
         boolean paired = client.paired();
         status.setText(state.detail);
-        status.setTextColor(state.connected() ? Color.rgb(66,215,146) :
-            (busy ? Color.rgb(240,195,76) : Color.rgb(235,83,83)));
+        status.setTextColor(state.connected() ? palette().accent :
+            (busy ? CockpitTheme.PENDING : CockpitTheme.ERROR));
         pairingStatus.setText(client.hasPortablePairing() ? "TV-Kopplung exportierbar" :
             (paired ? "Alte Kopplung – für Export einmal neu koppeln." : "Noch nicht gekoppelt"));
         connect.setText(paired ? "Verbinden" : "Koppeln");
@@ -217,8 +235,8 @@ public final class TvConnectionDialog {
         boolean active = state.getConnection() == Connection.CONNECTED;
         boolean connecting = state.getConnection() == Connection.CONNECTING;
         soundStatus.setText(soundbar.getMessage().getValue());
-        soundStatus.setTextColor(active ? Color.rgb(66,215,146) :
-            (connecting && state.getError() == null ? Color.rgb(240,195,76) : Color.rgb(235,83,83)));
+        soundStatus.setTextColor(active ? palette().accent :
+            (connecting && state.getError() == null ? CockpitTheme.PENDING : CockpitTheme.ERROR));
         soundAddress.setEnabled(!active && !connecting);
         soundSave.setEnabled(!active && !connecting);
         soundConnect.setEnabled(!active && !connecting);
@@ -253,9 +271,9 @@ public final class TvConnectionDialog {
     private void toast(String value) { Toast.makeText(activity, value, Toast.LENGTH_LONG).show(); }
     private TextView heading(String value, int size) {
         TextView view = text(value);
-        view.setTextSize(size);
-        view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        view.setTextColor(Color.WHITE);
+        view.setTextSize(size * palette().fontScale);
+        view.setTypeface(ThemeArt.typeface(palette(),Typeface.BOLD));
+        view.setTextColor(palette().text);
         view.setPadding(0, dp(15), 0, dp(7));
         return view;
     }
@@ -266,13 +284,22 @@ public final class TvConnectionDialog {
     private Button button(String label, Runnable action) {
         Button b = new Button(activity);
         b.setText(label);
+        b.setTextColor(palette().text);
+        b.setTextSize(14 * palette().fontScale);
+        b.setTypeface(ThemeArt.typeface(palette(),Typeface.BOLD));
+        b.setAllCaps(false);
+        b.setBackground(ThemeArt.surface(pack(),palette().control,palette().cornerDp,
+            activity.getResources().getDisplayMetrics().density,false,true));
+        b.setMinHeight(dp(48));
         b.setOnClickListener(v -> action.run());
         return b;
     }
     private TextView text(String s) {
         TextView v = new TextView(activity);
         v.setText(s);
-        v.setTextColor(Color.rgb(210,218,228));
+        v.setTextColor(palette().muted);
+        v.setTypeface(ThemeArt.typeface(palette(),Typeface.NORMAL));
+        v.setTextSize(14 * palette().fontScale);
         v.setPadding(0, dp(5), 0, dp(5));
         return v;
     }

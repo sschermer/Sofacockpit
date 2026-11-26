@@ -15,6 +15,8 @@ import androidx.activity.ComponentActivity;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import de.sofacockpit.app.tv.TvRemoteClient;
+import de.sofacockpit.app.theme.ThemeStore;
+import de.sofacockpit.app.theme.CockpitTheme;
 import de.tonmaschine.android.MainViewModel;
 import de.tonmaschine.android.model.Catalog;
 import de.tonmaschine.android.model.Connection;
@@ -33,6 +35,7 @@ final class ConnectionBackupManager implements AutoCloseable {
     private final MainViewModel soundbar;
     private final StreamingShortcuts shortcuts;
     private final SharedPreferences options;
+    private final ThemeStore themes;
     private final Runnable changed;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final ActivityResultLauncher<String> create;
@@ -44,9 +47,9 @@ final class ConnectionBackupManager implements AutoCloseable {
     private boolean busy;
 
     ConnectionBackupManager(ComponentActivity activity, TvRemoteClient tv, MainViewModel soundbar,
-                            StreamingShortcuts shortcuts, SharedPreferences options, Runnable changed) {
+                            StreamingShortcuts shortcuts, SharedPreferences options, ThemeStore themes, Runnable changed) {
         this.activity = activity; this.tv = tv; this.soundbar = soundbar;
-        this.shortcuts = shortcuts; this.options = options; this.changed = changed;
+        this.shortcuts = shortcuts; this.options = options; this.themes = themes; this.changed = changed;
         create = activity.registerForActivityResult(new ActivityResultContracts.CreateDocument("application/octet-stream"),
             uri -> { if (uri != null && !closed) password(uri, true); });
         open = activity.registerForActivityResult(new ActivityResultContracts.OpenDocument(),
@@ -119,12 +122,13 @@ final class ConnectionBackupManager implements AutoCloseable {
         busy = true;
         final String soundIp = soundbar.getIp().getValue();
         final boolean auto = options.getBoolean("auto_connect", false);
+        final String themeId = themes.selectedId();
         final String streams = shortcuts.exportEntries().toString();
         worker.execute(() -> {
             byte[] plain = null;
             try {
                 JSONObject root = new JSONObject().put("version",1).put("tv",tv.exportConfiguration())
-                    .put("soundbarIp",soundIp).put("autoConnect",auto)
+                    .put("soundbarIp",soundIp).put("autoConnect",auto).put("themeId",themeId)
                     .put("streaming",new org.json.JSONArray(streams));
                 plain = root.toString().getBytes(StandardCharsets.UTF_8);
                 byte[] encrypted = BackupCrypto.encrypt(plain,password);
@@ -164,6 +168,8 @@ final class ConnectionBackupManager implements AutoCloseable {
                 if (!soundIp.isEmpty() && !Catalog.INSTANCE.validIp(soundIp)) throw new IOException("Ungültige Soundbar-IP");
                 List<StreamingShortcuts.Entry> streams = StreamingShortcuts.parseEntries(root.getJSONArray("streaming"));
                 boolean auto = root.getBoolean("autoConnect");
+                String themeId = root.has("themeId") ? root.getString("themeId") : null;
+                if (themeId != null && !CockpitTheme.validId(themeId)) throw new IOException("Ungültige Theme-ID");
                 TvRemoteClient.PreparedConfiguration tvConfig = tv.prepareConfiguration(root.getJSONObject("tv"));
                 activity.runOnUiThread(() -> {
                     if (closed || activity.isFinishing()) return;
@@ -182,6 +188,9 @@ final class ConnectionBackupManager implements AutoCloseable {
                         .setMessage("Geräteadressen, Streaming-Liste und Auto-Verbindung werden ersetzt. Beide Geräte werden getrennt. " +
                             (tvConfig.includesPairing() ? "Die gespeicherte TV-Identität wird wiederhergestellt." :
                             "Die Datei enthält keine TV-Kopplung. Eine vorhandene Kopplung bleibt nur bei identischer TV-Adresse erhalten.") +
+                            (themeId == null ? "" : themes.has(themeId) ?
+                                " Das gesicherte Design wird übernommen." :
+                                " Eigenes Design fehlt: Minimal Premium wird verwendet. Theme-Datei separat importieren.") +
                             " Es werden keine Steuerbefehle gesendet.")
                         .setView(fields)
                         .setNegativeButton("Abbrechen", null)
@@ -192,6 +201,7 @@ final class ConnectionBackupManager implements AutoCloseable {
                                 if (!soundbar.saveConnectionAddress(soundIp)) throw new IOException("Soundbar-IP");
                                 shortcuts.replaceEntries(streams);
                                 options.edit().putBoolean("auto_connect", auto).apply();
+                                if (themeId != null) themes.select(themeId);
                                 changed.run();
                             } catch (Exception ex) {
                                 toast("Import konnte nicht vollständig gespeichert werden. Einstellungen prüfen.");

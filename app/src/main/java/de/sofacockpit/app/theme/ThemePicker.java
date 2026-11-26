@@ -23,7 +23,8 @@ public final class ThemePicker implements AutoCloseable {
     private final ActivityResultLauncher<String> save;
     private ThemePack exporting;
     private AlertDialog dialog;
-    private boolean busy,closed;
+    private boolean busy;
+    private volatile boolean closed;
 
     public ThemePicker(ComponentActivity activity,ThemeStore store,Runnable changed){
         this.activity=activity;this.store=store;this.changed=changed;
