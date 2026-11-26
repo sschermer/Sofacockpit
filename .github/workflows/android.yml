@@ -59,6 +59,11 @@ jobs:
           umask 077
           test -n "$SOFACOCKPIT_KEYSTORE_BASE64" || { echo "Missing signing keystore secret"; exit 1; }
           test -n "$SOFACOCKPIT_KEYSTORE_PASSWORD" || { echo "Missing signing password secret"; exit 1; }
+          # The supplied password file ends with a newline. PKCS12 rejects
+          # control characters; normalize only surrounding whitespace/BOM.
+          SOFACOCKPIT_KEYSTORE_PASSWORD=$(python3 -c 'import os,sys; p=os.environ["SOFACOCKPIT_KEYSTORE_PASSWORD"].strip().lstrip("\ufeff").strip(); sys.exit("Signing password contains invalid characters") if not p or any(ord(c)<32 or ord(c)>126 for c in p) else sys.stdout.write(p)')
+          export SOFACOCKPIT_KEYSTORE_PASSWORD
+          printf '::add-mask::%s\n' "$SOFACOCKPIT_KEYSTORE_PASSWORD"
           keyfile=$(mktemp "$RUNNER_TEMP/sofacockpit-signing.XXXXXXXX.p12")
           trap 'rm -f "$keyfile"' EXIT
           printf '%s' "$SOFACOCKPIT_KEYSTORE_BASE64" | base64 --decode > "$keyfile"
