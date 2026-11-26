@@ -44,15 +44,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import de.tonmaschine.android.model.*
+import de.sofacockpit.app.theme.*
 import kotlinx.coroutines.delay
-
-private val bg = Color(0xFF171B23)
-private val panel = Color(0xFF232936)
-private val blue = Color(0xFF76A9FF)
-private val muted = Color(0xFFA7B4C8)
-private val foreground = Color(0xFFF0F4FA)
-private val powerGreen = Color(0xFF42D792)
-private val powerRed = Color(0xFFEB5353)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -77,7 +70,15 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
-                connectionSettings: (() -> Unit)? = null) {
+                themePack: ThemePack = ThemePack.fallback(), connectionSettings: (() -> Unit)? = null) {
+    val t = themePack.theme
+    val bg = Color(t.background)
+    val panel = Color(t.panel)
+    val blue = Color(t.accent)
+    val muted = Color(t.muted)
+    val foreground = Color(t.text)
+    val powerGreen = Color(t.accent)
+    val powerRed = Color(CockpitTheme.ERROR)
     val state by vm.device.collectAsState()
     val ip by vm.ip.collectAsState()
     val message by vm.message.collectAsState()
@@ -181,14 +182,7 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
     LaunchedEffect(state.powerOn) {
         if (state.powerOn == false && !embedded) settings = false
     }
-    MaterialTheme(colorScheme = darkColorScheme(
-        primary = blue, onPrimary = Color(0xFF101B29),
-        background = bg, onBackground = foreground,
-        surface = panel, onSurface = foreground,
-        onSurfaceVariant = muted, outline = Color(0xFF71819D),
-        surfaceVariant = Color(0xFF303746),
-        secondary = blue, onSecondary = Color(0xFF101B29)
-    )) {
+    CockpitThemeScope(themePack) {
         // A plain Column with a background does not provide a Material content color.
         // Surface propagates a readable light-on-dark LocalContentColor to plain Texts
         // (headings, switch labels, selected values, profile names, dialogs).
@@ -204,7 +198,7 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
             } else {
             Column(if (embedded) Modifier.fillMaxSize()
                 else Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(t.paddingDp.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text("LG S95QR  ·  " + when (state.connection) {
@@ -223,7 +217,7 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
                             else settings = !settings
                         },
                         modifier = Modifier.size(48.dp)
-                            .background(panel, RoundedCornerShape(14.dp))
+                            .background(panel, MaterialTheme.shapes.medium)
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Settings,
@@ -241,7 +235,7 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
                                 !active || state.powerOn == null -> panel
                                 state.powerOn == false -> powerRed
                                 else -> powerGreen
-                            }, RoundedCornerShape(14.dp))
+                            }, MaterialTheme.shapes.medium)
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.PowerSettingsNew,
@@ -257,7 +251,7 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
                 }
             }
             if (settings) {
-                Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = t.paddingDp.dp)) {
                     Panel("Verbindung") {
                         if (connectionSettings == null) {
                             OutlinedTextField(ip, vm::updateIp, modifier = Modifier.fillMaxWidth(),
@@ -309,7 +303,7 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
                             OutlinedButton(onClick = vm::refreshProfiles,
                                 enabled = !profileBusy && profileSource == ProfileSource.NAS) { Text("Aktualisieren") }
                         }
-                        Text(nasStatus, color = if (nasOnline) Color(0xFF9DE4BC) else muted)
+                        Text(nasStatus, color = if (nasOnline) powerGreen else muted)
                         if (!nasOnline && profileSource == ProfileSource.NAS) {
                             Text("Bei Verbindungsfehlern werden nur zwischengespeicherte NAS-Profile angezeigt. Speichern und Löschen sind gesperrt.", color = muted)
                         }
@@ -353,7 +347,7 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
                     Spacer(Modifier.height(12.dp))
                 }
             } else {
-                LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(horizontal = t.paddingDp.dp, vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (section == 0 || section == 1) item {
                         Panel("Gesamtlautstärke") {
@@ -435,7 +429,7 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
                                 TextButton(onClick = { profileDialog = true }) { Text("Verwalten") }
                             }
                             if (profileSource == ProfileSource.NAS) {
-                                Text(nasStatus, color = if (nasOnline) Color(0xFF9DE4BC) else muted)
+                                Text(nasStatus, color = if (nasOnline) powerGreen else muted)
                                 if (!nasOnline) Text("Nur Lesekopie – Änderungen nicht möglich", color = muted)
                             }
                             if (section == 2) {
@@ -450,9 +444,10 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
                                     style = MaterialTheme.typography.bodySmall)
                                 val sorted = profiles.keys.sortedBy { it.lowercase(java.util.Locale.ROOT) }
                                 (if (descending) sorted.reversed() else sorted).forEach { profileName ->
-                                    Surface(color = if (selected == profileName) Color(0xFF233D32) else Color(0xFF303746),
-                                        shape = RoundedCornerShape(12.dp),
-                                        modifier = Modifier.fillMaxWidth().combinedClickable(
+                                    Surface(color = Color.Transparent,
+                                        shape = MaterialTheme.shapes.medium,
+                                        modifier = Modifier.fillMaxWidth().cockpitPanel(themePack,
+                                            if (selected == profileName) t.selected else t.control, selected == profileName).combinedClickable(
                                             onClick = { if (controls) vm.applyProfile(profileName) },
                                             onLongClick = { actionTarget = profileName }
                                         )) {
@@ -515,7 +510,7 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
                 }
             }
             Text(message, modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
-                color = if (state.error != null) Color(0xFFFFB4AB) else muted,
+                color = if (state.error != null) powerRed else muted,
                 style = MaterialTheme.typography.bodySmall)
         }
         if (pendingExport != null) {
@@ -687,6 +682,8 @@ private fun Modifier.reserveSliderGesture(enabled: Boolean): Modifier {
 
 @Composable
 private fun StandbyPowerButton(onWake: () -> Unit) {
+    val powerGreen = Color(LocalCockpitPack.current.theme.accent)
+    val powerRed = Color(CockpitTheme.ERROR)
     var justPressed by remember { mutableStateOf(false) }
     LaunchedEffect(justPressed) {
         if (justPressed) {
@@ -721,7 +718,8 @@ private fun StandbyPowerButton(onWake: () -> Unit) {
 
 @Composable
 private fun Panel(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().background(panel, RoundedCornerShape(14.dp)).padding(14.dp),
+    val pack = LocalCockpitPack.current
+    Column(Modifier.fillMaxWidth().cockpitPanel(pack).padding(pack.theme.paddingDp.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(title, color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

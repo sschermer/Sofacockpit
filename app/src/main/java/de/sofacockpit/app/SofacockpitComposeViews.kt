@@ -40,17 +40,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import de.tonmaschine.android.MainViewModel
 import de.tonmaschine.android.Tonmaschine
-
-private val cockpitBackground = Color(0xFF0B0E13)
-private val cockpitSurface = Color(0xFF171C24)
-private val cockpitText = Color(0xFFF2F5F9)
-private val cockpitMuted = Color(0xFF97A3B3)
-private val cockpitBlue = Color(0xFF70BEFF)
-private val cockpitGreen = Color(0xFF42D792)
-private val cockpitRed = Color(0xFFEB5353)
+import de.sofacockpit.app.theme.*
 
 /** Hosts the existing Tonmaschine Compose screen and its real device controls. */
-fun createTonmaschineComposePage(context: Context, vm: MainViewModel, openConnections: Runnable, section: Int): ComposeView =
+fun createTonmaschineComposePage(context: Context, vm: MainViewModel, openConnections: Runnable, section: Int, pack: ThemePack): ComposeView =
     ComposeView(context).apply {
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         setContent {
@@ -67,7 +60,7 @@ fun createTonmaschineComposePage(context: Context, vm: MainViewModel, openConnec
                     vm.connect()
                 }
             }
-            Tonmaschine(vm, connect, section = section, connectionSettings = { openConnections.run() })
+            Tonmaschine(vm, connect, section = section, themePack = pack, connectionSettings = { openConnections.run() })
         }
     }
 
@@ -79,40 +72,35 @@ fun observeSoundbarConnection(activity: ComponentActivity, vm: MainViewModel, up
 }
 
 /** Compact start-screen status. Values and switch states come from soundbar reports. */
-fun createSoundbarHomeComposeView(context: Context, vm: MainViewModel): ComposeView =
+fun createSoundbarHomeComposeView(context: Context, vm: MainViewModel, pack: ThemePack): ComposeView =
     ComposeView(context).apply {
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-        setContent { SoundbarHomeCard(vm) }
+        setContent { SoundbarHomeCard(vm, pack) }
     }
 
 @Composable
-private fun SoundbarHomeCard(vm: MainViewModel) {
+private fun SoundbarHomeCard(vm: MainViewModel, pack: ThemePack) {
+    val t = pack.theme
+    val cockpitText = Color(t.text)
+    val cockpitMuted = Color(t.muted)
+    val cockpitGreen = Color(t.accent)
+    val cockpitRed = Color(CockpitTheme.ERROR)
     val state by vm.device.collectAsState()
     val active = state.connection == de.tonmaschine.android.model.Connection.CONNECTED
-    MaterialTheme(colorScheme = darkColorScheme(
-        primary = cockpitBlue,
-        onPrimary = Color(0xFF101B29),
-        background = cockpitBackground,
-        onBackground = cockpitText,
-        surface = cockpitSurface,
-        onSurface = cockpitText,
-        onSurfaceVariant = cockpitMuted,
-        secondary = cockpitBlue,
-        onSecondary = Color(0xFF101B29)
-    )) {
+    CockpitThemeScope(pack) {
         Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = cockpitSurface,
+            modifier = Modifier.fillMaxWidth().cockpitPanel(pack),
+            color = Color.Transparent,
             contentColor = cockpitText,
-            shape = RoundedCornerShape(18.dp)
+            shape = MaterialTheme.shapes.medium
         ) {
-            Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Column(Modifier.padding(horizontal = t.paddingDp.dp, vertical = 10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "SOUNDBAR",
                         modifier = Modifier.weight(1f),
                         color = cockpitMuted,
-                        fontSize = 12.sp,
+                        fontSize = (12 * t.fontScale).sp,
                         fontWeight = FontWeight.Bold
                     )
                     if (!active) {
@@ -120,7 +108,7 @@ private fun SoundbarHomeCard(vm: MainViewModel) {
                             de.tonmaschine.android.model.Connection.CONNECTING -> "Verbinde …"
                             else -> "Nicht verbunden"
                         }
-                        Text(status, color = cockpitMuted, fontSize = 13.sp)
+                        Text(status, color = cockpitMuted, fontSize = (13 * t.fontScale).sp)
                     } else {
                         val powerColor = when (state.powerOn) {
                             true -> cockpitGreen
@@ -164,12 +152,12 @@ private fun SoundbarHomeCard(vm: MainViewModel) {
                     }
                     Spacer(Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Audioformat", color = cockpitMuted, fontSize = 12.sp,
+                        Text("Audioformat", color = cockpitMuted, fontSize = (12 * t.fontScale).sp,
                             modifier = Modifier.weight(1f))
                         Text(
                             state.audioFormat.takeUnless { it == "–" } ?: "Noch nicht gemeldet",
                             color = cockpitText,
-                            fontSize = 13.sp,
+                            fontSize = (13 * t.fontScale).sp,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -182,7 +170,7 @@ private fun SoundbarHomeCard(vm: MainViewModel) {
 @Composable
 private fun HomeToggle(label: String, value: Boolean?, active: Boolean, onChanged: (Boolean) -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, color = cockpitText, fontSize = 12.sp)
+        Text(label, color = MaterialTheme.colorScheme.onSurface, fontSize = (12 * LocalCockpitPack.current.theme.fontScale).sp)
         Switch(
             checked = value ?: false,
             onCheckedChange = onChanged,
