@@ -12,7 +12,8 @@ public final class ThemeArchive {
     public static final int MAX_FILE = 1024 * 1024;
     private static final int MAX_JSON = 16 * 1024;
     private static final int MAX_EXPANDED = 1536 * 1024;
-    private static final Set<String> ALLOWED = Set.of("manifest.json","theme.json",
+    @SafeVarargs private static <T> Set<T> set(T... values) { return new HashSet<>(Arrays.asList(values)); }
+    private static final Set<String> ALLOWED = set("manifest.json","theme.json",
         "preview.png","preview.webp","textures/panel.png","textures/panel.webp",
         "icons/arrow.png","icons/arrow.webp");
     public final CockpitTheme theme;
@@ -26,13 +27,15 @@ public final class ThemeArchive {
         if(raw.length<22 || raw[0]!='P' || raw[1]!='K' || raw[2]!=3 || raw[3]!=4)
             throw new IOException("Keine gültige .sofatheme-Datei");
         Map<String,byte[]> entries=new HashMap<>();
-        int expanded=0;
+        int expanded=0, count=0;
+        Set<String> dirs=new HashSet<>();
         try(ZipInputStream zip=new ZipInputStream(new ByteArrayInputStream(raw))) {
             for(ZipEntry entry;(entry=zip.getNextEntry())!=null;) {
+                if(++count>9) throw new IOException("Zu viele Theme-Einträge");
                 String name=entry.getName();
                 if(entry.isDirectory()) {
-                    if(!Set.of("textures/","icons/").contains(name)) throw new IOException("Unbekannter Theme-Ordner");
-                    zip.closeEntry(); continue;
+                    if(!set("textures/","icons/").contains(name)||!dirs.add(name)) throw new IOException("Unbekannter Theme-Ordner");
+                    limited(zip,0); zip.closeEntry(); continue;
                 }
                 if(!ALLOWED.contains(name)||entries.containsKey(name)) throw new IOException("Nicht erlaubter oder doppelter Theme-Eintrag");
                 int limit=name.endsWith(".json")?MAX_JSON:MAX_FILE;

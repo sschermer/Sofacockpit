@@ -15,8 +15,8 @@ public final class CockpitTheme {
     public static final int ERROR = 0xffeb6868, PENDING = 0xfff0c34c;
 
     private CockpitTheme(JSONObject manifest, JSONObject theme) throws JSONException {
-        keys(manifest, Set.of("format","schema","id","name","author","version"));
-        keys(theme, Set.of("background","panel","control","text","muted","accent","selected","border","dial",
+        keys(manifest, set("format","schema","id","name","author","version"));
+        keys(theme, set("background","panel","control","text","muted","accent","selected","border","dial",
             "style","font","cornerDp","paddingDp","fontScale","centerRatio"));
         if (!"sofacockpit-theme".equals(manifest.getString("format")) ||
             integer(manifest,"schema",1,1) != 1) throw new IllegalArgumentException("Nicht unterstützte Theme-Version");
@@ -27,8 +27,8 @@ public final class CockpitTheme {
         shortText(manifest.getString("version"),24);
         style = theme.getString("style");
         font = theme.getString("font");
-        if (!Set.of("flat","soft","metal","hud").contains(style) ||
-            !Set.of("sans","condensed","mono").contains(font)) throw new IllegalArgumentException("Unbekannter Stil oder Schrift");
+        if (!set("flat","soft","metal","hud").contains(style) ||
+            !set("sans","condensed","mono").contains(font)) throw new IllegalArgumentException("Unbekannter Stil oder Schrift");
         background = color(theme,"background"); panel = color(theme,"panel"); control = color(theme,"control");
         text = color(theme,"text"); muted = color(theme,"muted"); accent = color(theme,"accent");
         selected = color(theme,"selected"); border = color(theme,"border"); dial = color(theme,"dial");
@@ -54,6 +54,7 @@ public final class CockpitTheme {
             Character.getType(c) == Character.FORMAT)) throw new IllegalArgumentException("Ungültige Theme-Metadaten");
         return v;
     }
+    @SafeVarargs private static <T> Set<T> set(T... values) { return new java.util.HashSet<>(java.util.Arrays.asList(values)); }
     private static void keys(JSONObject o, Set<String> expected) {
         Iterator<String> i=o.keys();
         while(i.hasNext()) if(!expected.contains(i.next())) throw new IllegalArgumentException("Unbekanntes Theme-Feld");
