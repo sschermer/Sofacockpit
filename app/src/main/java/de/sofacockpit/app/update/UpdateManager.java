@@ -40,7 +40,7 @@ public final class UpdateManager implements AutoCloseable {
     private final String installedName;
     private final ReleaseCatalog.Version installed;
     private volatile boolean closed;
-    private boolean resumed, checking, manualRequested, downloading;
+    private boolean resumed, checking, manualRequested, downloading, connectionRefreshBusy;
     private ReleaseCatalog pendingCatalog;
     private boolean pendingManual;
     private ReleaseCatalog.Release permissionRelease, approvedDownload;
@@ -75,6 +75,12 @@ public final class UpdateManager implements AutoCloseable {
     private boolean all(){return prefs.getBoolean(ALL,true);}
     private String skipKey(boolean all){return all?"skipped_all":"skipped_stable";}
     public void startAutomaticCheck(){if(automatic())check(false);}
+    /** Pull-to-refresh respects the existing automatic-check preference and skipped releases. */
+    public void checkOnRefresh(){if(automatic()&&!checking&&pendingCatalog==null)check(false);}
+    public void setConnectionRefreshBusy(boolean busy){
+        connectionRefreshBusy=busy;
+        if(!busy)schedulePresentation();
+    }
     public void onResume(){resumed=true;schedulePresentation();}
     public void onPause(){resumed=false;main.removeCallbacks(present);}
     public void onWindowFocus(){schedulePresentation();}
@@ -118,7 +124,7 @@ public final class UpdateManager implements AutoCloseable {
     }
 
     private void maybePresent(){
-        if(!foreground()||activeDialog!=null)return;
+        if(!foreground()||activeDialog!=null||connectionRefreshBusy)return;
         if(verifiedApk!=null){
             File file=verifiedApk;ReleaseCatalog.Release release=verifiedRelease;
             verifiedApk=null;verifiedRelease=null;
@@ -177,7 +183,7 @@ public final class UpdateManager implements AutoCloseable {
         if(downloading||verifiedApk!=null||permissionRelease!=null||approvedDownload!=null){toast("Ein Update wird bereits vorbereitet.");return;}
         CockpitTheme t=palette();LinearLayout b=body();
         b.addView(text("Installiert: v"+installedName,18,t.text,true));
-        CheckBox auto=new CheckBox(activity);auto.setText("Beim App-Start automatisch nach Updates suchen");
+        CheckBox auto=new CheckBox(activity);auto.setText("Beim App-Start und beim Herunterziehen nach Updates suchen");
         auto.setTextColor(t.text);auto.setButtonTintList(ColorStateList.valueOf(t.accent));
         auto.setChecked(automatic());
         auto.setOnCheckedChangeListener((button,checked)->prefs.edit().putBoolean(AUTO,checked).apply());

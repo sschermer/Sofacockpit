@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -43,7 +46,9 @@ import de.tonmaschine.android.Tonmaschine
 import de.sofacockpit.app.theme.*
 
 /** Hosts the existing Tonmaschine Compose screen and its real device controls. */
-fun createTonmaschineComposePage(context: Context, vm: MainViewModel, openConnections: Runnable, section: Int, pack: ThemePack): ComposeView =
+@OptIn(ExperimentalMaterial3Api::class)
+fun createTonmaschineComposePage(context: Context, vm: MainViewModel, openConnections: Runnable, section: Int, pack: ThemePack,
+    refresh: ConnectionRefresh): ComposeView =
     ComposeView(context).apply {
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         setContent {
@@ -60,7 +65,16 @@ fun createTonmaschineComposePage(context: Context, vm: MainViewModel, openConnec
                     vm.connect()
                 }
             }
-            Tonmaschine(vm, connect, section = section, themePack = pack, connectionSettings = { openConnections.run() })
+            val refreshing by refresh.refreshing.collectAsState()
+            CockpitThemeScope(pack) {
+                PullToRefreshBox(
+                    isRefreshing = refreshing,
+                    onRefresh = { refresh.request(CockpitNavigation.SOUND) },
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Tonmaschine(vm, connect, section = section, themePack = pack, connectionSettings = { openConnections.run() })
+                }
+            }
         }
     }
 

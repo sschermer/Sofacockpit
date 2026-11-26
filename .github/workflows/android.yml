@@ -85,7 +85,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v0.9.1
+          name: Sofacockpit-Android-v1.0.0
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -94,9 +94,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create sofacockpit-v0.9.1 \
+          gh release create sofacockpit-v1.0.0 \
             dist/Sofacockpit.apk dist/*.sofatheme \
             --target "$GITHUB_SHA" \
-            --prerelease \
-            --title "Sofacockpit v0.9.1 (Kompakte Klangsteuerung)" \
-            --notes "Kompakte Klangsteuerung: aktuell gemeldeter Klangmodus als Dropdown mit allen von der Soundbar unterstützten Modi, kleinere Kartenabstände, unveränderte Night Time/DRC/Surround-Schalter. Doppelte normale Statusmeldungen entfallen, Fehler und Befehlsrückmeldungen bleiben. Aktueller Seitenname neben den anklickbaren Navigationspunkten; Wischkonzept und Seitenstruktur unverändert. Test-Pre-Release für das Update von v0.9.0. Feste Signatur unverändert."
+            --latest \
+            --title "Sofacockpit v1.0.0" \
+            --notes "Erstes reguläres Release: TV- und Soundbar-Steuerung, sechs Geräte-Screens, lokale/NAS-Klangprofile, fünf Themes, gesicherte Konfiguration und integrierte Software-Updates. Neu: Pull-to-Refresh prüft die gewünschte Geräteverbindung (Start: beide Geräte, TV/Sound: jeweiliges Gerät), aktualisiert Soundbar-Werte und versucht bei ausbleibender Antwort einmal die Wiederverbindung. Zusätzlich optionale Updateprüfung. Keine erneute TV-Kopplung oder Einschaltbefehle. Bekannte noch nicht unterstützte Funktionen siehe README. Gerätetest der neuen Refresh-Geste offen; Signatur unverändert."

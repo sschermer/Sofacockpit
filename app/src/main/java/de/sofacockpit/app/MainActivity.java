@@ -44,6 +44,8 @@ public class MainActivity extends ComponentActivity {
     private ThemePack theme;
     private ThemePicker themePicker;
     private UpdateManager updates;
+    private ConnectionRefresh connectionRefresh;
+    private final List<NativePullRefreshLayout> refreshLayouts = new ArrayList<>();
     private LinearLayout shell;
     private ThemedDial remoteDial;
     private final CockpitNavigation navigation = new CockpitNavigation();
@@ -88,6 +90,12 @@ public class MainActivity extends ComponentActivity {
         });
         tvDialog = new TvConnectionDialog(this, tv, soundbarModel, connectionOptions, backups::requestExport, backups::requestImport, () -> theme);
         updates = new UpdateManager(this, () -> theme);
+        connectionRefresh = new ConnectionRefresh(tv, soundbarModel, updates,
+            () -> Build.VERSION.SDK_INT < 37 || checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED,
+            this::renderRefreshing,
+            message -> { if (!isFinishing() && !isDestroyed() && hasWindowFocus())
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show(); });
         int savedCategory = savedInstanceState == null ? 0 : savedInstanceState.getInt("navigation_category", 0);
         int savedPage = savedInstanceState == null ? 0 : savedInstanceState.getInt("navigation_page", 0);
         if (!CockpitNavigation.valid(savedCategory, savedPage)) { savedCategory = 0; savedPage = 0; }
@@ -132,6 +140,7 @@ public class MainActivity extends ComponentActivity {
         CockpitTheme t=theme.theme;
         BG=t.background; SURFACE=t.panel; SURFACE_ALT=t.control; TEXT=t.text; MUTED=t.muted; ACCENT=t.accent;
         tvKeys.clear();
+        refreshLayouts.clear();
         tvConnectionButton=soundConnectionButton=tvHomeStatus=tvHomeDetail=tvRemoteStatus=volumeValue=sourcesStatus=systemStatus=null;
         tvDeviceHeader=null; tvPower=tvMute=null; volumeLevel=null; remoteDial=null;
         streamRow=sourcesAppList=null; streamScroll=null;
@@ -144,20 +153,20 @@ public class MainActivity extends ComponentActivity {
         shell.addView(createTabs(), new LinearLayout.LayoutParams(-1, -2));
         FrameLayout pages = new FrameLayout(this);
         shell.addView(pages, new LinearLayout.LayoutParams(-1, 0, 1));
-        categoryViews[0] = homePage(soundbarModel);
+        categoryViews[0] = refreshPage(homePage(soundbarModel), CockpitNavigation.START);
         for (int category = 1; category <= 2; category++) {
             final int group = category;
             SwipeCategoryPager pager = new SwipeCategoryPager(this, index -> onPageChanged(group, index));
             categoryPagers[group] = pager;
             categoryViews[group] = pager;
             if (group == CockpitNavigation.TV) {
-                pager.addPage(remotePage());
-                pager.addPage(sourcesPage());
-                pager.addPage(systemPage());
+                pager.addPage(refreshPage(remotePage(), group));
+                pager.addPage(refreshPage(sourcesPage(), group));
+                pager.addPage(refreshPage(systemPage(), group));
             } else {
                 for (int section = 1; section <= 3; section++)
                     pager.addPage(SofacockpitComposeViewsKt.createTonmaschineComposePage(
-                        this, soundbarModel, tvDialog::open, section, theme));
+                        this, soundbarModel, tvDialog::open, section, theme, connectionRefresh));
             }
         }
         for (View view : categoryViews) pages.addView(view, new FrameLayout.LayoutParams(-1, -1));
@@ -184,6 +193,19 @@ public class MainActivity extends ComponentActivity {
         selectScreen(categoryToShow, pageToShow);
         renderTvState(tv.state());
         renderSoundConnection();
+        renderRefreshing(Boolean.TRUE.equals(connectionRefresh.getRefreshing().getValue()));
+    }
+
+    private View refreshPage(View content, int category) {
+        NativePullRefreshLayout layout = new NativePullRefreshLayout(this, content, ACCENT, SURFACE,
+            () -> connectionRefresh.request(category));
+        refreshLayouts.add(layout);
+        return layout;
+    }
+
+    private void renderRefreshing(Boolean refreshing) {
+        for (NativePullRefreshLayout layout : refreshLayouts)
+            layout.setRefreshing(Boolean.TRUE.equals(refreshing));
     }
 
     private View createTabs() {
@@ -213,7 +235,7 @@ public class MainActivity extends ComponentActivity {
     private void showStartMenu(View anchor) {
         if (quickMenu != null) quickMenu.dismiss();
         PopupMenu popup = new PopupMenu(this, anchor, Gravity.CENTER);
-        String[] items={"Design auswählen","Software-Updates","Verbindungen","Über Sofacockpit"};
+        String[] items={"Design auswählen","Software-Updates","Verbindungen","Über Sofacockpit","Verbindungen aktualisieren"};
         for (int i=0;i<items.length;i++) popup.getMenu().add(0,i+1,i,items[i]);
         popup.setOnMenuItemClickListener(item -> {
             switch(item.getItemId()) {
@@ -225,6 +247,7 @@ public class MainActivity extends ComponentActivity {
                         .setMessage("Version "+updates.versionName()+"\n\nTV- und Soundbar-Steuerung.\nÖffentliches Projekt: github.com/sschermer/Sofacockpit")
                         .setPositiveButton("Schließen",null).show();
                     return true;
+                case 5: connectionRefresh.request(navigation.category()); return true;
                 default: return false;
             }
         });
@@ -845,6 +868,7 @@ public class MainActivity extends ComponentActivity {
 
     @Override protected void onDestroy() {
         if (quickMenu != null) quickMenu.dismiss();
+        if (connectionRefresh != null) connectionRefresh.close();
         if (updates != null) updates.close();
         if (themePicker != null) themePicker.close();
         if (tvDialog != null) tvDialog.close();
