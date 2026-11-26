@@ -173,11 +173,16 @@ public final class TvProtocol {
     static final class RemoteHandshake {
         private int features, advertisedFeatures;
         private int configureCount, activeCount, startCount, pingCount, otherCount;
-        private boolean configured, activated, ready;
+        private boolean configured, activated, ready, appLinkRejected;
         private Boolean powerOn, muted;
         private Integer volumeLevel, volumeMax;
         private final java.util.SortedSet<Integer> seenFields = new java.util.TreeSet<>();
         boolean ready() { return ready; }
+        boolean takeAppLinkRejection() {
+            boolean result = appLinkRejected;
+            appLinkRejected = false;
+            return result;
+        }
         boolean supportsKeys() { return ready && (features & KEY_FEATURE) != 0; }
         Boolean powerOn() { return powerOn; }
         boolean supportsApps() { return ready && (features & APP_LINK_FEATURE) != 0; }
@@ -198,6 +203,7 @@ public final class TvProtocol {
             if (m.has(1)) {
                 configureCount++;
                 configured = true; activated = false; ready = false; powerOn = null;
+                appLinkRejected = false;
                 volumeLevel = null; volumeMax = null; muted = null;
                 advertisedFeatures = (int)m.child(1).integer(1, 0);
                 features = advertisedFeatures & REQUESTED_FEATURES;
@@ -234,8 +240,20 @@ public final class TvProtocol {
                 }
                 return null;
             }
-            if (m.has(3) && m.child(3).integer(1, 0) != 0)
-                throw new IOException("TV meldet einen Protokollfehler. " + diagnostics());
+            if (m.has(3)) {
+                Message error = m.child(3);
+                if (error.integer(1, 0) != 0) {
+                    // RemoteError.message (field 2) contains the rejected RemoteMessage.
+                    // A rejected AppLinkLaunchRequest (field 90) is a command error,
+                    // not proof that the already negotiated TLS session is broken.
+                    if (supportsApps() && error.has(2) && error.child(2).has(90)) {
+                        appLinkRejected = true;
+                        return null;
+                    }
+                    // Unknown, handshake and non-app command errors keep the existing fail-closed path.
+                    throw new IOException("TV meldet einen Protokollfehler. " + diagnostics());
+                }
+            }
             otherCount++;
             return null;
         }

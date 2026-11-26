@@ -114,6 +114,44 @@ public class TvProtocolTest {
             catch (IllegalArgumentException expected) {}
         }
     }
+    private static TvProtocol.RemoteHandshake readyForApps() throws IOException {
+        TvProtocol.RemoteHandshake h = new TvProtocol.RemoteHandshake();
+        h.accept(TvProtocol.bytes(1, TvProtocol.number(1, 611)));
+        h.accept(TvProtocol.bytes(2, new byte[0]));
+        h.accept(TvProtocol.bytes(40, TvProtocol.number(1, 1)));
+        return h;
+    }
+    private static byte[] rejected(byte[] request) {
+        return TvProtocol.bytes(3, TvProtocol.concat(TvProtocol.number(1, 1), TvProtocol.bytes(2, request)));
+    }
+    @Test public void rejectedAppLaunchDoesNotDestroyReadySession() throws Exception {
+        TvProtocol.RemoteHandshake h = readyForApps();
+        assertNull(h.accept(rejected(TvProtocol.appLink("sport.dyn.app.android.prod"))));
+        assertTrue(h.takeAppLinkRejection());
+        assertFalse(h.takeAppLinkRejection());
+        assertTrue(h.ready());
+        assertTrue(h.supportsKeys());
+        assertTrue(h.supportsApps());
+        assertEquals(Boolean.TRUE, h.powerOn());
+        byte[] reply = h.accept(TvProtocol.bytes(8, TvProtocol.number(1, 123)));
+        assertEquals(123, TvProtocol.parse(reply).child(9).integer(1, -1));
+        assertTrue(h.ready());
+        assertEquals("netflix://", new String(TvProtocol.parse(TvProtocol.appLink("netflix://"))
+            .child(90).messages.get(1), java.nio.charset.StandardCharsets.UTF_8));
+    }
+    @Test public void otherProtocolErrorsAndPrematureAppErrorStillFailClosed() throws Exception {
+        for (byte[] error : new byte[][]{rejected(TvProtocol.key(19)),
+                TvProtocol.bytes(3, TvProtocol.number(1, 1))}) {
+            TvProtocol.RemoteHandshake h = readyForApps();
+            try { h.accept(error); fail("Non-app error ignored"); }
+            catch (IOException expected) {}
+            assertFalse(h.takeAppLinkRejection());
+        }
+        TvProtocol.RemoteHandshake h = new TvProtocol.RemoteHandshake();
+        try { h.accept(rejected(TvProtocol.appLink("netflix://"))); fail("Premature app error ignored"); }
+        catch (IOException expected) {}
+        assertFalse(h.ready());
+    }
     @Test public void reportedVolumeAndCapabilities() throws Exception {
         TvProtocol.RemoteHandshake h = new TvProtocol.RemoteHandshake();
         h.accept(TvProtocol.bytes(1, TvProtocol.number(1, 611)));

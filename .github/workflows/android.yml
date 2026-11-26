@@ -85,7 +85,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v1.1.3
+          name: Sofacockpit-Android-v1.1.4
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -94,9 +94,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create sofacockpit-v1.1.3 \
+          gh release create sofacockpit-v1.1.4 \
             dist/Sofacockpit.apk dist/*.sofatheme \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "Sofacockpit v1.1.3 (Einschaltbereit und Lautstärke)" \
-            --notes "Test-Patch: TV bei eingerichtetem Wake-on-LAN ohne aktive Sitzung neutral als einschaltbereit darstellen; ausdrücklich fehlgeschlagene Verbindungen/Aufwecken bleiben Fehler. Dynamische TV-/ARC/eARC-Soundbar-Pegelanzeige auf Start und TV-Fernbedienung; bei zwei gemeldeten Pegeln beide beschriftet. Steuerkreis nach oben, kompakte Medien-/Navigationstasten und zusätzliche Lautstärkekontrolle. Bestehende TV-Lautstärkebefehle und Soundbar-Steuerung unverändert. Gerätetest offen; Signatur unverändert."
+            --title "Sofacockpit v1.1.4 (Streaming-Fehler isolieren)" \
+            --notes "Test-Patch: abgelehnte App-Link-Befehle beenden die ausgehandelte TV-Sitzung nicht mehr automatisch. Bei tatsächlichem kurzfristigem Transportverlust nach App-Start einmalige begrenzte Wiederverbindung ohne erneuten App-Start oder WoL. Paketname-Starts nur nach ausdrücklicher Testbestätigung. Bestehende Deep Links und Favoriten bleiben unverändert; Dyn-Direktstart noch ungelöst. Soundbar-Hintergrundproblem separat offen. Signatur unverändert."

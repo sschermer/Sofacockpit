@@ -512,9 +512,17 @@ public class MainActivity extends ComponentActivity {
                 "TV meldet keine App-Link-Unterstützung.", Toast.LENGTH_LONG).show();
             return;
         }
+        if (entry.link.startsWith("market://launch?id=")) {
+            // Preserve saved links and the experimental option for compatible TVs, but
+            // do not send a known problematic launch mechanism on an ordinary tap.
+            new AlertDialog.Builder(this).setTitle(entry.name + " – Paketname-Start")
+                .setMessage("Dieser Startmechanismus ist auf manchen Google-TV-Geräten derzeit fehlerhaft und kann die TV-Verbindung unterbrechen. Nutze nach Möglichkeit einen funktionierenden App-Link oder öffne die App am TV. Trotzdem testen?")
+                .setNegativeButton("Abbrechen", null)
+                .setPositiveButton("Testen", (dialog, which) -> tv.launchApp(entry.link, entry.name))
+                .show();
+            return;
+        }
         tv.launchApp(entry.link, entry.name);
-        if (entry.link.startsWith("market://"))
-            Toast.makeText(this, "Experimenteller App-Start; ggf. öffnet sich der Play Store.", Toast.LENGTH_LONG).show();
     }
     private void saveStreamingShortcuts() {
         shortcuts.save();

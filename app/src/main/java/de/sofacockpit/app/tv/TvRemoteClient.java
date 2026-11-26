@@ -77,6 +77,7 @@ public final class TvRemoteClient implements AutoCloseable {
     private boolean closed;
     // UI-only distinction between an expected passive loss and a failed deliberate attempt.
     private boolean actionableConnectionFailure;
+    private boolean foregroundNetworkAllowed;
     private final ForegroundRecovery recovery = new ForegroundRecovery();
     private final RefreshIntent refreshIntent = new RefreshIntent();
     private RefreshProbe refreshProbe;
@@ -216,12 +217,14 @@ public final class TvRemoteClient implements AutoCloseable {
     /** Keep live sockets across pause; restore a lost active session only on resume. */
     public void onBackground() {
         if (closed) return;
+        foregroundNetworkAllowed = false;
         recovery.background(current != null && state.connected() &&
             !Boolean.FALSE.equals(state.powerOn) ? current.host : null);
     }
 
     public void onForeground(boolean networkAllowed) {
         if (closed) return;
+        foregroundNetworkAllowed = networkAllowed;
         recovery.foreground(SystemClock.elapsedRealtime(), networkAllowed);
         restoreForegroundSession();
     }
@@ -386,9 +389,18 @@ public final class TvRemoteClient implements AutoCloseable {
             writers.execute(() -> {
                 if (s.cancelled || !s.ready || (app ? !s.apps : !s.keys)) return;
                 try {
+                    if (app) {
+                        s.appLinkRejected = false;
+                        s.lastAppLaunchAt = SystemClock.elapsedRealtime();
+                    } else {
+                        // A later deliberate key command (especially Power) supersedes
+                        // any app-launch recovery intent.
+                        s.lastAppLaunchAt = -1L;
+                    }
                     s.send(message);
                     if (sentDetail != null) main.post(() -> {
-                        if (!closed && current == s && !s.cancelled && state.connected()) commandDetail(sentDetail);
+                        if (!closed && current == s && !s.cancelled && state.connected() &&
+                            (!app || !s.appLinkRejected)) commandDetail(sentDetail);
                     });
                 } catch (IOException ex) {
                     s.writeFailed = true;
@@ -489,6 +501,7 @@ public final class TvRemoteClient implements AutoCloseable {
             s.ready = false; s.keys = false; s.apps = false; s.closeSocket();
             final String reason = s.writeFailed ? "TV-Befehl konnte nicht gesendet werden. Bitte erneut verbinden." :
                 (error == null ? "Verbindung beendet." : error);
+            final boolean securityFailure = hardFailure;
             final boolean reportFailure = hardFailure || (s.explicit && !s.everReady);
             main.post(() -> {
                 if (!closed && current == s && !s.cancelled) {
@@ -496,8 +509,16 @@ public final class TvRemoteClient implements AutoCloseable {
                     writers.getQueue().clear();
                     actionableConnectionFailure = reportFailure;
                     update(Phase.ERROR, reason, false);
-                    // The failure notification can reach the UI after resume.
-                    restoreForegroundSession();
+                    if (AppLaunchRecovery.eligible(SystemClock.elapsedRealtime(), s.lastAppLaunchAt,
+                        foregroundNetworkAllowed, s.everReady, s.reportedPower, securityFailure,
+                        paired() && s.host.equals(lastAddress()), refreshProbe != null)) {
+                        // A new Session has no app-launch timestamp. At most one additional
+                        // pinned connection, no replay of the failed link or wake packet.
+                        startPassive(s.host);
+                    } else {
+                        // The failure notification can reach the UI after resume.
+                        restoreForegroundSession();
+                    }
                 }
             });
         }
@@ -592,6 +613,7 @@ public final class TvRemoteClient implements AutoCloseable {
                     live.inbound(SystemClock.elapsedRealtime(), handshake.ready());
                     if (reply != null) s.send(reply);
                     if (timedOut.get() != RemoteLiveness.Expiry.NONE) throw new IOException("TV-Zeitüberschreitung");
+                    s.reportedPower = handshake.powerOn();
                     s.ready = handshake.ready();
                     if (s.ready) s.everReady = true;
                     s.keys = handshake.supportsKeys();
@@ -621,6 +643,13 @@ public final class TvRemoteClient implements AutoCloseable {
                     } else if (announced) {
                         announced = false; previous = null;
                         publish(s, Phase.CONNECTING, "TV-Steuersitzung wird neu ausgehandelt …", false);
+                    }
+                    if (handshake.takeAppLinkRejection()) {
+                        s.appLinkRejected = true;
+                        main.post(() -> {
+                            if (!closed && current == s && !s.cancelled && state.connected())
+                                commandDetail("TV hat den App-Start abgelehnt. Anderen App-Link verwenden.");
+                        });
                     }
                 }
             } catch (IOException ex) {
@@ -672,6 +701,9 @@ public final class TvRemoteClient implements AutoCloseable {
         final String wakeMac;
         final BlockingQueue<String> codes = new ArrayBlockingQueue<>(1);
         volatile boolean cancelled, ready, keys, apps, writeFailed, everReady;
+        volatile boolean appLinkRejected;
+        volatile long lastAppLaunchAt = -1L;
+        volatile Boolean reportedPower;
         String stage = "TV-Verbindung";
         volatile Socket raw;
         volatile SSLSocket tls;
