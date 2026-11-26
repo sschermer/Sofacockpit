@@ -85,7 +85,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v0.9.0
+          name: Sofacockpit-Android-v0.9.1
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -94,9 +94,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create sofacockpit-v0.9.0 \
+          gh release create sofacockpit-v0.9.1 \
             dist/Sofacockpit.apk dist/*.sofatheme \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "Sofacockpit v0.9.0 (Software-Updates)" \
-            --notes "Automatische Updateprüfung beim App-Start, wählbarer Kanal für stabile Releases oder einschließlich Pre-Releases, Update-Popup mit Aktualisieren/Später/Überspringen, geprüfter APK-Download und Übergabe an den Android-Installer. Start lange drücken öffnet das App-Menü mit Designauswahl, Software-Updates, Verbindungen und Über Sofacockpit. Kein Download ohne Zustimmung, keine Umgehung von Play Protect. Feste Signatur unverändert. Gerätetest offen."
+            --title "Sofacockpit v0.9.1 (Kompakte Klangsteuerung)" \
+            --notes "Kompakte Klangsteuerung: aktuell gemeldeter Klangmodus als Dropdown mit allen von der Soundbar unterstützten Modi, kleinere Kartenabstände, unveränderte Night Time/DRC/Surround-Schalter. Doppelte normale Statusmeldungen entfallen, Fehler und Befehlsrückmeldungen bleiben. Aktueller Seitenname neben den anklickbaren Navigationspunkten; Wischkonzept und Seitenstruktur unverändert. Test-Pre-Release für das Update von v0.9.0. Feste Signatur unverändert."

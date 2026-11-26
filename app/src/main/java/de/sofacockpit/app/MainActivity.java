@@ -52,6 +52,7 @@ public class MainActivity extends ComponentActivity {
     private final TextView[] tabs = new TextView[3];
     private final TextView[] dots = new TextView[3];
     private LinearLayout footer;
+    private TextView footerPageName;
     private PopupMenu quickMenu;
     private MainViewModel soundbarModel;
     private TvRemoteClient tv;
@@ -161,7 +162,13 @@ public class MainActivity extends ComponentActivity {
         }
         for (View view : categoryViews) pages.addView(view, new FrameLayout.LayoutParams(-1, -1));
         footer = new LinearLayout(this);
-        footer.setGravity(Gravity.CENTER);
+        footer.setGravity(Gravity.CENTER_VERTICAL);
+        footer.setPadding(dp(theme.theme.paddingDp),0,dp(theme.theme.paddingDp),0);
+        footerPageName = label("", 12, MUTED);
+        footerPageName.setMaxLines(1);
+        footerPageName.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        footerPageName.setGravity(Gravity.CENTER_VERTICAL);
+        footer.addView(footerPageName,new LinearLayout.LayoutParams(0,-1,1f));
         for (int i = 0; i < dots.length; i++) {
             final int index = i;
             TextView dot = label("●", 12, MUTED);
@@ -268,6 +275,7 @@ public class MainActivity extends ComponentActivity {
                 (i == 0 ? ", lange drücken für App-Menü" : ", lange drücken für Seitenauswahl"));
         }
         footer.setVisibility(category == 0 ? View.GONE : View.VISIBLE);
+        footerPageName.setText(category == 0 ? "" : CockpitNavigation.pageLabel(category,navigation.page()));
         for (int i = 0; i < dots.length; i++) {
             boolean selected = i == navigation.page();
             dots[i].setTextColor(selected ? ACCENT : MUTED);

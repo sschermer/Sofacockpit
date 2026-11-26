@@ -4,7 +4,7 @@ Sofacockpit ist eine Android-App, die einen **TCL-Fernseher mit Google TV** und 
 
 ## Bedienkonzept (ab v0.7.0)
 
-Die drei Tabs **Start**, **TV** und **Sound** bleiben am oberen Bildschirmrand sichtbar. Kurzes Tippen öffnet den ersten Screen des jeweiligen Bereichs. Langes Drücken auf TV oder Sound öffnet ein Dropdown mit direkter Seitenauswahl. Die Pfeile an den beiden Tabs weisen auf das Schnellmenü hin. Die Wischgesten wechseln nur innerhalb der ausgewählten Kategorie; die Startseite hat keine Nachbarseiten. Die drei unteren Navigationspunkte sind in TV und Sound direkt anklickbar. Es gibt kein kategorienübergreifendes Wischen oder Umlaufen am Ende einer Kategorie.
+Die drei Tabs **Start**, **TV** und **Sound** bleiben am oberen Bildschirmrand sichtbar. Kurzes Tippen öffnet den ersten Screen des jeweiligen Bereichs. Langes Drücken auf TV oder Sound öffnet ein Dropdown mit direkter Seitenauswahl. Die Pfeile an den beiden Tabs weisen auf das Schnellmenü hin. Die Wischgesten wechseln nur innerhalb der ausgewählten Kategorie; die Startseite hat keine Nachbarseiten. Die drei unteren Navigationspunkte sind in TV und Sound direkt anklickbar. Seit v0.9.1 wird in derselben Zeile der aktuelle Seitenname angezeigt. Es gibt kein kategorienübergreifendes Wischen oder Umlaufen am Ende einer Kategorie.
 
 | Tab | Seite 1 | Seite 2 | Seite 3 |
 | --- | --- | --- | --- |
@@ -31,7 +31,7 @@ Wischen auf der Streaming-Leiste scrollt die Dienste. Der Lautstärkepegel ist z
 
 ### Sound (Tonmaschine)
 
-- **Klangsteuerung:** Lautstärke, gemeldete Eingänge und Audioformat, Night Time/DRC/Surround, unterstützte Klangmodi, Power. Unbekannte Werte werden nicht als bestätigte Werte dargestellt. Direkter Soundbar-Mute-Befehl noch nicht implementiert.
+- **Klangsteuerung:** Lautstärke, gemeldete Eingänge und Audioformat, Night Time/DRC/Surround, unterstützte Klangmodi, Power. Seit v0.9.1 stehen der Titel Klangmodus und der tatsächlich gemeldete aktuelle Modus in einer kompakten Zeile. Antippen des Modusknopfs öffnet das Dropdown mit den von der Soundbar unterstützten Modi; ein Häkchen markiert den gemeldeten Modus. Die drei Klangoptionen bleiben auf derselben Seite. Unbekannter Modus und Standby/Offline werden korrekt berücksichtigt. Kartenabstände sind kleiner; nur redundante normale Statusmeldungen werden ausgeblendet, Fehler- und Befehlsrückmeldungen bleiben sichtbar. Auf kleinen Displays und bei großer Systemschrift bleibt Scrollen möglich. Unbekannte Werte werden nicht als bestätigte Werte dargestellt. Direkter Soundbar-Mute-Befehl noch nicht implementiert.
 - **Klangprofile:** bestehende lokale oder NAS-Profile bleiben im unveränderten Windows-kompatiblen Format. Antippen wählt ein Profil zur Übertragung, langes Drücken oder ⋮ öffnet Anwenden, Umbenennen, Kopieren, Überschreiben und Löschen. A–Z/Z–A-Sortierung. Kopieren/Umbenennen verwendet gespeicherte Werte und bei NAS dieselbe Schreibsperre wie bisher; kein Überschreiben fremder Profile. Einstellungen für den Profilspeicher sind über das Zahnrad erreichbar.
 - **Feinabstimmung:** sieben gemeldete Kanalpegel mit Schieberegler und Plus/Minus gemäß gerätespezifischen Wertebereichen. Bass/Höhen werden aus den Antworten angezeigt; direkte Änderung, Neural:X und IMAX Enhanced noch nicht in der Android-Implementierung verifiziert.
 

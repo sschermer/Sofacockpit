@@ -29,6 +29,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.ArrowDropDown
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -198,7 +200,9 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
             } else {
             Column(if (embedded) Modifier.fillMaxSize()
                 else Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-            Row(Modifier.fillMaxWidth().padding(t.paddingDp.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = t.paddingDp.dp,
+                vertical = if (section == 1) 8.dp else t.paddingDp.dp),
+                verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text("LG S95QR  ·  " + when (state.connection) {
@@ -348,30 +352,34 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
                 }
             } else {
                 LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(horizontal = t.paddingDp.dp, vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    verticalArrangement = Arrangement.spacedBy(if (section == 1) 6.dp else 10.dp)) {
                     if (section == 0 || section == 1) item {
-                        Panel("Gesamtlautstärke") {
+                        Panel("Gesamtlautstärke", compact = section == 1) {
                             val actual = state.volume
                             val volumeReady = controls && actual != null
                             var draft by remember(actual) { mutableFloatStateOf((actual ?: 0).toFloat()) }
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                TextButton(onClick = { actual?.let { vm.setVolume((it - 1).coerceAtLeast(0)) } }, enabled = volumeReady) { Text("−") }
+                                TextButton(onClick = { actual?.let { vm.setVolume((it - 1).coerceAtLeast(0)) } },
+                                    enabled = volumeReady, modifier = if (section == 1) Modifier.width(48.dp) else Modifier,
+                                    contentPadding = if (section == 1) PaddingValues(0.dp) else PaddingValues(horizontal = 12.dp, vertical = 8.dp)) { Text("−") }
                                 Slider(draft, onValueChange = { draft = it },
                                     onValueChangeFinished = { if (volumeReady) vm.setVolume(draft.toInt()) },
                                     modifier = Modifier.weight(1f).reserveSliderGesture(volumeReady), valueRange = 0f..100f, enabled = volumeReady)
-                                TextButton(onClick = { actual?.let { vm.setVolume((it + 1).coerceAtMost(100)) } }, enabled = volumeReady) { Text("+") }
+                                TextButton(onClick = { actual?.let { vm.setVolume((it + 1).coerceAtMost(100)) } },
+                                    enabled = volumeReady, modifier = if (section == 1) Modifier.width(48.dp) else Modifier,
+                                    contentPadding = if (section == 1) PaddingValues(0.dp) else PaddingValues(horizontal = 12.dp, vertical = 8.dp)) { Text("+") }
                                 Text(actual?.let { "${draft.toInt()}" } ?: "–", modifier = Modifier.width(35.dp), fontWeight = FontWeight.Bold)
                             }
                         }
                     }
                     if (section == 0 || section == 1) item {
-                        Panel("Eingang und Audioformat") {
+                        Panel("Eingang und Audioformat", compact = section == 1) {
                             var inputExpanded by remember { mutableStateOf(false) }
                             Row(
                                 verticalAlignment = Alignment.Top,
-                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                horizontalArrangement = Arrangement.spacedBy(if (section == 1) 10.dp else 16.dp)
                             ) {
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (section == 1) 2.dp else 8.dp)) {
                                     Text("Zuspieler", color = muted, style = MaterialTheme.typography.bodyMedium)
                                     Box {
                                         OutlinedButton(onClick = { inputExpanded = true }, enabled = controls && state.canSelectInput) {
@@ -385,7 +393,7 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
                                         }
                                     }
                                 }
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (section == 1) 2.dp else 8.dp)) {
                                     Text("Gemeldetes Format", color = muted,
                                         style = MaterialTheme.typography.bodyMedium)
                                     Text(state.audioFormat, fontWeight = FontWeight.Bold, color = blue)
@@ -394,13 +402,16 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
                         }
                     }
                     if (section == 0 || section == 1) item {
-                        Panel("Klangoptionen") {
+                        Panel("Klangoptionen", compact = section == 1) {
                             ToggleRow("Night Time", state.nightTime, controls) { vm.setOption("b_night_time", it) }
                             ToggleRow("DRC", state.drc, controls) { vm.setOption("b_drc", it) }
                             ToggleRow("Surround", state.surround, controls) { vm.setOption("b_rear", it) }
                         }
                     }
-                    if (section == 0 || section == 1) item {
+                    if (section == 1) item {
+                        CompactModeSelector(state, controls, vm::chooseMode)
+                    }
+                    if (section == 0) item {
                         Panel("Klangmodus") {
                             val modes = state.selectableModes.entries.toList()
                             modes.chunked(2).forEach { pair ->
@@ -509,9 +520,19 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, section: Int = 0,
                     }
                 }
             }
-            Text(message, modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
-                color = if (state.error != null) powerRed else muted,
-                style = MaterialTheme.typography.bodySmall)
+            // Keep errors and command feedback; do not repeat the normal status
+            // already shown in the compact control-page header.
+            val duplicateStatus = section == 1 && state.error == null && when (state.connection) {
+                Connection.CONNECTED -> message == "Verbunden"
+                Connection.CONNECTING -> message == "Verbinde …" || message == "Verbindung wird hergestellt …"
+                Connection.DISCONNECTED -> message == "Nicht verbunden"
+            }
+            if (message.isNotBlank() && !duplicateStatus) {
+                Text(message, modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp,
+                    vertical = if (section == 1) 4.dp else 10.dp),
+                    color = if (state.error != null) powerRed else muted,
+                    style = MaterialTheme.typography.bodySmall)
+            }
         }
         if (pendingExport != null) {
             val format = pendingExport!!
@@ -717,10 +738,71 @@ private fun StandbyPowerButton(onWake: () -> Unit) {
 }
 
 @Composable
-private fun Panel(title: String, content: @Composable ColumnScope.() -> Unit) {
+private fun CompactModeSelector(state: DeviceState, controls: Boolean, onChoose: (Int) -> Unit) {
     val pack = LocalCockpitPack.current
-    Column(Modifier.fillMaxWidth().cockpitPanel(pack).padding(pack.theme.paddingDp.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    val colors = MaterialTheme.colorScheme
+    val modes = state.selectableModes
+    val enabled = controls && modes.isNotEmpty()
+    // The current label always comes from the last reported mode, never from a tap.
+    val currentLabel = if (state.connection != Connection.CONNECTED) "Nicht verbunden"
+        else Catalog.modes.entries.firstOrNull { it.value == state.currentMode }?.key
+            ?: if (state.currentMode == null) "Nicht gemeldet" else "Unbekannt"
+    val known = state.connection == Connection.CONNECTED && state.currentMode?.let { Catalog.modes.containsValue(it) } == true
+    var expanded by remember { mutableStateOf(false) }
+    LaunchedEffect(enabled) { if (!enabled) expanded = false }
+
+    Row(
+        modifier = Modifier.fillMaxWidth().cockpitPanel(pack)
+            .padding(horizontal = pack.theme.paddingDp.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("Klangmodus", modifier = Modifier.weight(.85f),
+            color = colors.onSurface, style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold)
+        Box(Modifier.weight(1.15f)) {
+            OutlinedButton(
+                onClick = { expanded = true },
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                border = BorderStroke(1.dp, if (enabled && known) colors.primary else colors.outline),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = if (known) colors.primary else colors.onSurface),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text(currentLabel, modifier = Modifier.weight(1f, fill = false), maxLines = 2,
+                    fontWeight = FontWeight.SemiBold)
+                Icon(Icons.Outlined.ArrowDropDown, contentDescription = "Klangmodi auswählen",
+                    modifier = Modifier.size(20.dp))
+            }
+            DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
+                modes.forEach { (label, id) ->
+                    val selected = id == state.currentMode
+                    DropdownMenuItem(
+                        text = { Text(label, color = if (selected) colors.primary else colors.onSurface,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal) },
+                        leadingIcon = {
+                            if (selected) Icon(Icons.Outlined.Check, contentDescription = "Aktueller Klangmodus",
+                                tint = colors.primary)
+                            else Spacer(Modifier.size(24.dp))
+                        },
+                        onClick = {
+                            expanded = false
+                            if (!selected) onChoose(id)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Panel(title: String, compact: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+    val pack = LocalCockpitPack.current
+    Column(Modifier.fillMaxWidth().cockpitPanel(pack).padding(horizontal = pack.theme.paddingDp.dp,
+        vertical = if (compact) 8.dp else pack.theme.paddingDp.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 6.dp)) {
         Text(title, color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         content()
