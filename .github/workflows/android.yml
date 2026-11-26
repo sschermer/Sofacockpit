@@ -80,10 +80,13 @@ jobs:
           "$tools/apksigner" verify --verbose --print-certs dist/Sofacockpit.apk | tee "$RUNNER_TEMP/apk-signature.txt"
           grep -Fx 'Signer #1 certificate SHA-256 digest: 6bc8b1ff2f2f2bc6db4c56d4ffa53c080c05f48089dab7b66ccb7d74fa54ac83' "$RUNNER_TEMP/apk-signature.txt"
 
+      - name: Include standalone theme packages
+        run: cp app/src/main/assets/themes/*.sofatheme dist/
+
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v0.7.0
-          path: dist/Sofacockpit.apk
+          name: Sofacockpit-Android-v0.8.0
+          path: dist/
           if-no-files-found: error
           retention-days: 90
 
@@ -91,9 +94,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create sofacockpit-v0.7.0 \
-            dist/Sofacockpit.apk \
+          gh release create sofacockpit-v0.8.0 \
+            dist/Sofacockpit.apk dist/*.sofatheme \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "Sofacockpit v0.7.0 (Sechs Geräte-Screens)" \
-            --notes "Neue TV- und Sound-Seiten: großes dynamisches Steuerkreuz, Medienbefehle, HDMI-Direktwahl (Gerätetest offen), App-Katalog, TV-Einstellungsaufruf; Klangsteuerung, lokale/NAS-Profile und sieben Kanalpegel. Nicht implementierte direkte TV-Bildparameter und Tastatur sowie weitere Sound-Optionen sind als offen gekennzeichnet. Feste Signatur unverändert."
+            --title "Sofacockpit v0.8.0 (Theme-Wähler und Vier-Sektoren-Steuerkreuz)" \
+            --notes "Fünf vorinstallierte und separat herunterladbare Themes. Lange Start drücken für Vorschau-Galerie, Import/Export und Auswahl ohne Neustart. Gemeinsame Theme-Oberflächen für native und Compose-Screens, großes zusammenhängendes Steuerkreuz mit vier Sektoren. Datenbasierte .sofatheme-Dateien mit begrenzten optionalen Bildern; Konfigurationsdatei speichert Theme-ID. Signatur bleibt unverändert. Gerätetest offen."

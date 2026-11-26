@@ -105,6 +105,10 @@ public final class ThemePicker implements AutoCloseable {
         ScrollView scroll=new ScrollView(activity);scroll.setFillViewport(false);scroll.addView(body);
         dialog=new AlertDialog.Builder(activity).setView(scroll).setNegativeButton("Schließen",null).create();
         dialog.show();
+        if(dialog.getWindow()!=null) {
+            int width=Math.min(activity.getResources().getDisplayMetrics().widthPixels-dp(20),dp(540));
+            dialog.getWindow().setLayout(width,-2);
+        }
     }
     private void confirmRemove(ThemePack pack){
         new AlertDialog.Builder(activity).setTitle("Theme entfernen?")

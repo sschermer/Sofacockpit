@@ -88,6 +88,7 @@ public final class ThemedDial extends View {
         accessibility.sendEventForVirtualView(id,AccessibilityEvent.TYPE_VIEW_CLICKED);
     }
     @Override public void setEnabled(boolean enabled){
+        if(isEnabled()==enabled && getAlpha()==(enabled?1f:.42f)) return;
         super.setEnabled(enabled);pressed=-1;setAlpha(enabled?1f:.42f);invalidate();
         if(accessibility!=null)accessibility.invalidateRoot();
     }

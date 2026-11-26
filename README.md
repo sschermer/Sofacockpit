@@ -37,6 +37,70 @@ Wischen auf der Streaming-Leiste scrollt die Dienste. Der Lautstärkepegel ist z
 
 Alle Sound-Seiten verwenden denselben vorhandenen MainViewModel. Die zentrale Verbindung und der verschlüsselte Konfigurationsimport bleiben erhalten. Gerätetests von Layout, neuen Befehlen, Touch-Gesten und NAS-Änderungen stehen aus.
 
+## Themes (ab v0.8.0)
+
+**Start kurz antippen** öffnet weiterhin die Startseite. **Start lange drücken** öffnet die Theme-Galerie mit gerenderten Miniaturvorschauen und Kennzeichnung des ausgewählten Designs. Die Auswahl wird gespeichert und baut nur die Präsentationsoberfläche neu auf; der TV-Client, das Soundbar-ViewModel und die aktuelle Kategorie/Seite bleiben bestehen. Lokale Scrollpositionen und nicht abgeschlossene UI-Entwürfe können beim Wechsel zurückgesetzt werden. Keine Gerätebefehle oder neue Verbindungen durch den reinen Designwechsel.
+
+Vorinstallierte Designs (alle als echte .sofatheme-Pakete in app/src/main/assets/themes):
+
+- **Minimal Premium** – dezentes Graphit, abgerundete Flächen, grüner Akzent (Standard).
+- **AV Konsole** – metallische Oberflächen, technische Konturen, kondensierte native Schrift.
+- **High-Tech HUD** – kühle dunkle Flächen, angeschnittene Ecken, segmentierte Ringe.
+- **Soft Industrial** – warme dunkle Neutraltöne, weiche Formen und gedämpftes Grün.
+- **Executive Monochrome** – flache dunkle Flächen, reduzierte Konturen, grüner Unterstrich am aktiven Tab.
+
+Der Theme-Wähler bietet **Theme importieren**, **Aktuelles Theme exportieren** und das Entfernen eigener Themes (langes Drücken auf deren Vorschau). Import wählt nicht automatisch; danach ein Theme antippen. IDs vorinstallierter Themes und bereits vorhandene IDs werden nicht überschrieben. Maximal zwölf importierte Themes. Die fünf Originaldateien sind auch im GitHub-Release enthalten. Die verschlüsselte .sofacfg speichert optional die ausgewählte Theme-ID; bei nicht vorhandenem eigenem Design wird Minimal Premium verwendet. Eigene Theme-Pakete separat importieren (idealerweise vor dem Konfigurationsimport). Ältere Konfigurationsdateien ohne Theme-ID ändern das aktuelle Design nicht. Geräteadressen und Zugangsdaten gehören nie in .sofatheme-Dateien.
+
+Das Steuerkreuz ist in allen Designs eine zusammenhängende Kreisfläche mit vier über die Diagonalen getrennten Sektoren und mittigem OK. Jeder Sektor ist vollständig antippbar, nicht nur das Pfeilsymbol. Android-Haptik und separate virtuelle Accessibility-Knoten für die fünf Aktionen; horizontales Wischen bleibt im Pager möglich. Die Darstellung orientiert sich an den Designskizzen, nicht an eingebetteten Screenshots. Native Standarddialoge/Dateiauswahl behalten teilweise ihre Android-Systemoptik. Designwechsel, Gesten und tatsächliche Bedienung am Gerät sind noch zu testen.
+
+### Eigenes Theme erstellen – Dateiformat v1
+
+Die Endung .sofatheme bezeichnet einen ZIP-Container mit manifest.json und theme.json direkt im Stamm. Beispielpakete lassen sich exportieren, entpacken, ändern und erneut zippen; eigene, eindeutige ID vergeben. JSON muss UTF-8 sein. Es werden ausschließlich deklarative Daten gelesen, keine Skripte, kein HTML/SVG, keine Apps und keine externen URLs. Keine Extraktion der ZIP-Pfade.
+
+manifest.json (alle Felder erforderlich):
+
+```json
+{
+  "format": "sofacockpit-theme",
+  "schema": 1,
+  "id": "mein-design",
+  "name": "Mein Design",
+  "author": "Eigener Name",
+  "version": "1.0"
+}
+```
+
+theme.json (alle Felder erforderlich):
+
+```json
+{
+  "background": "#101719",
+  "panel": "#192326",
+  "control": "#283235",
+  "text": "#F2F5F9",
+  "muted": "#B4C1C3",
+  "accent": "#58D792",
+  "selected": "#20392E",
+  "border": "#455459",
+  "dial": "#263332",
+  "style": "soft",
+  "font": "sans",
+  "cornerDp": 14,
+  "paddingDp": 12,
+  "fontScale": 1.0,
+  "centerRatio": 0.32
+}
+```
+
+Erlaubte Werte: style flat / soft / metal / hud; font sans / condensed / mono; cornerDp 0–24, paddingDp 8–18, fontScale 0,90–1,12, centerRatio 0,28–0,40. Alle Farben als deckendes #RRGGBB. Dunkle Flächen mit mindestens 4,5:1 Grundkontrast zu Text, sekundärem Text und Akzent; Rot und Gelb für Fehler und Verbindungsvorgang sind vorgegeben. Kondensierte Schrift ist in nativen Views verfügbar; Compose nutzt in Version 1 SansSerif als Fallback. Die begrenzten Stiloptionen lassen keine Funktions-, Befehls- oder Layoutänderungen zu.
+
+Optionale Dateien (jeweils PNG **oder** WebP, nicht beide):
+- preview.png / preview.webp (bis 768 × 768 Pixel), sonst Live-Miniatur.
+- textures/panel.png / textures/panel.webp (bis 512 × 512), dezentes Overlay für gemeinsame Panel- und Steuerkreuzflächen.
+- icons/arrow.png / icons/arrow.webp (bis 128 × 128), nach oben zeigendes Pfeilsymbol, das für die anderen Richtungen gedreht wird.
+
+Maximal 1 MiB Archivgröße, 1,5 MiB entpackte Daten, 16 KiB pro JSON. Nur erlaubte Pfade und Formate werden akzeptiert; fehlerhafte, zu große, inkompatible, doppelte oder kontrastarme Themes werden abgewiesen. Keine frei importierbaren Schriftdateien, beliebigen Icons oder zusätzlichen Layout-/Animationsdefinitionen in Schema 1.
+
 ## Verbindung und Projektstand
 
 Die Steuerung ist für das lokale Heimnetz geplant. Für den Fernseher ist der **Android TV Remote Service (Remote Protocol v2)** mit Kopplungscode implementiert. Die Schnittstelle ist nicht als offizielle Drittanbieter-API dokumentiert; Kompatibilität mit zukünftigen Service-Versionen kann nicht garantiert werden. Für die Soundbar soll Sofacockpit auf der bereits erprobten lokalen Steuerung der Tonmaschine aufbauen.
