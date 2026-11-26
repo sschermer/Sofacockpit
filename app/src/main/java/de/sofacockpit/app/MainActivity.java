@@ -70,10 +70,6 @@ public class MainActivity extends ComponentActivity {
             if (tvDialog != null) tvDialog.reloadAddresses();
         });
         tvDialog = new TvConnectionDialog(this, tv, soundbarModel, connectionOptions, backups::requestExport, backups::requestImport);
-        getWindow().setStatusBarColor(BG);
-        getWindow().setNavigationBarColor(BG);
-        getWindow().getDecorView().setSystemUiVisibility(0);
-
         LinearLayout shell = new LinearLayout(this);
         shell.setOrientation(LinearLayout.VERTICAL);
         shell.setBackgroundColor(BG);
@@ -94,6 +90,9 @@ public class MainActivity extends ComponentActivity {
             footer.addView(dot, lp);
         }
         shell.addView(footer, new LinearLayout.LayoutParams(-1, dp(34)));
+        // Android 15+ draws behind system bars for targetSdk >= 35.
+        // Apply safe bounds once to the common parent of all three pages.
+        SystemBarInsets.install(getWindow(), shell);
         setContentView(shell);
 
         pager.addPage(SofacockpitComposeViewsKt.createTonmaschineComposePage(this, soundbarModel, tvDialog::open));
@@ -475,6 +474,7 @@ public class MainActivity extends ComponentActivity {
     private TextView connectionButton(String name) {
         TextView button = actionButton(name, "");
         button.setTextSize(15);
+        button.setFocusable(true);
         button.setOnClickListener(v -> tvDialog.open());
         return button;
     }

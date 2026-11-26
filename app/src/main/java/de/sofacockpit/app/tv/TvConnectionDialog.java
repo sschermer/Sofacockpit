@@ -3,6 +3,7 @@ package de.sofacockpit.app.tv;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
+import de.sofacockpit.app.SystemBarInsets;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -170,8 +171,11 @@ public final class TvConnectionDialog {
         layout.addView(button("Konfiguration importieren", importBackup));
 
         dialog = new Dialog(activity, android.R.style.Theme_Material_NoActionBar);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+            SystemBarInsets.install(dialog.getWindow(), scroll);
+        }
         dialog.setContentView(scroll);
-        if (dialog.getWindow() != null) dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         dialog.setOnDismissListener(d -> {
             stopSearch();
             code.setText("");
@@ -180,8 +184,6 @@ public final class TvConnectionDialog {
         dialog.show();
         if (dialog.getWindow() != null) {
             dialog.getWindow().setLayout(-1, -1);
-            dialog.getWindow().setStatusBarColor(Color.rgb(11,14,19));
-            dialog.getWindow().setNavigationBarColor(Color.rgb(11,14,19));
         }
         render(client.state());
         renderSound();
