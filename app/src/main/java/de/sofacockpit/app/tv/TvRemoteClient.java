@@ -60,6 +60,7 @@ public final class TvRemoteClient implements AutoCloseable {
     private static final String LEGACY_ALIAS = "sofacockpit.tv.remote.rsa.v1";
     private static final String ALIAS = "sofacockpit.tv.remote.rsa.v3";
     private static final String PIN = "certificate_sha256", HOST = "last_address", KEY_ALIAS = "key_alias";
+    private static final String PORTABLE_ALIAS = "sofacockpit.tv.portable.v1", WRAPPED_IDENTITY = "portable_identity";
     private final SharedPreferences prefs;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService sessions = Executors.newSingleThreadExecutor();
@@ -80,6 +81,63 @@ public final class TvRemoteClient implements AutoCloseable {
     public boolean paired() { return prefs.contains(PIN); }
     public String lastAddress() { return prefs.getString(HOST, ""); }
     public boolean busy() { return current != null; }
+    public boolean hasPortablePairing() {
+        return paired() && PORTABLE_ALIAS.equals(prefs.getString(KEY_ALIAS, "")) && prefs.contains(WRAPPED_IDENTITY);
+    }
+
+    public void rememberAddress(String address) throws IOException {
+        String host = address == null ? "" : address.trim();
+        if (!host.isEmpty()) localAddress(host);
+        if (!prefs.edit().putString(HOST, host).commit()) throw new IOException("TV-IP konnte nicht gespeichert werden.");
+    }
+
+    /** Invoked only by a user-initiated encrypted backup worker. */
+    public org.json.JSONObject exportConfiguration() throws Exception {
+        org.json.JSONObject config = new org.json.JSONObject().put("address", lastAddress());
+        if (hasPortablePairing()) {
+            PortableTvIdentity identity = TvIdentityVault.open(prefs.getString(WRAPPED_IDENTITY, null));
+            org.json.JSONObject pairing = identity.json().put("serverPin", prefs.getString(PIN, ""));
+            validatePin(pairing.getString("serverPin"));
+            config.put("pairing", pairing);
+        }
+        return config;
+    }
+    public static final class PreparedConfiguration {
+        public final String address;
+        private final String pin, wrapped;
+        PreparedConfiguration(String address, String pin, String wrapped) {
+            this.address = address; this.pin = pin; this.wrapped = wrapped;
+        }
+        public boolean includesPairing() { return wrapped != null; }
+    }
+    /** Validate and wrap imported material before applying any device settings. */
+    public PreparedConfiguration prepareConfiguration(org.json.JSONObject config) throws Exception {
+        String host = config.getString("address").trim();
+        if (!host.isEmpty()) localAddress(host);
+        if (!config.has("pairing")) return new PreparedConfiguration(host, null, null);
+        if (host.isEmpty()) throw new IOException("TV-Kopplung ohne Adresse");
+        org.json.JSONObject pairing = config.getJSONObject("pairing");
+        String pin = pairing.getString("serverPin");
+        validatePin(pin);
+        PortableTvIdentity identity = PortableTvIdentity.parse(pairing);
+        return new PreparedConfiguration(host, pin, TvIdentityVault.seal(identity));
+    }
+    private static void validatePin(String pin) throws GeneralSecurityException {
+        try {
+            byte[] raw = java.util.Base64.getDecoder().decode(pin);
+            if (raw.length != 32 || !java.util.Base64.getEncoder().encodeToString(raw).equals(pin))
+                throw new GeneralSecurityException("Ungültiger TV-Zertifikatsfingerabdruck");
+        } catch (IllegalArgumentException ex) { throw new GeneralSecurityException("Ungültiger TV-Zertifikatsfingerabdruck"); }
+    }
+    public void applyConfiguration(PreparedConfiguration config) throws IOException {
+        disconnect();
+        SharedPreferences.Editor edit = prefs.edit().putString(HOST, config.address);
+        if (config.includesPairing())
+            edit.putString(PIN, config.pin).putString(KEY_ALIAS, PORTABLE_ALIAS).putString(WRAPPED_IDENTITY, config.wrapped);
+        // Backups without a portable identity do not replace an existing trusted TV.
+        if (!edit.commit()) throw new IOException("TV-Konfiguration konnte nicht gespeichert werden.");
+        update(Phase.DISCONNECTED, "Konfiguration geladen – bitte verbinden.", false);
+    }
 
     private void update(Phase phase, String detail, boolean keys) {
         setState(new State(phase, detail, keys));
@@ -186,15 +244,28 @@ public final class TvRemoteClient implements AutoCloseable {
             s.stage = "Client-Schlüssel";
             String pin = prefs.getString(PIN, null);
             // Existing successful pairings keep their original client identity.
-            // Fresh pairing uses v3; Keystore authorizations cannot be changed in place.
-            String alias = s.pair ? ALIAS : prefs.getString(KEY_ALIAS, LEGACY_ALIAS);
-            Identity identity = identity(alias);
+            // Fresh pairing uses an exportable RSA identity encrypted by an Android Keystore AES key.
+            String alias = s.pair ? PORTABLE_ALIAS : prefs.getString(KEY_ALIAS, LEGACY_ALIAS);
+            Identity identity;
+            String wrapped = null;
+            if (PORTABLE_ALIAS.equals(alias)) {
+                try {
+                    PortableTvIdentity portable = s.pair ? PortableTvIdentity.create() :
+                        TvIdentityVault.open(prefs.getString(WRAPPED_IDENTITY, null));
+                    identity = new Identity(PORTABLE_ALIAS, portable.key, portable.cert);
+                    if (s.pair) wrapped = TvIdentityVault.seal(portable);
+                } catch (Exception ex) {
+                    throw new GeneralSecurityException("Exportierbare TV-Identität konnte nicht eingerichtet werden.", ex);
+                }
+            } else identity = identity(alias);
             if (s.pair) {
                 pin = pair(s, host, identity);
                 synchronized (s) {
                     if (s.cancelled) return;
                     // Only after successful secret acknowledgement. Old trust is retained on failure.
-                    prefs.edit().putString(PIN, pin).putString(HOST, s.host).putString(KEY_ALIAS, alias).apply();
+                    if (!prefs.edit().putString(PIN, pin).putString(HOST, s.host).putString(KEY_ALIAS, alias)
+                        .putString(WRAPPED_IDENTITY, wrapped).commit())
+                        throw new IOException("Neue TV-Kopplung konnte nicht gespeichert werden.");
                 }
                 publish(s, Phase.CONNECTING, "Gekoppelt. Steuersitzung wird aufgebaut …", false);
             }
