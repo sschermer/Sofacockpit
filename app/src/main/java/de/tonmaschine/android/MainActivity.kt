@@ -70,7 +70,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun Tonmaschine(vm: MainViewModel, connect: () -> Unit) {
+fun Tonmaschine(vm: MainViewModel, connect: () -> Unit, connectionSettings: (() -> Unit)? = null) {
     val state by vm.device.collectAsState()
     val ip by vm.ip.collectAsState()
     val message by vm.message.collectAsState()
@@ -226,12 +226,17 @@ fun Tonmaschine(vm: MainViewModel, connect: () -> Unit) {
             if (settings) {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
                     Panel("Verbindung") {
-                        OutlinedTextField(ip, vm::updateIp, modifier = Modifier.fillMaxWidth(),
-                            label = { Text("IPv4-Adresse der Soundbar") }, singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-                        Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = connect) { Text("Verbinden") }
+                        if (connectionSettings == null) {
+                            OutlinedTextField(ip, vm::updateIp, modifier = Modifier.fillMaxWidth(),
+                                label = { Text("IPv4-Adresse der Soundbar") }, singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = connect) { Text("Verbinden") }
+                                OutlinedButton(onClick = vm::refresh, enabled = active) { Text("Aktualisieren") }
+                            }
+                        } else {
+                            Button(onClick = connectionSettings) { Text("Verbindungen öffnen") }
                             OutlinedButton(onClick = vm::refresh, enabled = active) { Text("Aktualisieren") }
                         }
                         Text("Direkte WLAN-Verbindung auf TCP 9741.", color = muted)

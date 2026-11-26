@@ -56,6 +56,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateIp(text: String) { _ip.value = text.trim() }
 
+    /** Central connection management; no network action on saving/importing an IP. */
+    fun saveConnectionAddress(text: String): Boolean {
+        val address = text.trim()
+        if (address.isNotEmpty() && !Catalog.validIp(address)) {
+            _message.value = "Bitte eine gültige IPv4-Adresse eingeben"
+            return false
+        }
+        return try {
+            store.saveIp(address)
+            if (address != _ip.value) disconnect()
+            _ip.value = address
+            true
+        } catch (_: Exception) {
+            _message.value = "Soundbar-IP konnte nicht gespeichert werden"
+            false
+        }
+    }
+
+    fun disconnect() {
+        generation++
+        client?.stop()
+        client = null
+        _device.value = DeviceState()
+        _message.value = "Nicht verbunden"
+    }
+
     /** Backup uses the already decrypted NAS settings in memory, never logging the password. */
     fun configurationBackup(): ConfigurationBackup = ConfigurationBackup(
         soundbarIp = _ip.value.trim(),
@@ -78,6 +104,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             nasSettings.saveSource(backup.source)
             if (previousNas != backup.nas) nasSettings.saveCache(emptyMap())
             _nasConnection.value = backup.nas
+            if (_ip.value != backup.soundbarIp) disconnect()
             _ip.value = backup.soundbarIp
             _source.value = backup.source
             _nasOnline.value = false
@@ -111,12 +138,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _message.value = "Verbindung wird hergestellt …"
         client = SoundbarClient(ip.value, scope = viewModelScope,
             onPacket = { packet ->
-                if (generation == id) _device.update { DeviceReducer.reduce(it, packet) }
+                viewModelScope.launch {
+                    if (generation == id) {
+                        val before = _device.value.connection
+                        _device.update { DeviceReducer.reduce(it, packet) }
+                        if (before != Connection.CONNECTED && _device.value.connection == Connection.CONNECTED)
+                            _message.value = "Verbunden"
+                    }
+                }
             },
             onConnection = { online, error ->
-                if (generation == id) {
-                    _device.update { it.copy(connection = if (online) Connection.CONNECTED else Connection.CONNECTING, error = error) }
-                    _message.value = if (online) "Verbunden – synchronisiere" else error?.let { "Wiederverbinden: $it" } ?: "Verbinde …"
+                viewModelScope.launch {
+                    if (generation == id) {
+                        // An open TCP socket is not proof of a responding soundbar.
+                        _device.value = DeviceState(connection = Connection.CONNECTING, error = error)
+                        _message.value = if (online) "Warte auf Soundbar-Antwort …" else error?.let { "Wiederverbinden: $it" } ?: "Verbinde …"
+                    }
                 }
             }).also { it.start() }
     }

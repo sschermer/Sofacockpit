@@ -4,6 +4,10 @@ import androidx.activity.ComponentActivity;
 import androidx.lifecycle.ViewModelProvider;
 import de.tonmaschine.android.MainViewModel;
 import android.app.AlertDialog;
+import android.content.SharedPreferences;
+import android.os.Build;
+import de.tonmaschine.android.model.Connection;
+import de.tonmaschine.android.model.DeviceState;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Color;
@@ -42,6 +46,10 @@ public class MainActivity extends ComponentActivity {
     private MainViewModel soundbarModel;
     private TvRemoteClient tv;
     private TvConnectionDialog tvDialog;
+    private ConnectionBackupManager backups;
+    private SharedPreferences connectionOptions;
+    private TextView tvConnectionButton, soundConnectionButton;
+    private View tvDeviceHeader;
     private TextView tvHomeStatus, tvHomeDetail, tvRemoteStatus, volumeValue;
     private TvIconButton tvPower, tvMute;
     private ProgressBar volumeLevel;
@@ -55,8 +63,13 @@ public class MainActivity extends ComponentActivity {
         super.onCreate(savedInstanceState);
         soundbarModel = new ViewModelProvider(this).get(MainViewModel.class);
         tv = new TvRemoteClient(this, this::renderTvState);
-        tvDialog = new TvConnectionDialog(this, tv);
         shortcuts = new StreamingShortcuts(this);
+        connectionOptions = getSharedPreferences("connection_options", MODE_PRIVATE);
+        backups = new ConnectionBackupManager(this, tv, soundbarModel, shortcuts, connectionOptions, () -> {
+            renderStreamingShortcuts();
+            if (tvDialog != null) tvDialog.reloadAddresses();
+        });
+        tvDialog = new TvConnectionDialog(this, tv, soundbarModel, connectionOptions, backups::requestExport, backups::requestImport);
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         getWindow().getDecorView().setSystemUiVisibility(0);
@@ -83,10 +96,21 @@ public class MainActivity extends ComponentActivity {
         shell.addView(footer, new LinearLayout.LayoutParams(-1, dp(34)));
         setContentView(shell);
 
-        pager.addPage(SofacockpitComposeViewsKt.createTonmaschineComposePage(this, soundbarModel));
+        pager.addPage(SofacockpitComposeViewsKt.createTonmaschineComposePage(this, soundbarModel, tvDialog::open));
         pager.addPage(homePage(soundbarModel));
         pager.addPage(page("TV-Steuerkreuz", "Fernbedienung", "Nicht verbunden"));
         renderTvState(tv.state());
+        SofacockpitComposeViewsKt.observeSoundbarConnection(this, soundbarModel, this::renderSoundConnection);
+        renderSoundConnection();
+        if (savedInstanceState == null && connectionOptions.getBoolean("auto_connect", false)) {
+            // Opt-in only. No power command, wake packet, or automatic pairing.
+            if (Build.VERSION.SDK_INT < 37 || checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                if (tv.paired() && !tv.lastAddress().isEmpty()) tv.start(tv.lastAddress(), false);
+                if (!soundbarModel.getIp().getValue().isEmpty() &&
+                        soundbarModel.getDevice().getValue().getConnection() == Connection.DISCONNECTED) soundbarModel.connect();
+            }
+        }
         pager.setOnPageChanged(index -> updateDots(index));
         pager.post(() -> {
             pageWidth = pager.getWidth();
@@ -110,9 +134,15 @@ public class MainActivity extends ComponentActivity {
 
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = label("Sofacockpit", 28, TEXT);
+        TextView title = label("Verbindung", 21, TEXT);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         titleRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        tvConnectionButton = connectionButton("TV");
+        soundConnectionButton = connectionButton("Sound");
+        LinearLayout.LayoutParams tvLp = new LinearLayout.LayoutParams(dp(66), dp(48));
+        tvLp.rightMargin = dp(8);
+        titleRow.addView(tvConnectionButton, tvLp);
+        titleRow.addView(soundConnectionButton, new LinearLayout.LayoutParams(dp(80), dp(48)));
         content.addView(titleRow);
         LinearLayout.LayoutParams titleLp = (LinearLayout.LayoutParams) titleRow.getLayoutParams();
         titleLp.bottomMargin = dp(12);
@@ -120,6 +150,7 @@ public class MainActivity extends ComponentActivity {
 
         tvHomeStatus = deviceHeader(content, "FERNSEHER", "Nicht verbunden");
         LinearLayout tvHeader = (LinearLayout) tvHomeStatus.getParent();
+        tvDeviceHeader = tvHeader;
         tvHeader.setOnClickListener(v -> tvDialog.open());
         tvHomeStatus.setTextColor(ACCENT);
         tvHomeStatus.setContentDescription("Fernseher verbinden");
@@ -441,8 +472,31 @@ public class MainActivity extends ComponentActivity {
         return button;
     }
 
+    private TextView connectionButton(String name) {
+        TextView button = actionButton(name, "");
+        button.setTextSize(15);
+        button.setOnClickListener(v -> tvDialog.open());
+        return button;
+    }
+    private void paintConnection(TextView button, String name, boolean connected, boolean connecting) {
+        if (button == null) return;
+        button.setTextColor(connected ? Color.rgb(66,215,146) :
+            (connecting ? Color.rgb(240,195,76) : Color.rgb(235,83,83)));
+        button.setContentDescription(name + " – " + (connected ? "Verbunden" :
+            (connecting ? "Verbindungsaufbau" : "Nicht verbunden")) + "; Verbindungen öffnen");
+    }
+    private void renderSoundConnection() {
+        DeviceState state = soundbarModel.getDevice().getValue();
+        paintConnection(soundConnectionButton, "Sound", state.getConnection() == Connection.CONNECTED,
+            state.getConnection() == Connection.CONNECTING && state.getError() == null);
+        if (tvDialog != null) tvDialog.renderSound();
+    }
     private void renderTvState(TvRemoteClient.State state) {
         boolean ready = state.connected() && state.keys;
+        paintConnection(tvConnectionButton, "TV", state.connected(), state.phase == TvRemoteClient.Phase.CONNECTING ||
+            state.phase == TvRemoteClient.Phase.PAIRING || state.phase == TvRemoteClient.Phase.CODE ||
+            state.phase == TvRemoteClient.Phase.VERIFYING);
+        if (tvDeviceHeader != null) tvDeviceHeader.setVisibility(state.connected() ? View.VISIBLE : View.GONE);
         if (tvHomeStatus != null) {
             String shortStatus;
             switch (state.phase) {
@@ -502,6 +556,7 @@ public class MainActivity extends ComponentActivity {
 
     @Override protected void onDestroy() {
         if (tvDialog != null) tvDialog.close();
+        if (backups != null) backups.close();
         if (tv != null) tv.close();
         super.onDestroy();
     }

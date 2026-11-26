@@ -2,6 +2,16 @@ package de.sofacockpit.app.tv;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
+import android.content.SharedPreferences;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.os.Build;
+import android.widget.CheckBox;
+import android.widget.Toast;
+import de.tonmaschine.android.MainViewModel;
+import de.tonmaschine.android.model.Connection;
+import de.tonmaschine.android.model.DeviceState;
 import android.content.Context;
 import android.net.nsd.NsdManager;
 import android.net.nsd.NsdServiceInfo;
@@ -25,15 +35,27 @@ public final class TvConnectionDialog {
     private final Activity activity;
     private final TvRemoteClient client;
     private final Handler main = new Handler(Looper.getMainLooper());
-    private AlertDialog dialog;
+    private Dialog dialog;
+    private final MainViewModel soundbar;
+    private final SharedPreferences options;
+    private final Runnable exportBackup, importBackup;
+    private TextView soundStatus, pairingStatus;
+    private EditText soundAddress;
+    private Button soundConnect, soundDisconnect, soundSave, tvSave, bothConnect;
+    private CheckBox autoConnect;
     private TextView status, searchStatus;
     private EditText address, code;
     private Button connect, rePair, disconnect, search, confirm;
     private LinearLayout found, codeArea;
     private Discovery discovery;
-    public TvConnectionDialog(Activity activity, TvRemoteClient client) {
+    public TvConnectionDialog(Activity activity, TvRemoteClient client, MainViewModel soundbar,
+                              SharedPreferences options, Runnable exportBackup, Runnable importBackup) {
         this.activity = activity;
         this.client = client;
+        this.soundbar = soundbar;
+        this.options = options;
+        this.exportBackup = exportBackup;
+        this.importBackup = importBackup;
     }
     public void open() {
         if (dialog != null && dialog.isShowing()) return;
@@ -41,16 +63,31 @@ public final class TvConnectionDialog {
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(dp(20), dp(12), dp(20), dp(12));
         ScrollView scroll = new ScrollView(activity);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(Color.rgb(11,14,19));
         scroll.addView(layout);
+        Button back = button("‹  Zurück zur Fernbedienung", this::close);
+        layout.addView(back);
+        layout.addView(heading("Verbindungen", 24));
+        layout.addView(heading("Fernseher", 18));
         status = text("");
         layout.addView(status);
+        pairingStatus = text("");
+        layout.addView(pairingStatus);
         address = new EditText(activity);
         address.setSingleLine(true);
         address.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         address.setHint("TV-IP-Adresse");
         address.setText(client.lastAddress());
         layout.addView(address);
-        search = button("Fernseher suchen", () -> startSearch());
+        tvSave = button("TV-Adresse speichern", () -> {
+            try {
+                client.rememberAddress(address.getText().toString());
+                toast("TV-Adresse gespeichert.");
+            } catch (Exception ex) { address.setError("Gültige lokale IP-Adresse eingeben."); }
+        });
+        layout.addView(tvSave);
+        search = button("Fernseher suchen", () -> { if (networkAllowed()) startSearch(); });
         layout.addView(search);
         searchStatus = text("IP-Adresse auch manuell möglich.");
         layout.addView(searchStatus);
@@ -60,15 +97,15 @@ public final class TvConnectionDialog {
 
         connect = button("Koppeln", () -> {
             stopSearch();
-            client.start(address.getText().toString(), !client.paired());
+            if (networkAllowed()) client.start(address.getText().toString(), !client.paired());
         });
         layout.addView(connect);
         rePair = button("Neu koppeln", () -> {
             stopSearch();
             new AlertDialog.Builder(activity).setTitle("TV neu koppeln?")
-                .setMessage("Die gespeicherte TV-Identität wird erst ersetzt, wenn die neue Kopplung bestätigt wurde.")
+                .setMessage("Eine neue, exportierbare TV-Identität wird erst gespeichert, wenn die Kopplung bestätigt wurde. Danach kann die Kopplung verschlüsselt gesichert werden.")
                 .setNegativeButton("Abbrechen", null)
-                .setPositiveButton("Koppeln", (d, w) -> client.start(address.getText().toString(), true))
+                .setPositiveButton("Koppeln", (d, w) -> { if (networkAllowed()) client.start(address.getText().toString(), true); })
                 .show();
         });
         layout.addView(rePair);
@@ -93,33 +130,131 @@ public final class TvConnectionDialog {
         codeArea.addView(confirm);
         layout.addView(codeArea);
 
-        dialog = new AlertDialog.Builder(activity).setTitle("Fernseher verbinden")
-            .setView(scroll).setNegativeButton("Schließen", null).create();
+        layout.addView(heading("Soundbar", 18));
+        soundStatus = text("");
+        layout.addView(soundStatus);
+        soundAddress = new EditText(activity);
+        soundAddress.setSingleLine(true);
+        soundAddress.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        soundAddress.setHint("Soundbar-IPv4-Adresse");
+        soundAddress.setText(soundbar.getIp().getValue());
+        layout.addView(soundAddress);
+        soundSave = button("Sound-Adresse speichern", () -> {
+            if (soundbar.saveConnectionAddress(soundAddress.getText().toString())) toast("Sound-Adresse gespeichert.");
+            else soundAddress.setError("Gültige IPv4-Adresse eingeben.");
+        });
+        layout.addView(soundSave);
+        soundConnect = button("Soundbar verbinden", this::connectSound);
+        layout.addView(soundConnect);
+        soundDisconnect = button("Soundbar trennen", soundbar::disconnect);
+        layout.addView(soundDisconnect);
+        bothConnect = button("Beide Geräte verbinden", () -> {
+            if (!networkAllowed()) return;
+            if (!client.busy()) {
+                if (address.getText().toString().trim().isEmpty()) address.setError("TV-Adresse fehlt");
+                else client.start(address.getText().toString(), !client.paired());
+            }
+            if (soundbar.getDevice().getValue().getConnection() == Connection.DISCONNECTED) connectSound();
+        });
+        layout.addView(bothConnect);
+        autoConnect = new CheckBox(activity);
+        autoConnect.setText("Beim App-Start automatisch verbinden");
+        autoConnect.setTextColor(Color.WHITE);
+        autoConnect.setChecked(options.getBoolean("auto_connect", false));
+        autoConnect.setOnCheckedChangeListener((b, enabled) -> options.edit().putBoolean("auto_connect", enabled).apply());
+        layout.addView(autoConnect);
+        layout.addView(text("Nur normale Verbindungen, keine Einschaltbefehle. Je nach Gerät kann bereits ein Netzwerkzugriff aufwecken. Standard: aus."));
+        layout.addView(heading("Konfiguration", 18));
+        layout.addView(text("Passwortgeschützte Datei mit TV-/Soundbar-Adresse, exportierbarer TV-Kopplung, Streaming-Auswahl und Auto-Verbindung. NAS- und Klangprofileinstellungen bleiben getrennt."));
+        layout.addView(button("Konfiguration exportieren", exportBackup));
+        layout.addView(button("Konfiguration importieren", importBackup));
+
+        dialog = new Dialog(activity, android.R.style.Theme_Material_NoActionBar);
+        dialog.setContentView(scroll);
         dialog.setOnDismissListener(d -> {
             stopSearch();
             code.setText("");
             dialog = null;
         });
         dialog.show();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setLayout(-1, -1);
+            dialog.getWindow().setStatusBarColor(Color.rgb(11,14,19));
+            dialog.getWindow().setNavigationBarColor(Color.rgb(11,14,19));
+        }
         render(client.state());
+        renderSound();
     }
     public void render(TvRemoteClient.State state) {
         if (dialog == null || !dialog.isShowing()) return;
         boolean busy = client.busy();
         boolean paired = client.paired();
-        status.setText((paired ? "Kopplung gespeichert\n" : "Noch nicht gekoppelt\n") + state.detail);
+        status.setText(state.detail);
+        status.setTextColor(state.connected() ? Color.rgb(66,215,146) :
+            (busy ? Color.rgb(240,195,76) : Color.rgb(235,83,83)));
+        pairingStatus.setText(client.hasPortablePairing() ? "TV-Kopplung exportierbar" :
+            (paired ? "Alte Kopplung – für Export einmal neu koppeln." : "Noch nicht gekoppelt"));
         connect.setText(paired ? "Verbinden" : "Koppeln");
         connect.setEnabled(!busy);
         rePair.setVisibility(paired && !busy ? View.VISIBLE : View.GONE);
         disconnect.setVisibility(busy ? View.VISIBLE : View.GONE);
         address.setEnabled(!busy);
         search.setEnabled(!busy);
+        tvSave.setEnabled(!busy);
         for (int i = 0; i < found.getChildCount(); i++) found.getChildAt(i).setEnabled(!busy);
         boolean asking = state.phase == TvRemoteClient.Phase.CODE;
         boolean verifying = state.phase == TvRemoteClient.Phase.VERIFYING;
         codeArea.setVisibility(asking || verifying ? View.VISIBLE : View.GONE);
         confirm.setEnabled(asking);
         code.setEnabled(asking);
+    }
+    public void renderSound() {
+        if (dialog == null || !dialog.isShowing() || soundStatus == null) return;
+        DeviceState state = soundbar.getDevice().getValue();
+        boolean active = state.getConnection() == Connection.CONNECTED;
+        boolean connecting = state.getConnection() == Connection.CONNECTING;
+        soundStatus.setText(soundbar.getMessage().getValue());
+        soundStatus.setTextColor(active ? Color.rgb(66,215,146) :
+            (connecting && state.getError() == null ? Color.rgb(240,195,76) : Color.rgb(235,83,83)));
+        soundAddress.setEnabled(!active && !connecting);
+        soundSave.setEnabled(!active && !connecting);
+        soundConnect.setEnabled(!active && !connecting);
+        soundDisconnect.setEnabled(active || connecting);
+    }
+
+    public void reloadAddresses() {
+        if (dialog == null || !dialog.isShowing()) return;
+        address.setText(client.lastAddress());
+        soundAddress.setText(soundbar.getIp().getValue());
+        autoConnect.setChecked(options.getBoolean("auto_connect", false));
+        render(client.state());
+        renderSound();
+    }
+    private void connectSound() {
+        if (!networkAllowed()) return;
+        String ip = soundAddress.getText().toString().trim();
+        if (ip.isEmpty() || !soundbar.saveConnectionAddress(ip)) {
+            soundAddress.setError("Gültige IPv4-Adresse eingeben."); return;
+        }
+        soundbar.connect();
+    }
+    private boolean networkAllowed() {
+        if (Build.VERSION.SDK_INT >= 37 &&
+            activity.checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            activity.requestPermissions(new String[]{"android.permission.ACCESS_LOCAL_NETWORK"}, 601);
+            toast("Netzwerkzugriff erlauben und danach erneut verbinden.");
+            return false;
+        }
+        return true;
+    }
+    private void toast(String value) { Toast.makeText(activity, value, Toast.LENGTH_LONG).show(); }
+    private TextView heading(String value, int size) {
+        TextView view = text(value);
+        view.setTextSize(size);
+        view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        view.setTextColor(Color.WHITE);
+        view.setPadding(0, dp(15), 0, dp(7));
+        return view;
     }
     public void close() {
         stopSearch();
@@ -134,6 +269,7 @@ public final class TvConnectionDialog {
     private TextView text(String s) {
         TextView v = new TextView(activity);
         v.setText(s);
+        v.setTextColor(Color.rgb(210,218,228));
         v.setPadding(0, dp(5), 0, dp(5));
         return v;
     }

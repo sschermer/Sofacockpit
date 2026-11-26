@@ -85,9 +85,12 @@ final class PortableTvIdentity {
         return cert;
     }
     private static byte[] time(long millis) {
-        SimpleDateFormat format = new SimpleDateFormat("yyyyMMddHHmmss'Z'", Locale.ROOT);
+        Calendar calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC"), Locale.ROOT);
+        calendar.setTimeInMillis(millis);
+        boolean utc = calendar.get(Calendar.YEAR) >= 1950 && calendar.get(Calendar.YEAR) <= 2049;
+        SimpleDateFormat format = new SimpleDateFormat(utc ? "yyMMddHHmmss'Z'" : "yyyyMMddHHmmss'Z'", Locale.ROOT);
         format.setTimeZone(TimeZone.getTimeZone("UTC"));
-        return der(24, format.format(new Date(millis)).getBytes(StandardCharsets.US_ASCII));
+        return der(utc ? 23 : 24, format.format(new Date(millis)).getBytes(StandardCharsets.US_ASCII));
     }
     private static byte[] seq(byte[]... fields) { return der(0x30, join(fields)); }
     private static byte[] join(byte[]... fields) {

@@ -93,10 +93,11 @@ public final class TvRemoteClient implements AutoCloseable {
 
     /** Invoked only by a user-initiated encrypted backup worker. */
     public org.json.JSONObject exportConfiguration() throws Exception {
-        org.json.JSONObject config = new org.json.JSONObject().put("address", lastAddress());
-        if (hasPortablePairing()) {
-            PortableTvIdentity identity = TvIdentityVault.open(prefs.getString(WRAPPED_IDENTITY, null));
-            org.json.JSONObject pairing = identity.json().put("serverPin", prefs.getString(PIN, ""));
+        java.util.Map<String, ?> snapshot = prefs.getAll();
+        org.json.JSONObject config = new org.json.JSONObject().put("address", snapshot.containsKey(HOST) ? snapshot.get(HOST) : "");
+        if (PORTABLE_ALIAS.equals(snapshot.get(KEY_ALIAS)) && snapshot.containsKey(PIN) && snapshot.containsKey(WRAPPED_IDENTITY)) {
+            PortableTvIdentity identity = TvIdentityVault.open((String) snapshot.get(WRAPPED_IDENTITY));
+            org.json.JSONObject pairing = identity.json().put("serverPin", snapshot.get(PIN));
             validatePin(pairing.getString("serverPin"));
             config.put("pairing", pairing);
         }
@@ -134,7 +135,9 @@ public final class TvRemoteClient implements AutoCloseable {
         SharedPreferences.Editor edit = prefs.edit().putString(HOST, config.address);
         if (config.includesPairing())
             edit.putString(PIN, config.pin).putString(KEY_ALIAS, PORTABLE_ALIAS).putString(WRAPPED_IDENTITY, config.wrapped);
-        // Backups without a portable identity do not replace an existing trusted TV.
+        else if (!config.address.equals(lastAddress()))
+            edit.remove(PIN).remove(KEY_ALIAS).remove(WRAPPED_IDENTITY);
+        // A settings-only backup preserves an existing pairing only for the same address.
         if (!edit.commit()) throw new IOException("TV-Konfiguration konnte nicht gespeichert werden.");
         update(Phase.DISCONNECTED, "Konfiguration geladen – bitte verbinden.", false);
     }

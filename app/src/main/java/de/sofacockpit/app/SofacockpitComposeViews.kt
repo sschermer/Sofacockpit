@@ -3,6 +3,10 @@ package de.sofacockpit.app
 import android.content.Context
 import android.os.Build
 import androidx.activity.ComponentActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collect
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -46,7 +50,7 @@ private val cockpitGreen = Color(0xFF42D792)
 private val cockpitRed = Color(0xFFEB5353)
 
 /** Hosts the existing Tonmaschine Compose screen and its real device controls. */
-fun createTonmaschineComposePage(context: Context, vm: MainViewModel): ComposeView =
+fun createTonmaschineComposePage(context: Context, vm: MainViewModel, openConnections: Runnable): ComposeView =
     ComposeView(context).apply {
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         setContent {
@@ -63,9 +67,16 @@ fun createTonmaschineComposePage(context: Context, vm: MainViewModel): ComposeVi
                     vm.connect()
                 }
             }
-            Tonmaschine(vm, connect)
+            Tonmaschine(vm, connect) { openConnections.run() }
         }
     }
+
+/** Observe the existing ViewModel on the activity's main-thread lifecycle. */
+fun observeSoundbarConnection(activity: ComponentActivity, vm: MainViewModel, update: Runnable) {
+    activity.lifecycleScope.launch {
+        vm.device.combine(vm.message) { _, _ -> Unit }.collect { update.run() }
+    }
+}
 
 /** Compact start-screen status. Values and switch states come from soundbar reports. */
 fun createSoundbarHomeComposeView(context: Context, vm: MainViewModel): ComposeView =

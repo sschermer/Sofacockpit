@@ -64,12 +64,32 @@ final class StreamingShortcuts {
         for (Entry entry : entries) if (entry.name.equalsIgnoreCase(candidate.name) || entry.link.equals(candidate.link)) return true;
         return false;
     }
-    void save() {
+    JSONArray exportEntries() {
         JSONArray array = new JSONArray();
         for (Entry entry : entries) {
             try { array.put(new JSONObject().put("name", entry.name).put("link", entry.link)); }
             catch (JSONException impossible) { throw new IllegalStateException(impossible); }
         }
-        prefs.edit().putString("entries", array.toString()).apply();
+        return array;
+    }
+    static List<Entry> parseEntries(JSONArray array) throws JSONException {
+        if (array.length() > 50) throw new IllegalArgumentException("Zu viele Streaming-Dienste");
+        List<Entry> parsed = new ArrayList<>();
+        for (int i = 0; i < array.length(); i++) {
+            JSONObject item = array.getJSONObject(i);
+            Entry entry = new Entry(item.getString("name"), item.getString("link"));
+            for (Entry existing : parsed) if (existing.name.equalsIgnoreCase(entry.name) || existing.link.equals(entry.link))
+                throw new IllegalArgumentException("Doppelte Streaming-Einträge");
+            parsed.add(entry);
+        }
+        return parsed;
+    }
+    void replaceEntries(List<Entry> list) {
+        entries.clear();
+        entries.addAll(list);
+        save();
+    }
+    void save() {
+        prefs.edit().putString("entries", exportEntries().toString()).apply();
     }
 }
