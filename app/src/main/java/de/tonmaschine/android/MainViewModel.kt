@@ -61,7 +61,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateIp(text: String) { _ip.value = text.trim() }
+    fun updateIp(text: String) {
+        val address = text.trim()
+        if (address != _ip.value && client != null) disconnect()
+        _ip.value = address
+    }
 
     /** Central connection management; no network action on saving/importing an IP. */
     fun saveConnectionAddress(text: String): Boolean {
@@ -155,13 +159,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun connect() {
+    fun connect() { startConnection() }
+
+    private fun startConnection(): Boolean {
         if (!Catalog.validIp(ip.value)) {
             _message.value = "Bitte eine gültige IPv4-Adresse eingeben"
-            return
+            return false
         }
         try { store.saveIp(ip.value) }
-        catch (e: Exception) { _message.value = "IP konnte nicht gespeichert werden: ${e.message}"; return }
+        catch (e: Exception) { _message.value = "IP konnte nicht gespeichert werden: ${e.message}"; return false }
         resumeIntent.cancel()
         generation++
         val id = generation
@@ -195,17 +201,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             }).also { it.start() }
+        return true
     }
 
     fun refresh() { client?.refresh() }
 
     private fun confirmedStandby() = lastConfirmedPower == false || _device.value.powerOn == false
 
-    /** Check the existing desired session on return; do not start a new one from a saved IP. */
+    /** A requested session can already be lost or retrying when the app is left.
+     * Remember the intent, not its transient connection color. */
     fun onBackground() {
         cancelConnectionRefresh()
-        resumeIntent.background(generation, ip.value,
-            client != null && _device.value.connection == Connection.CONNECTED, confirmedStandby())
+        resumeIntent.background(generation, ip.value, client != null, confirmedStandby())
     }
 
     fun onForeground(networkAllowed: Boolean) {
@@ -239,7 +246,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             if (_device.value.connection == Connection.CONNECTING && _device.value.error != null) {
                 // Existing retry backoff can reach 30 seconds. Pulling explicitly expedites it.
-                connect()
+                if (!startConnection()) { done.accept("Soundbar: Neuverbindung nicht möglich"); return@launch }
                 expectedGeneration = generation
                 restarted = true
             } else if (_device.value.connection == Connection.CONNECTED) {
@@ -261,7 +268,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             if (!restarted && !changedIntent() && !standby()) {
                 baseline = reportSequence
-                connect()
+                if (!startConnection()) { done.accept("Soundbar: Neuverbindung nicht möglich"); return@launch }
                 expectedGeneration = generation
                 repeat(40) {
                     delay(250)
@@ -277,11 +284,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun send(packet: JSONObject, readBack: String? = null) {
         if (_device.value.connection != Connection.CONNECTED) return
-        val ok = client?.send(packet) ?: false
+        val target = client ?: return
+        val id = generation
+        val ok = target.send(packet)
         if (!ok) _message.value = "Befehl konnte nicht gesendet werden"
         else if (readBack != null) viewModelScope.launch {
             delay(450)
-            client?.send(SoundbarCommands.get(readBack))
+            if (generation == id && client === target && _device.value.connection == Connection.CONNECTED)
+                target.send(SoundbarCommands.get(readBack))
         }
     }
 
@@ -539,16 +549,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun applyProfile(name: String) {
         val profile = _profiles.value[name] ?: return
         if (!profile.valid() || _device.value.connection != Connection.CONNECTED) return
+        val target = client ?: return
+        val id = generation
         viewModelScope.launch {
-            client?.send(SoundbarCommands.mode(profile.mode))
+            if (generation != id || client !== target) return@launch
+            target.send(SoundbarCommands.mode(profile.mode))
             Catalog.levels.forEach { spec ->
-                profile.levels[spec.field]?.let { client?.send(SoundbarCommands.level(spec, it)) }
+                profile.levels[spec.field]?.let { target.send(SoundbarCommands.level(spec, it)) }
             }
-            client?.send(SoundbarCommands.option("b_drc", profile.drc))
-            client?.send(SoundbarCommands.option("b_night_time", profile.nightTime))
-            profile.surround?.let { client?.send(SoundbarCommands.option("b_rear", it)) }
+            target.send(SoundbarCommands.option("b_drc", profile.drc))
+            target.send(SoundbarCommands.option("b_night_time", profile.nightTime))
+            profile.surround?.let { target.send(SoundbarCommands.option("b_rear", it)) }
             delay(700)
-            client?.refresh()
+            if (generation != id || client !== target || _device.value.connection != Connection.CONNECTED) return@launch
+            target.refresh()
             _selectedProfile.value = name
             _message.value = "Profil übertragen – Rückmeldung abwarten"
         }

@@ -175,7 +175,7 @@ public final class TvConnectionDialog {
                 if (address.getText().toString().trim().isEmpty()) address.setError("TV-Adresse fehlt");
                 else client.start(address.getText().toString(), !client.paired());
             }
-            if (soundbar.getDevice().getValue().getConnection() == Connection.DISCONNECTED) connectSound();
+            if (soundbar.getDevice().getValue().getConnection() != Connection.CONNECTED) connectSound();
         });
         layout.addView(bothConnect);
         autoConnect = new CheckBox(activity);
@@ -188,7 +188,7 @@ public final class TvConnectionDialog {
         layout.addView(autoConnect);
         layout.addView(text("Nur normale Verbindungen, keine Einschaltbefehle. Je nach Gerät kann bereits ein Netzwerkzugriff aufwecken. Standard: aus. Eine zuvor aktive TV-Sitzung kann nach Rückkehr aus dem Hintergrund einmal wiederhergestellt werden; manuell getrennte Geräte bleiben getrennt."));
         layout.addView(heading("Konfiguration", 18));
-        layout.addView(text("Passwortgeschützte Datei mit TV-/Soundbar-Adresse, exportierbarer TV-Kopplung, Streaming-Auswahl, Auto-Verbindung und gewähltem Theme. Eigene Theme-Dateien, NAS- und Klangprofileinstellungen bleiben getrennt."));
+        layout.addView(text("Passwortgeschützte persönliche Konfiguration einschließlich Geräteverbindungen und NAS-Zugangsdaten; HDMI-Bilder, eigene Designs und lokale Klangprofile optional."));
         layout.addView(button("Konfiguration exportieren", exportBackup));
         layout.addView(button("Konfiguration importieren", importBackup));
 
@@ -248,7 +248,9 @@ public final class TvConnectionDialog {
             (connecting && state.getError() == null ? CockpitTheme.PENDING : CockpitTheme.ERROR));
         soundAddress.setEnabled(!active && !connecting);
         soundSave.setEnabled(!active && !connecting);
-        soundConnect.setEnabled(!active && !connecting);
+        soundConnect.setText(active || connecting ? "Soundbar neu verbinden" : "Soundbar verbinden");
+        // Explicit reconnect is available even if a stale socket looks green or is retrying.
+        soundConnect.setEnabled(true);
         soundDisconnect.setEnabled(active || connecting);
     }
 

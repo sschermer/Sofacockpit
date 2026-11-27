@@ -4,11 +4,20 @@ import org.junit.Test
 import org.junit.Assert.*
 
 class SoundbarResumeIntentTest {
-    @Test fun restoresOnlyOnceForPreviouslyRespondingSession() {
+    @Test fun restoresOnlyOnceForRequestedSessionEvenIfAlreadyLost() {
         val intent = SoundbarResumeIntent()
         intent.background(5, "device", true, false)
         assertTrue(intent.take(5, "device", true, false, true))
         assertFalse(intent.take(5, "device", true, false, true))
+    }
+
+    @Test fun lostOrRetryingSessionCanRecoverAfterEveryForegroundReturn() {
+        val intent = SoundbarResumeIntent()
+        // Desired is independent of the last displayed connection state.
+        intent.background(5, "device", true, false)
+        assertTrue(intent.take(5, "device", true, false, true))
+        intent.background(6, "device", true, false)
+        assertTrue(intent.take(6, "device", true, false, true))
     }
 
     @Test fun storedAddressOrStandbyDoNotPermitProbe() {
