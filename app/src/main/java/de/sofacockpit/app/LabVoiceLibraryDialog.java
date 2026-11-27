@@ -55,6 +55,7 @@ final class LabVoiceLibraryDialog implements AutoCloseable {
             };
             d.requestWindowFeature(Window.FEATURE_NO_TITLE);
             d.setCanceledOnTouchOutside(false);
+            if(d.getWindow()!=null)d.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
             active=d;
             d.setOnDismissListener(v->{if(active==d){active=null;back=null;}});
         }

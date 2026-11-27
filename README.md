@@ -28,6 +28,10 @@ Persönliche kurze Synonyme erhalten befehlsspezifische, vollständige Satzvaria
 
 [Signierte Lab-APK v0.1.3](https://github.com/sschermer/Sofacockpit/releases/download/sofacockpit-lab-v0.1.3/Sofacockpit-Lab.apk) · [CI erfolgreich](https://github.com/sschermer/Sofacockpit/actions/runs/45945839642). Gerätetest der neuen Satzmuster steht noch aus.
 
+### Lab v0.1.4 – Sprachzugang und Bibliothek im Lab-Design (Build ausstehend)
+
+Kurzer Tipp auf Stimme startet die lokale Aufnahme unmittelbar bei verfügbarer Spracherkennung und Mikrofonberechtigung. Langer Druck öffnet nur die Bibliothek. Der kompakte Sprachdialog verwendet jetzt das gewählte Theme. Die Bibliothek ist eine eigene Vollbildansicht mit Suche über Befehle, Standardformulierungen und Synonyme, aufklappbaren Befehlsgruppen und Filter „Nur eigene“. Detailansicht, Varianten-Vorschau, Bearbeiten und Löschen nutzen dasselbe Design. Nicht verfügbare persönliche Ziele bleiben sichtbar und löschbar. Bei erster Mikrofonfreigabe kann abhängig von Androids Fensterfokus ein erneuter Tipp nötig sein. Bestehende Daten, Befehlsauflösung, explizite Ausführung, lokale Erkennung und Fehler-/Kollisionsprüfung bleiben erhalten. Kein TTS oder KI-Modell in dieser Version.
+
 **Designstudie 01 (27.11.2026):** Ein eigenständiger [klickbarer HTML-Prototyp](https://github.com/sschermer/Sofacockpit/blob/experiment/intuitive-ui/docs/prototype/Sofacockpit_Prototyp.html) liegt ausschließlich im Experimentierzweig. Datei herunterladen und im Browser öffnen. Alle Geräteaktionen und Zustände sind simuliert; die wichtigsten Abläufe sind im Browser getestet. Keine Änderung der Android-App oder des stabilen Releases. Details und offene technische Voraussetzungen in Aufgabe 0.4 der Roadmap.
 
 **Designstudie 02:** [Überarbeiteter HTML-Prototyp](https://github.com/sschermer/Sofacockpit/blob/experiment/intuitive-ui/docs/prototype/Sofacockpit_Prototyp_02.html) mit größtmöglichem Steuerkreis und kompakter DRC-/Night-Time-Zeile. Konzept für haptische Orientierung in Aufgabe 0.4 dokumentiert; Android-Code und stabile APK bleiben unverändert.

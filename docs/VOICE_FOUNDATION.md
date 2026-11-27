@@ -19,7 +19,7 @@ Stimme                                  Schließen
 
 Bei mehreren Kandidaten tritt an die Stelle der einzelnen Vorschau eine kurze Frage mit passenden, tatsächlich verfügbaren Zielen (z. B. PlayStation 5 oder Xbox). Auswahl durch Sprache oder Antippen; niemals allein aufgrund eines ähnlichen Begriffs starten. Bei unbekanntem Satz keine willkürliche Auswahl erfinden. Möglichkeit, einen vorhandenen Befehl gezielt aus der Bibliothek zu wählen, oder abzubrechen.
 
-Die Eingabe bleibt wie bisher über den Tab Stimme erreichbar. Langes Drücken öffnet die Bibliothek direkt. Kein zusätzliches dauerhaftes Navigationsziel. Bevor größere UI-Änderungen umgesetzt werden, Darstellung, Höhe, Bedienbarkeit und Rückmeldungen abstimmen.
+Nutzerentscheidung 27.11.2026: Kurzer Tipp auf den Tab Stimme startet direkt die lokale Aufnahme, sofern Mikrofonfreigabe und Sprachdienst vorhanden sind. Langer Druck öffnet ausschließlich die Bibliothek. Diese erhält eine Vollbildansicht im gewählten Theme mit Suche, Befehlsgruppen, Filter Nur eigene sowie Detail- und Bearbeitungsansichten. Der Sprachdialog wird kompakt im gleichen Design gehalten. L01.3a setzt dies vor TTS und Dialoglogik um; Geräteabnahme bleibt notwendig.
 
 ## Bibliothek
 

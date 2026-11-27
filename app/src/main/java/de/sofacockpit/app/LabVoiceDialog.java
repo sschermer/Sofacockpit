@@ -1,7 +1,9 @@
 package de.sofacockpit.app;
 
 import android.Manifest;
-import android.app.AlertDialog;
+import android.app.Dialog;
+import android.view.Window;
+import de.sofacockpit.app.theme.ThemePack;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -34,12 +36,14 @@ final class LabVoiceDialog implements AutoCloseable {
     private final Supplier<VoiceCommands.Library> library;
     private final Function<VoiceCommands.Command,String> execute;
     private final Runnable openLibrary;
+    private final Supplier<ThemePack> theme;
     private final ActivityResultLauncher<String> permission;
     private final Handler handler=new Handler(Looper.getMainLooper());
-    private AlertDialog dialog;
+    private Dialog dialog,permissionOwner;
+    private LabVoiceUi ui;
     private TextView status,preview;
     private EditText input;
-    private Button microphone;
+    private Button microphone,executeButton;
     private SpeechRecognizer recognizer;
     private boolean listening,closed,permissionPending;
     private int generation;
@@ -49,14 +53,23 @@ final class LabVoiceDialog implements AutoCloseable {
     };
 
     LabVoiceDialog(ComponentActivity activity,Supplier<VoiceCommands.Library> library,
-                   Function<VoiceCommands.Command,String> execute,Runnable openLibrary){
-        this.activity=activity;this.library=library;this.execute=execute;this.openLibrary=openLibrary;
+                   Function<VoiceCommands.Command,String> execute,Runnable openLibrary,Supplier<ThemePack> theme){
+        this.activity=activity;this.library=library;this.execute=execute;this.openLibrary=openLibrary;this.theme=theme;
         permission=activity.registerForActivityResult(new ActivityResultContracts.RequestPermission(),granted->{
-            permissionPending=false;
+            Dialog owner=permissionOwner;permissionOwner=null;permissionPending=false;
             if(!visible())return;
-            status(Boolean.TRUE.equals(granted)?"Mikrofon freigegeben. Tippe auf Sprechen.":
-                "Mikrofon nicht erlaubt. Textbefehle bleiben verfügbar.");
             microphone.setEnabled(available());
+            if(owner!=dialog)return;
+            if(!Boolean.TRUE.equals(granted)){status("Mikrofon nicht erlaubt. Textbefehle bleiben verfügbar.");return;}
+            status("Mikrofon freigegeben. Tippe bei Bedarf auf Sprechen.");
+            // Start only for this explicit request and this still-visible, focused foreground dialog.
+            // If Android delivers the permission result before focus/resume, leave the microphone off.
+            microphone.post(()->{
+                if(visible()&&dialog==owner&&!listening&&
+                    activity.getLifecycle().getCurrentState().isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)&&
+                    dialog.getWindow()!=null&&dialog.getWindow().getDecorView().hasWindowFocus())
+                    requestMicrophone();
+            });
         });
     }
     private boolean visible(){return !closed && !activity.isFinishing() && !activity.isDestroyed() && dialog!=null && dialog.isShowing();}
@@ -68,59 +81,62 @@ final class LabVoiceDialog implements AutoCloseable {
     }
     void show(){
         if(closed||visible())return;
-        LinearLayout body=new LinearLayout(activity);body.setOrientation(LinearLayout.VERTICAL);
-        body.setPadding(dp(20),dp(8),dp(20),dp(8));
-        TextView info=new TextView(activity);
-        info.setText("Sprich einen Befehl oder gib ihn ein. Eigene kurze Zielnamen funktionieren auch in passenden Sätzen. Prüfe die Vorschau und bestätige mit Ausführen. Erkennung nur auf dem Smartphone.");
-        body.addView(info);
-        microphone=new Button(activity);microphone.setText("Sprechen");
-        microphone.setMinimumHeight(dp(48));microphone.setAllCaps(false);
-        microphone.setEnabled(available());microphone.setOnClickListener(v->{if(listening){stop();status("Aufnahme abgebrochen.");}else requestMicrophone();});
-        body.addView(microphone,new LinearLayout.LayoutParams(-1,dp(52)));
-        status=new TextView(activity);
-        status.setText(available()?"Bereit – Mikrofon ist aus.":
-            "Lokale Spracherkennung nicht verfügbar. Textbefehle sind möglich (ab Android 12 mit lokalem Sprachdienst auch Sprache).");
+        ui=new LabVoiceUi(activity,theme.get());
+        LinearLayout body=ui.root();
+        ui.header(body,"Stimme","Lokale Spracherkennung",null,()->{if(dialog!=null)dialog.dismiss();});
+        LinearLayout capture=ui.panel();
+        microphone=ui.button("Sprechen",true,()->{
+            if(listening){stop();status("Aufnahme abgebrochen.");}else requestMicrophone();
+        });
+        microphone.setEnabled(available()&&!permissionPending);
+        ui.add(capture,microphone,0);
+        status=ui.text(available()?"Bereit – Mikrofon ist aus.":
+            "Lokale Spracherkennung nicht verfügbar. Textbefehle sind möglich.",14,ui.t.muted,false);
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-        body.addView(status);
-        input=new EditText(activity);input.setHint("z. B. Mach bitte leiser");
-        input.setSingleLine(true);input.setSaveEnabled(false);
-        input.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(240)});
-        body.addView(input,new LinearLayout.LayoutParams(-1,dp(56)));
-        preview=new TextView(activity);preview.setTextSize(16);preview.setPadding(0,dp(10),0,dp(10));
+        ui.add(capture,status,10);ui.add(body,capture,12);
+
+        LinearLayout textCard=ui.panel();
+        ui.add(textCard,ui.text("Dein Befehl",14,ui.t.muted,true),0);
+        input=ui.input("Befehl sprechen oder eingeben",240);
+        ui.add(textCard,input,8);
+        preview=ui.text("",16,ui.t.text,true);
         preview.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-        body.addView(preview);
-        Button editLibrary=new Button(activity);editLibrary.setText("Sprachbibliothek");editLibrary.setAllCaps(false);
-        editLibrary.setMinimumHeight(dp(48));
-        editLibrary.setOnClickListener(v->{if(!visible())return;stop();dialog.dismiss();openLibrary.run();});
-        body.addView(editLibrary,new LinearLayout.LayoutParams(-1,dp(48)));
-        TextView examples=new TextView(activity);
-        examples.setText("Beispiele\nLauter · Leiser · Stumm · Ton an\nMach Netflix an · HDMI zwei · Ich möchte PS5 spielen\nNight Time an · DRC aus\nKlangprofil Kino · Klangmodus Cinema\nFernseher aus · Soundbar an\nZurück · Home · OK · Wiedergabe umschalten\n\nApp-, HDMI-, Profil- und Klangmodusnamen werden aus der aktuellen Konfiguration übernommen. Bei TV-Befehlen gelten die vorhandenen Verbindungs- und Statusprüfungen.");
-        body.addView(examples);
-        ScrollView scroll=new ScrollView(activity);scroll.setFillViewport(true);scroll.addView(body);
-        body.setFocusableInTouchMode(true);body.requestFocus();
-        AlertDialog created=new AlertDialog.Builder(activity).setTitle("Stimme").setView(scroll)
-            .setNegativeButton("Schließen",null).setPositiveButton("Ausführen",null).create();
+        ui.add(textCard,preview,10);ui.add(body,textCard,10);
+
+        LinearLayout actions=ui.row();
+        ui.weighted(actions,ui.button("Schließen",false,()->{if(dialog!=null)dialog.dismiss();}),0);
+        executeButton=ui.button("Ausführen",true,this::confirm);
+        ui.weighted(actions,executeButton,8);ui.add(body,actions,12);
+        ui.add(body,ui.button("Sprachbibliothek",false,()->{
+            if(!visible())return;stop();dialog.dismiss();openLibrary.run();
+        }),8);
+
+        ScrollView scroll=ui.scroll(body);
+        Dialog created=new Dialog(activity);created.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        created.setContentView(scroll);created.setCanceledOnTouchOutside(true);
+        if(created.getWindow()!=null)created.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
         dialog=created;
-        created.setOnDismissListener(d->{stop();if(dialog==created){dialog=null;input=null;status=null;preview=null;microphone=null;previewed=null;}});
-        created.show();
-        if(created.getWindow()!=null){
-            created.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
-            created.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
-        }
-        created.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->confirm());
+        created.setOnDismissListener(v->{
+            if(dialog!=created)return;
+            stop();dialog=null;input=null;status=null;preview=null;microphone=null;executeButton=null;previewed=null;ui=null;
+        });
+        created.show();ui.configure(created,false,body);body.requestFocus();
         input.addTextChangedListener(new TextWatcher(){
             public void beforeTextChanged(CharSequence s,int start,int count,int after){}
             public void onTextChanged(CharSequence s,int start,int before,int count){if(visible())renderPreview();}
             public void afterTextChanged(Editable s){}
         });
         renderPreview();
+        // The short tap itself is the deliberate recording gesture. No second microphone tap.
+        if(!permissionPending&&available())requestMicrophone();
     }
     private void renderPreview(){
         if(!visible())return;
         VoiceCommands.Match match=library.get().resolve(input.getText().toString());
         previewed=match.command;
         preview.setText(match.command==null?match.message:"Befehl: "+match.command.label);
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(!listening && match.command!=null);
+        boolean canExecute=!listening&&match.command!=null;
+        executeButton.setEnabled(canExecute);executeButton.setAlpha(canExecute?1f:.45f);
     }
     private void confirm(){
         if(!visible()||listening||previewed==null)return;
@@ -139,9 +155,9 @@ final class LabVoiceDialog implements AutoCloseable {
         if(!visible()||permissionPending)return;
         if(!available()){status("Lokaler Sprachdienst nicht verfügbar.");return;}
         if(activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){
-            permissionPending=true;microphone.setEnabled(false);
+            permissionPending=true;permissionOwner=dialog;microphone.setEnabled(false);
             try{permission.launch(Manifest.permission.RECORD_AUDIO);}
-            catch(RuntimeException e){permissionPending=false;microphone.setEnabled(true);status("Mikrofonberechtigung nicht verfügbar.");}
+            catch(RuntimeException e){permissionPending=false;permissionOwner=null;microphone.setEnabled(true);status("Mikrofonberechtigung nicht verfügbar.");}
             return;
         }
         start();
@@ -184,7 +200,7 @@ final class LabVoiceDialog implements AutoCloseable {
                 public void onEvent(int type,Bundle b){}
             });
             listening=true;
-            input.setText("");microphone.setText("Abbrechen");input.setEnabled(false);
+            input.setText("");microphone.setText("Aufnahme abbrechen");input.setEnabled(false);
             renderPreview();status("Mikrofon wird geöffnet …");
             Intent intent=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)

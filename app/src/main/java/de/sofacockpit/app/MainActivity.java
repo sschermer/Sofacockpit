@@ -120,8 +120,8 @@ public class MainActivity extends ComponentActivity {
         tvDialog = new TvConnectionDialog(this, tv, soundbarModel, connectionOptions, backups::requestExport, backups::requestImport, () -> theme);
         updates = new UpdateManager(this, () -> theme);
         voiceAliases = new VoiceAliasStore(this);
-        voiceEditor = new LabVoiceLibraryDialog(this, this::baseVoiceLibrary, voiceAliases);
-        voice = new LabVoiceDialog(this, this::voiceLibrary, this::executeVoice, voiceEditor::show);
+        voiceEditor = new LabVoiceLibraryDialog(this, this::baseVoiceLibrary, voiceAliases, () -> theme);
+        voice = new LabVoiceDialog(this, this::voiceLibrary, this::executeVoice, voiceEditor::show, () -> theme);
         connectionRefresh = new ConnectionRefresh(tv, soundbarModel, updates,
             () -> Build.VERSION.SDK_INT < 37 || checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED,
@@ -275,7 +275,7 @@ public class MainActivity extends ComponentActivity {
                 tab.setOnClickListener(v->{if(CockpitNavigation.valid(labActiveCategory,labActivePage))
                     selectScreen(labActiveCategory,labActivePage);});
             }else if(position==4){
-                tab.setContentDescription("Sprachsteuerung öffnen; lange drücken für die Bibliothek");
+                tab.setContentDescription("Spracheingabe starten; lange drücken für die Bibliothek");
                 tab.setOnClickListener(v->voice.show());
                 tab.setOnLongClickListener(v->{voiceEditor.show();return true;});
             }else{
