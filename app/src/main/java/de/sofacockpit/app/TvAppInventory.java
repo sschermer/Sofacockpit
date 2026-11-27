@@ -24,6 +24,20 @@ final class TvAppInventory {
         apps = Collections.unmodifiableList(new ArrayList<>(reported));
         verified = true;
     }
+    /** OPEN checks only its target; don't discard other previously verified supplemental
+     * entries from the same device. A full explicit refresh replaces them all. */
+    void receivedLaunch(List<TclAppLauncher.App> reported, String requestedPackage) {
+        java.util.Map<String,TclAppLauncher.App> merged = new java.util.LinkedHashMap<>();
+        for (TclAppLauncher.App app : reported) merged.put(app.packageName, app);
+        if (verified) for (TclAppLauncher.App app : apps) {
+            if (app.supplemental && !app.packageName.equals(requestedPackage))
+                merged.putIfAbsent(app.packageName, app);
+        }
+        List<TclAppLauncher.App> sorted = new ArrayList<>(merged.values());
+        sorted.sort(java.util.Comparator.comparing((TclAppLauncher.App a) -> a.name, String.CASE_INSENSITIVE_ORDER)
+            .thenComparing(a -> a.packageName));
+        received(sorted);
+    }
     void stale() { verified = false; }
     boolean verified() { return verified; }
     boolean hasSnapshot() { return !apps.isEmpty() || verified; }
@@ -35,7 +49,7 @@ final class TvAppInventory {
         return result;
     }
     enum FavoriteStatus {
-        AVAILABLE("Installierte TV-App zugeordnet", ""),
+        AVAILABLE("TV-App erkannt (Start am TV prüfen)", ""),
         UNCONFIRMED("TV-App-Liste noch nicht aktuell bestätigt", "Ungeprüft"),
         NOT_REPORTED("Das zugeordnete Paket fehlt in der vom TV gemeldeten App-Liste. Die App kann dennoch installiert sein.", "Nicht gemeldet"),
         UNMAPPED("Individueller App-/Inhaltslink · keine eindeutige TV-App-Zuordnung", "Nicht zugeordnet");

@@ -81,6 +81,25 @@ public class TvAppInventoryTest {
         assertNull(TclAppLauncher.packageForLink("https://example.com/movie/123"));
     }
 
+    @Test public void launchSnapshotPreservesOtherSupplementalAppsUntilFullRefresh() {
+        TvAppInventory inventory = new TvAppInventory();
+        inventory.device("tv-a");
+        TclAppLauncher.App prime = new TclAppLauncher.App("Prime Video", TclAppLauncher.PRIME_PACKAGE, "", true);
+        TclAppLauncher.App netflix = app("Netflix", "com.netflix.ninja");
+        inventory.received(Arrays.asList(prime, netflix));
+        inventory.receivedLaunch(Collections.singletonList(netflix), netflix.packageName);
+        assertSame(prime, inventory.find(prime.packageName));
+        inventory.receivedLaunch(Collections.singletonList(netflix), prime.packageName);
+        assertNull(inventory.find(prime.packageName));
+        inventory.received(Arrays.asList(prime, netflix));
+        inventory.received(Collections.singletonList(netflix));
+        assertNull(inventory.find(prime.packageName));
+        inventory.received(Arrays.asList(prime, netflix));
+        inventory.device("tv-b");
+        inventory.receivedLaunch(Collections.singletonList(netflix), netflix.packageName);
+        assertNull(inventory.find(prime.packageName));
+    }
+
     @Test public void homeFavoritesStayVisibleInSavedOrderAcrossInventoryChanges() {
         TvAppInventory inventory = new TvAppInventory();
         inventory.device("tv");

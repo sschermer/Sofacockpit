@@ -56,6 +56,10 @@ public class TclAppLauncherTest {
                     assertEquals("223>>GET", TclAppLauncher.readFrame(in, mode));
                     TclAppLauncher.writeFrame(out, "150>>", mode);
                     TclAppLauncher.writeFrame(out, "223>>GET>>sport.dyn.app.android.prod::Dyn", mode);
+                    if (requested != null && !requested.equals("sport.dyn.app.android.prod")) {
+                        assertEquals("223>>PACKAGEINFO>>" + requested, TclAppLauncher.readFrame(in, mode));
+                        TclAppLauncher.writeFrame(out, "223>>PACKAGEINFO>>" + requested + ">>", mode);
+                    }
                     if (open) assertEquals("223>>OPEN>>sport.dyn.app.android.prod", TclAppLauncher.readFrame(in, mode));
                     assertEquals(-1, in.read());
                 } catch (Exception e) { throw new AssertionError(e); }
@@ -72,6 +76,63 @@ public class TclAppLauncherTest {
         session(1, "sport.dyn.app.android.prod", TclAppLauncher.Status.SENT, true);
         session(1, null, TclAppLauncher.Status.APPS, false);
         session(0, "com.example.missing", TclAppLauncher.Status.NOT_INSTALLED, false);
+    }
+
+    private static final String PRIME = TclAppLauncher.PRIME_PACKAGE;
+    private static final String PRIME_RESPONSE = "223>>PACKAGEINFO>>" + PRIME +
+        ">>Prime Video>>http://tv.invalid:34831/icon.jpg>>606024130>>6.24.13+v16.0.1.93-allAbis>>659456>>17047552>>26551808>>0";
+
+    @Test public void validatesPositivePackageInfoWithoutInventingApps() {
+        TclAppLauncher.App app = TclAppLauncher.parsePackageInfo(PRIME_RESPONSE, PRIME);
+        assertNotNull(app); assertEquals(PRIME, app.packageName);
+        assertEquals("Prime Video", app.name); assertTrue(app.supplemental);
+        assertEquals("http://tv.invalid:34831/icon.jpg", app.iconUrl);
+        assertNull(TclAppLauncher.parsePackageInfo(PRIME_RESPONSE, "com.example.other"));
+        assertNull(TclAppLauncher.parsePackageInfo("223>>PACKAGEINFO>>" + PRIME + ">>", PRIME));
+        assertNull(TclAppLauncher.parsePackageInfo(PRIME_RESPONSE.replace("606024130", "ERROR"), PRIME));
+        assertNull(TclAppLauncher.parsePackageInfo(PRIME_RESPONSE.replace("Prime Video", ""), PRIME));
+        assertNull(TclAppLauncher.parsePackageInfo(null, PRIME));
+        assertEquals(PRIME, TclAppLauncher.supplementCandidates(java.util.Arrays.asList(PRIME, "bad>>OPEN")).get(0));
+    }
+
+    private void supplementarySession(boolean launch, boolean timeout, boolean positive) throws Exception {
+        ExecutorService server = Executors.newSingleThreadExecutor();
+        try (ServerSocket listener = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
+             TclAppLauncher client = new TclAppLauncher()) {
+            Future<?> remote = server.submit(() -> {
+                try (Socket peer = listener.accept()) {
+                    peer.setSoTimeout(5000);
+                    DataInputStream in = new DataInputStream(peer.getInputStream());
+                    DataOutputStream out = new DataOutputStream(peer.getOutputStream());
+                    assertTrue(TclAppLauncher.readFrame(in, 0).startsWith("159>>"));
+                    TclAppLauncher.writeFrame(out, "159>>1>>version>>software>>model>>mac>>1", 0);
+                    assertEquals("223>>GET", TclAppLauncher.readFrame(in, 1));
+                    TclAppLauncher.writeFrame(out, "223>>GET>>com.netflix.ninja::Netflix::http://tv.invalid/Netflix.png", 1);
+                    assertEquals("223>>PACKAGEINFO>>" + PRIME, TclAppLauncher.readFrame(in, 1));
+                    if (!timeout) TclAppLauncher.writeFrame(out, positive ? PRIME_RESPONSE : "223>>PACKAGEINFO>>" + PRIME + ">>", 1);
+                    if (launch && positive && !timeout)
+                        assertEquals("223>>OPEN>>" + PRIME, TclAppLauncher.readFrame(in, 1));
+                    assertEquals(-1, in.read());
+                } catch (Exception e) { throw new AssertionError(e); }
+            });
+            TclAppLauncher.Result result = client.execute(InetAddress.getLoopbackAddress(), listener.getLocalPort(),
+                launch ? PRIME : null, java.util.Arrays.asList("com.netflix.ninja", PRIME, PRIME), () -> true);
+            assertEquals(launch ? (positive && !timeout ? TclAppLauncher.Status.SENT : TclAppLauncher.Status.NOT_INSTALLED)
+                : TclAppLauncher.Status.APPS, result.status);
+            assertEquals(positive && !timeout ? 2 : 1, result.apps.size());
+            if (!positive || timeout) assertTrue(result.supplementsIncomplete);
+            if (positive && !timeout) assertTrue(result.apps.get(1).supplemental);
+            remote.get(6, TimeUnit.SECONDS);
+        } finally { server.shutdownNow(); }
+    }
+
+    @Test public void targetedInventoryAndNativeOpen() throws Exception {
+        supplementarySession(false, false, true);
+        supplementarySession(true, false, true);
+        supplementarySession(false, false, false);
+        supplementarySession(true, false, false);
+        supplementarySession(false, true, false);
+        supplementarySession(true, true, false);
     }
 
     @Test public void invalidPackageAndCancellationDoNotConnect() {

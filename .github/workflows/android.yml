@@ -85,12 +85,12 @@ jobs:
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist/Sofacockpit-Lab.apk > "$RUNNER_TEMP/lab-badging.txt"
-          grep -E "^package: name='de.sofacockpit.lab' versionCode='9' versionName='0.1.8' " "$RUNNER_TEMP/lab-badging.txt"
+          grep -E "^package: name='de.sofacockpit.lab' versionCode='10' versionName='0.1.9' " "$RUNNER_TEMP/lab-badging.txt"
           grep -F "application-label:'Sofacockpit Lab'" "$RUNNER_TEMP/lab-badging.txt"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Lab-Android-v0.1.8
+          name: Sofacockpit-Lab-Android-v0.1.9
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -105,10 +105,10 @@ jobs:
             echo "Skipping superseded Lab build."
             exit 0
           fi
-          if gh release view sofacockpit-lab-v0.1.8 >/dev/null 2>&1; then
+          if gh release view sofacockpit-lab-v0.1.9 >/dev/null 2>&1; then
             echo "Lab release already exists; never replace a published version."
             exit 0
           fi
-          gh release create sofacockpit-lab-v0.1.8 dist/Sofacockpit-Lab.apk \
-            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.8" \
-            --prerelease --latest=false --notes "Lab v0.1.8: alle gespeicherten Streaming-Favoriten bleiben auf Start in ihrer gespeicherten Reihenfolge sichtbar, auch wenn der TV das zugeordnete Paket nicht meldet oder die Liste noch nicht bestätigt ist. Verständliche Statushinweise statt Ausblenden. Bekannte Paketziele nutzen beim bewussten Antippen weiterhin die bestehende native Startprüfung und bisherige zulässige Link-Alternativen; individuelle nicht zuordenbare Links öffnen nur die Verwaltung. Die Verwaltung zeigt zusätzlich das zugeordnete Paket. Die bereits beim nativen Start abgerufene TV-App-Liste aktualisiert den Status. TV > Quellen, Filmabend und Sprachbibliothek behalten den tatsächlichen bestätigten Bestand. Keine Paket-Raterei, keine neue Inhaltslink-Logik, keine Datenmigration. Gerätetest Prime Video und tatsächliche Paketzuordnung offen."
+          gh release create sofacockpit-lab-v0.1.9 dist/Sofacockpit-Lab.apk \
+            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.9" \
+            --prerelease --latest=false --notes "Lab v0.1.9: GET-Inventar durch gezielte PACKAGEINFO-Abfragen für bekannte und gespeicherte Paketziele ergänzen. Prime Video wurde am TCL per PowerShell positiv bestätigt. Nur passende positive Antworten werden übernommen; begrenzte Abfragen, keine erfundenen Einträge. Favoriten, Filmabend, Quellen, Zuordnung und Sprachbibliothek nutzen den ergänzten Bestand. Nativer OPEN nach positiver Prüfung; Prime-App-Link als ausdrücklich wählbare Alternative erhalten. Gesendeter Befehl ist kein Startnachweis. Keine ADB-Abhängigkeit. Gerätetests: Prime erkennen, nativ starten, alternativ per Link, Netflix/Dyn, Quellen/Favoriten/Sprache. Weitere gemeinsame manuelle App-Verwaltung, Icons und neuer Zuordnungsdialog folgen getrennt."

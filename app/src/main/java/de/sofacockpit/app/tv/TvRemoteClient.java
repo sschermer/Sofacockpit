@@ -427,17 +427,21 @@ public final class TvRemoteClient implements AutoCloseable {
     }
 
     public void requestTclApps(java.util.function.Consumer<TclAppLauncher.Result> done) {
-        requestTcl(null, done);
+        requestTclApps(java.util.Collections.emptyList(), done);
+    }
+
+    public void requestTclApps(java.util.Collection<String> savedPackages, java.util.function.Consumer<TclAppLauncher.Result> done) {
+        requestTcl(null, TclAppLauncher.supplementCandidates(savedPackages), done);
     }
 
     public void launchTclApp(String packageName, java.util.function.Consumer<TclAppLauncher.Result> done) {
         if (!TclAppLauncher.validPackage(packageName)) {
             done.accept(new TclAppLauncher.Result(TclAppLauncher.Status.FAILED)); return;
         }
-        requestTcl(packageName, done);
+        requestTcl(packageName, java.util.Collections.emptyList(), done);
     }
 
-    private void requestTcl(String packageName, java.util.function.Consumer<TclAppLauncher.Result> done) {
+    private void requestTcl(String packageName, java.util.Collection<String> candidates, java.util.function.Consumer<TclAppLauncher.Result> done) {
         if (!canRequestTclApps()) {
             done.accept(new TclAppLauncher.Result(TclAppLauncher.Status.CANCELLED)); return;
         }
@@ -460,7 +464,7 @@ public final class TvRemoteClient implements AutoCloseable {
                 ScheduledFuture<?> deadline = null;
                 try {
                     deadline = watchdogs.schedule(request.launcher::close, 7, TimeUnit.SECONDS);
-                    result = request.launcher.execute(host, packageName,
+                    result = request.launcher.execute(host, packageName, candidates,
                         () -> !request.cancelled && !s.cancelled && s.ready && !Boolean.FALSE.equals(s.reportedPower));
                 } catch (RuntimeException ex) {
                     result = new TclAppLauncher.Result(TclAppLauncher.Status.FAILED);

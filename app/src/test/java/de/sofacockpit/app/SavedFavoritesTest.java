@@ -81,6 +81,14 @@ public class SavedFavoritesTest {
         assertEquals(Arrays.asList(a,b),saved);
     }
 
+    @Test public void confirmedPrimeRetainsLinkAndNewAssignmentHasTestedAlternative() {
+        TclAppLauncher.App prime = new TclAppLauncher.App("Prime Video", TclAppLauncher.PRIME_PACKAGE, "", true);
+        StreamingShortcuts.Entry existing = favorite("Mein Prime", "https://app.primevideo.com");
+        assertEquals(existing.link, StreamingShortcuts.forInstalledApp(existing, prime).link);
+        assertEquals(existing.name, StreamingShortcuts.forInstalledApp(existing, prime).name);
+        assertEquals(existing.link, StreamingShortcuts.forInstalledApp(null, prime).link);
+    }
+
     @Test public void renamedFavoriteKeepsPersonalLabelAfterSavingAndInventoryRefresh() throws Exception {
         TclAppLauncher.App netflix=app("Netflix","com.netflix.ninja");
         TclAppLauncher.App dyn=app("Dyn","sport.dyn.app.android.prod");

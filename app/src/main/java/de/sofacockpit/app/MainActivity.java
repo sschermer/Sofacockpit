@@ -371,7 +371,7 @@ public class MainActivity extends ComponentActivity {
                 if(selected==null){
                     String name=app.name.trim();if(name.length()>48)name=name.substring(0,48);
                     if(name.isEmpty())return "TV-App ohne gültigen Namen.";
-                    selected=new StreamingShortcuts.Entry(name,app.packageName);
+                    selected=StreamingShortcuts.forInstalledApp(null,app);
                 }
                 launchStreaming(selected);return "App-Aufruf angefordert – TV-Rückmeldung prüfen.";
             case HDMI:
@@ -1000,8 +1000,7 @@ public class MainActivity extends ComponentActivity {
             if ((result.status == TclAppLauncher.Status.SENT || result.status == TclAppLauncher.Status.NOT_INSTALLED) &&
                 requestedDevice.equals(tv.inventoryDeviceKey()) && tv.canRequestTclApps()) {
                 tvAppInventory.device(requestedDevice);
-                tvAppInventory.received(result.apps);
-                appInventoryError = "";
+                tvAppInventory.receivedLaunch(result.apps, pkg);
                 renderStreamingShortcuts();
             }
             switch (result.status) {
@@ -1172,14 +1171,20 @@ public class MainActivity extends ComponentActivity {
         appInventoryError = "";
         renderSourcesApps();
         renderLabStreamChoices();
-        tv.requestTclApps(result -> {
+        List<String> savedPackages = new ArrayList<>();
+        for (StreamingShortcuts.Entry entry : shortcuts.entries) {
+            String pkg = TclAppLauncher.packageForLink(entry.link);
+            if (pkg != null) savedPackages.add(pkg);
+        }
+        tv.requestTclApps(savedPackages, result -> {
             appInventoryLoading = false;
             if (isFinishing() || isDestroyed()) return;
             tvAppInventory.device(tv.inventoryDeviceKey());
             if (!identity.equals(tvAppInventory.device())) return;
             if (result.status == TclAppLauncher.Status.APPS) {
                 tvAppInventory.received(result.apps);
-                appInventoryError = "";
+                appInventoryError = result.supplementsIncomplete ?
+                    "Ergänzende Paketabfragen nicht vollständig bestätigt." : "";
             } else {
                 tvAppInventory.stale();
                 appInventoryError = result.status == TclAppLauncher.Status.BUSY ?
@@ -1568,7 +1573,7 @@ public class MainActivity extends ComponentActivity {
         sourcesAppList.removeAllViews();
         if (appsInventoryStatus != null) {
             String status = appInventoryLoading ? "TV-App-Liste wird abgefragt …" :
-                tvAppInventory.verified() ? tvAppInventory.apps().size() + " TV-Apps gemeldet" :
+                tvAppInventory.verified() ? tvAppInventory.apps().size() + " TV-Apps erkannt" :
                 tvAppInventory.hasSnapshot() ? "Zuletzt bekannter Bestand – nicht aktuell bestätigt" :
                 "Noch kein TV-App-Bestand abgefragt";
             if (!appInventoryError.isEmpty()) status += " · " + appInventoryError;
@@ -1594,7 +1599,7 @@ public class MainActivity extends ComponentActivity {
                 tile.setContentDescription(app.name + (favorite != null ? ", Favorit" : "") +
                     "; lange drücken zum Verwalten");
                 tile.setOnClickListener(v -> launchStreaming(
-                    favorite == null ? new StreamingShortcuts.Entry(app.name, app.packageName) : favorite));
+                    favorite == null ? StreamingShortcuts.forInstalledApp(null, app) : favorite));
                 tile.setOnLongClickListener(v -> {
                     if (favorite != null) shortcutOptions(favorite);
                     else new AlertDialog.Builder(this).setTitle(app.name)

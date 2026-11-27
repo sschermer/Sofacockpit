@@ -19,6 +19,10 @@ public final class TclAppLauncher implements AutoCloseable {
     static final int PORT = 6553;
     static final int MAX_FRAME = 1024 * 1024;
     private static final String MARKET = "market://launch?id=";
+    private static final int MAX_SUPPLEMENT_PROBES = 8;
+    private static final int PACKAGE_TIMEOUT_MS = 1000;
+    public static final String PRIME_PACKAGE = "com.amazon.amazonvideo.livingroom";
+    private static final String[] KNOWN_PACKAGES = { PRIME_PACKAGE, "com.netflix.ninja", "com.google.android.youtube.tv", "com.apple.atve.androidtv.appletv", "com.disney.disneyplus", "sport.dyn.app.android.prod" };
     // Public, device-independent T-Cast transport constants, NOT user secrets.
     // The shared-key mode provides no cryptographic peer authentication.
     private static final byte[] KEY = "tnscreentnscreen".getBytes(StandardCharsets.UTF_8);
@@ -26,8 +30,14 @@ public final class TclAppLauncher implements AutoCloseable {
                                       0x12,0x34,0x56,0x78,(byte)0x90,(byte)0xab,(byte)0xcd,(byte)0xef};
     public enum Status { APPS, SENT, UNAVAILABLE, NOT_INSTALLED, FAILED, BUSY, CANCELLED }
     public static final class App {
-        public final String name, packageName;
-        public App(String name, String packageName) { this.name = name; this.packageName = packageName; }
+        public final String name, packageName, iconUrl;
+        public final boolean supplemental;
+        public App(String name, String packageName) { this(name, packageName, "", false); }
+        public App(String name, String packageName, String iconUrl, boolean supplemental) {
+            this.name = name; this.packageName = packageName;
+            this.iconUrl = iconUrl == null ? "" : iconUrl;
+            this.supplemental = supplemental;
+        }
         public boolean systemLike() {
             return packageName.startsWith("com.tcl.") || packageName.startsWith("com.android.") ||
                 packageName.equals("com.google.android.play.games");
@@ -36,10 +46,13 @@ public final class TclAppLauncher implements AutoCloseable {
     public static final class Result {
         public final Status status;
         public final List<App> apps;
+        public final boolean supplementsIncomplete;
         Result(Status status) { this(status, Collections.emptyList()); }
-        Result(Status status, List<App> apps) {
+        Result(Status status, List<App> apps) { this(status, apps, false); }
+        Result(Status status, List<App> apps, boolean supplementsIncomplete) {
             this.status = status;
             this.apps = Collections.unmodifiableList(new ArrayList<>(apps));
+            this.supplementsIncomplete = supplementsIncomplete;
         }
     }
 
@@ -71,22 +84,61 @@ public final class TclAppLauncher implements AutoCloseable {
             throw new IOException("Unexpected app-list response");
         Map<String, App> apps = new LinkedHashMap<>();
         for (String item : reply.substring("223>>GET>>".length()).split(">")) {
-            String[] parts = item.split("::", 3);
+            String[] parts = item.split("::", 4);
             if (parts.length < 2 || !validPackage(parts[0]) || apps.containsKey(parts[0])) continue;
-            String name = parts[1].replaceAll("[\\p{Cc}\\p{Cf}]", "").trim();
+            String name = cleanName(parts[1]);
             if (name.isEmpty()) name = parts[0];
-            if (name.length() > 48) {
-                int end = 48;
-                if (Character.isHighSurrogate(name.charAt(end - 1))) end--;
-                name = name.substring(0, end);
-            }
-            apps.put(parts[0], new App(name, parts[0]));
+            apps.put(parts[0], new App(name, parts[0], parts.length >= 3 ? parts[2] : "", false));
             if (apps.size() >= 500) break;
         }
-        List<App> sorted = new ArrayList<>(apps.values());
+        return sortedApps(apps.values());
+    }
+
+    private static String cleanName(String value) {
+        String name = value.replaceAll("[\\p{Cc}\\p{Cf}]", "").trim();
+        if (name.length() > 48) {
+            int end = 48;
+            if (Character.isHighSurrogate(name.charAt(end - 1))) end--;
+            name = name.substring(0, end);
+        }
+        return name;
+    }
+
+    private static List<App> sortedApps(Collection<App> apps) {
+        List<App> sorted = new ArrayList<>(apps);
         sorted.sort(Comparator.comparing((App a) -> a.name, String.CASE_INSENSITIVE_ORDER)
             .thenComparing(a -> a.packageName));
         return sorted;
+    }
+
+    /** Only the positively observed PACKAGEINFO shape is accepted. Missing, mismatched
+     * or unknown responses are not evidence of absence or installation. */
+    static App parsePackageInfo(String reply, String requested) {
+        if (!validPackage(requested) || reply == null) return null;
+        String[] fields = reply.split(">>", -1);
+        if (fields.length != 11 || !"223".equals(fields[0]) || !"PACKAGEINFO".equals(fields[1])
+                || !requested.equals(fields[2]) || fields[4].isEmpty()
+                || !fields[5].matches("[0-9]{1,19}") || fields[6].trim().isEmpty()) return null;
+        for (int i = 7; i < 11; i++) if (!fields[i].matches("[0-9]{1,19}")) return null;
+        String name = cleanName(fields[3]);
+        if (name.isEmpty()) return null;
+        return new App(name, requested, fields[4], true);
+    }
+
+    /** A bounded, deterministic candidate set; these are queries, not synthetic apps. */
+    public static List<String> supplementCandidates(Collection<String> saved) {
+        LinkedHashSet<String> packages = new LinkedHashSet<>();
+        packages.add(PRIME_PACKAGE);
+        if (saved != null) for (String pkg : saved) if (validPackage(pkg)) packages.add(pkg);
+        packages.addAll(Arrays.asList(KNOWN_PACKAGES));
+        return new ArrayList<>(packages);
+    }
+
+    private App queryPackage(DataInputStream in, DataOutputStream out, int mode, String pkg)
+            throws IOException, GeneralSecurityException {
+        socket.setSoTimeout(PACKAGE_TIMEOUT_MS);
+        writeFrame(out, "223>>PACKAGEINFO>>" + pkg, mode);
+        return parsePackageInfo(receive(in, mode, "223>>PACKAGEINFO>>"), pkg);
     }
 
     static int algorithm(String reply) throws IOException {
@@ -136,11 +188,15 @@ public final class TclAppLauncher implements AutoCloseable {
     @Override public void close() { try { socket.close(); } catch (IOException ignored) {} }
 
     /** packageName == null requests the inventory only. The owner enforces a whole-session deadline. */
-    Result execute(InetAddress host, String packageName, BooleanSupplier active) {
-        return execute(host, PORT, packageName, active);
+    Result execute(InetAddress host, String packageName, Collection<String> candidates, BooleanSupplier active) {
+        return execute(host, PORT, packageName, candidates, active);
     }
 
     Result execute(InetAddress host, int port, String packageName, BooleanSupplier active) {
+        return execute(host, port, packageName, Collections.emptyList(), active);
+    }
+
+    Result execute(InetAddress host, int port, String packageName, Collection<String> candidates, BooleanSupplier active) {
         if (packageName != null && !validPackage(packageName)) return new Result(Status.FAILED);
         boolean negotiated = false;
         boolean attempted = false;
@@ -156,12 +212,41 @@ public final class TclAppLauncher implements AutoCloseable {
             int mode = algorithm(identification);
             if (!active.getAsBoolean()) return new Result(Status.CANCELLED);
             writeFrame(out, "223>>GET", mode);
-            List<App> apps = parseApps(receive(in, mode, "223>>GET>>"));
-            if (packageName == null) return new Result(Status.APPS, apps);
+            Map<String, App> byPackage = new LinkedHashMap<>();
+            for (App app : parseApps(receive(in, mode, "223>>GET>>"))) byPackage.put(app.packageName, app);
+            if (packageName == null) {
+                boolean incomplete = false;
+                int probes = 0;
+                for (String pkg : new LinkedHashSet<>(candidates)) {
+                    if (!active.getAsBoolean()) return new Result(Status.CANCELLED);
+                    if (!validPackage(pkg) || byPackage.containsKey(pkg)) continue;
+                    if (probes++ >= MAX_SUPPLEMENT_PROBES || byPackage.size() >= 500) { incomplete = true; break; }
+                    try {
+                        App app = queryPackage(in, out, mode, pkg);
+                        if (app != null) byPackage.put(pkg, app);
+                        else incomplete = true;
+                    } catch (IOException | GeneralSecurityException ex) {
+                        // A timed-out/partial frame makes the stream unsafe to continue.
+                        // Keep the already validated GET and positive package responses.
+                        incomplete = true; break;
+                    }
+                }
+                if (!active.getAsBoolean()) return new Result(Status.CANCELLED);
+                return new Result(Status.APPS, sortedApps(byPackage.values()), incomplete);
+            }
             if (!active.getAsBoolean()) return new Result(Status.CANCELLED);
-            boolean installed = false;
-            for (App app : apps) if (app.packageName.equals(packageName)) { installed = true; break; }
-            if (!installed) return new Result(Status.NOT_INSTALLED, apps);
+            if (!byPackage.containsKey(packageName)) {
+                App app = null;
+                try { app = queryPackage(in, out, mode, packageName); }
+                catch (IOException | GeneralSecurityException ignored) {
+                    // No OPEN attempted; a saved link can still be offered by the caller.
+                }
+                if (!active.getAsBoolean()) return new Result(Status.CANCELLED);
+                if (app == null) return new Result(Status.NOT_INSTALLED, sortedApps(byPackage.values()), true);
+                byPackage.put(packageName, app);
+            }
+            List<App> apps = sortedApps(byPackage.values());
+            if (!active.getAsBoolean()) return new Result(Status.CANCELLED);
             // Once any launch bytes may have been written, never retry or fall back.
             attempted = true;
             writeFrame(out, "223>>OPEN>>" + packageName, mode);

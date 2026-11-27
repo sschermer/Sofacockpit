@@ -87,7 +87,12 @@ final class StreamingShortcuts {
     }
     /** A reassign action replaces the target deliberately, retaining label and position. */
     static Entry forInstalledApp(Entry old, TclAppLauncher.App app) {
-        return new Entry(old == null ? app.name : old.name, app.packageName);
+        String link = app.packageName;
+        // Preserve an already configured link for the same exact app. Prime's
+        // tested root link remains an explicit alternative even for new assignments.
+        if (old != null && app.packageName.equals(TclAppLauncher.packageForLink(old.link))) link = old.link;
+        else if (TclAppLauncher.PRIME_PACKAGE.equals(app.packageName)) link = "https://app.primevideo.com";
+        return new Entry(old == null ? app.name : old.name, link);
     }
     /** Activity choices use the saved personal label only for an exact app-package match.
      * The reported inventory itself is never renamed and content links remain separate. */
