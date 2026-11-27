@@ -3,13 +3,14 @@ package de.sofacockpit.app;
 import android.content.Context;
 import android.content.SharedPreferences;
 import de.sofacockpit.app.tv.TvProtocol;
+import de.sofacockpit.app.tv.TclAppLauncher;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.List;
 
-/** The local shortcut list is not an inventory of installed TV apps. */
+/** Local favorites; live TCL inventories are not persisted or exported. */
 final class StreamingShortcuts {
     static final class Entry {
         final String name, link;
@@ -26,7 +27,7 @@ final class StreamingShortcuts {
         new Entry("Prime Video", "https://app.primevideo.com"),
         new Entry("Apple TV+", "https://tv.apple.com"),
         new Entry("Disney+", "https://www.disneyplus.com"),
-        // Play Store package from the public Dyn listing; native launch is unverified.
+        // Native TCL package start confirmed by the user; old saved links stay compatible.
         new Entry("Dyn", "sport.dyn.app.android.prod"),
         new Entry("YouTube", "https://www.youtube.com"),
         new Entry("ARD Mediathek", "https://www.ardmediathek.de"),
@@ -60,8 +61,13 @@ final class StreamingShortcuts {
             }
         }
     }
+    static boolean sameTarget(Entry first, Entry second) {
+        if (first.name.equalsIgnoreCase(second.name) || first.link.equals(second.link)) return true;
+        String a = TclAppLauncher.packageForLink(first.link), b = TclAppLauncher.packageForLink(second.link);
+        return a != null && a.equals(b);
+    }
     boolean contains(Entry candidate) {
-        for (Entry entry : entries) if (entry.name.equalsIgnoreCase(candidate.name) || entry.link.equals(candidate.link)) return true;
+        for (Entry entry : entries) if (sameTarget(entry, candidate)) return true;
         return false;
     }
     JSONArray exportEntries() {

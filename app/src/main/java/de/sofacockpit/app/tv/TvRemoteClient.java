@@ -71,6 +71,14 @@ public final class TvRemoteClient implements AutoCloseable {
     private final ScheduledExecutorService watchdogs = Executors.newSingleThreadScheduledExecutor();
     private final ThreadPoolExecutor writers = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
         new ArrayBlockingQueue<>(32), new ThreadPoolExecutor.AbortPolicy());
+    private final ExecutorService tclWorker = Executors.newSingleThreadExecutor();
+    private TclRequest tclRequest;
+    private static final class TclRequest {
+        final TclAppLauncher launcher = new TclAppLauncher();
+        final java.util.function.Consumer<TclAppLauncher.Result> done;
+        volatile boolean cancelled;
+        TclRequest(java.util.function.Consumer<TclAppLauncher.Result> done) { this.done = done; }
+    }
     private final Listener listener;
     private State state = new State(Phase.DISCONNECTED, "Nicht verbunden", false);
     private Session current;
@@ -224,6 +232,7 @@ public final class TvRemoteClient implements AutoCloseable {
     public void onBackground() {
         if (closed) return;
         foregroundNetworkAllowed = false;
+        cancelTclRequest();
         stopAppLaunchTest("App im Hintergrund; Testbeobachtung beendet.");
         recovery.background(current != null && state.connected() &&
             !Boolean.FALSE.equals(state.powerOn) ? current.host : null);
@@ -287,6 +296,7 @@ public final class TvRemoteClient implements AutoCloseable {
         if (!closed) update(Phase.DISCONNECTED, "Nicht verbunden", false);
     }
     private void cancelCurrent() {
+        cancelTclRequest();
         stopAppLaunchTest("Steuersitzung gewechselt; Testbeobachtung beendet.");
         Session s = current;
         current = null;
@@ -297,7 +307,7 @@ public final class TvRemoteClient implements AutoCloseable {
         closed = true; recovery.cancel(); refreshIntent.clear();
         cancelConnectionRefresh();
         cancelCurrent();
-        sessions.shutdownNow(); writers.shutdownNow(); watchdogs.shutdownNow();
+        tclWorker.shutdownNow(); sessions.shutdownNow(); writers.shutdownNow(); watchdogs.shutdownNow();
     }
 
     /** Pull-to-refresh is user initiated. No invented TV status request or key event:
@@ -372,15 +382,92 @@ public final class TvRemoteClient implements AutoCloseable {
 
     public void sendKey(int key) {
         if (!allowedKey(key)) { commandDetail("Dieser TV-Befehl wird nicht unterstützt."); return; }
+        cancelTclRequest();
         stopAppLaunchTest("Weiterer TV-Befehl; Testbeobachtung beendet.");
         sendCommand(TvProtocol.key(key), false, null);
     }
 
     public void launchApp(String link, String label) {
+        cancelTclRequest();
         stopAppLaunchTest("Weiterer App-Start; Testbeobachtung beendet.");
         try { sendCommand(TvProtocol.appLink(link), true,
             "Startbefehl für " + label + " gesendet – Start am TV prüfen."); }
         catch (IllegalArgumentException ex) { commandDetail(ex.getMessage()); }
+    }
+
+    /** Use only the address of the existing, certificate-pinned foreground session.
+     * T-Cast itself is not authenticated like Remote-v2. No discovery or background polling.
+     */
+    public boolean canRequestTclApps() {
+        return !closed && foregroundNetworkAllowed && state.connected() && current != null &&
+            current.ready && current.tls != null && !Boolean.FALSE.equals(state.powerOn);
+    }
+
+    public void requestTclApps(java.util.function.Consumer<TclAppLauncher.Result> done) {
+        requestTcl(null, done);
+    }
+
+    public void launchTclApp(String packageName, java.util.function.Consumer<TclAppLauncher.Result> done) {
+        if (!TclAppLauncher.validPackage(packageName)) {
+            done.accept(new TclAppLauncher.Result(TclAppLauncher.Status.FAILED)); return;
+        }
+        requestTcl(packageName, done);
+    }
+
+    private void requestTcl(String packageName, java.util.function.Consumer<TclAppLauncher.Result> done) {
+        if (!canRequestTclApps()) {
+            done.accept(new TclAppLauncher.Result(TclAppLauncher.Status.CANCELLED)); return;
+        }
+        if (tclRequest != null) {
+            done.accept(new TclAppLauncher.Result(TclAppLauncher.Status.BUSY)); return;
+        }
+        Session s = current;
+        SSLSocket tls = s.tls;
+        if (tls == null || tls.isClosed() || tls.getInetAddress() == null) {
+            done.accept(new TclAppLauncher.Result(TclAppLauncher.Status.CANCELLED)); return;
+        }
+        InetAddress host = tls.getInetAddress();
+        TclRequest request = new TclRequest(done);
+        tclRequest = request;
+        stopAppLaunchTest("TCL-App-Aufruf; Testbeobachtung beendet.");
+        s.lastAppLaunchAt = -1L;
+        try {
+            tclWorker.execute(() -> {
+                TclAppLauncher.Result result;
+                ScheduledFuture<?> deadline = null;
+                try {
+                    deadline = watchdogs.schedule(request.launcher::close, 7, TimeUnit.SECONDS);
+                    result = request.launcher.execute(host, packageName,
+                        () -> !request.cancelled && !s.cancelled && s.ready && !Boolean.FALSE.equals(s.reportedPower));
+                } catch (RuntimeException ex) {
+                    result = new TclAppLauncher.Result(TclAppLauncher.Status.FAILED);
+                } finally {
+                    if (deadline != null) deadline.cancel(false);
+                    request.launcher.close();
+                }
+                final TclAppLauncher.Result finished = result;
+                main.post(() -> {
+                    if (tclRequest != request) return;
+                    tclRequest = null;
+                    if (closed || current != s || !canRequestTclApps() || request.cancelled)
+                        request.done.accept(new TclAppLauncher.Result(TclAppLauncher.Status.CANCELLED));
+                    else request.done.accept(finished);
+                });
+            });
+        } catch (RejectedExecutionException ex) {
+            tclRequest = null;
+            request.launcher.close();
+            done.accept(new TclAppLauncher.Result(TclAppLauncher.Status.FAILED));
+        }
+    }
+
+    public void cancelTclRequest() {
+        TclRequest request = tclRequest;
+        if (request == null) return;
+        tclRequest = null;
+        request.cancelled = true;
+        request.launcher.close();
+        request.done.accept(new TclAppLauncher.Result(TclAppLauncher.Status.CANCELLED));
     }
 
     private void commandDetail(String detail) {
@@ -400,6 +487,7 @@ public final class TvRemoteClient implements AutoCloseable {
     }
     public void testAppLaunch(AppLaunchTest.Target target) {
         if (target == null || closed || appLaunchAttempt != null) return;
+        cancelTclRequest();
         AppLaunchTest report = new AppLaunchTest(target);
         appLaunchTests.put(target, report);
         if (!canTestAppLaunch()) {
@@ -630,6 +718,7 @@ public final class TvRemoteClient implements AutoCloseable {
             final boolean reportFailure = hardFailure || (s.explicit && !s.everReady);
             main.post(() -> {
                 if (!closed && current == s && !s.cancelled) {
+                    cancelTclRequest();
                     appLaunchTestConnectionLost(s);
                     current = null;
                     writers.getQueue().clear();

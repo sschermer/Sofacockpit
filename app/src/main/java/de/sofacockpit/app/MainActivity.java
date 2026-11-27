@@ -26,6 +26,7 @@ import de.sofacockpit.app.tv.TvRemoteClient;
 import de.sofacockpit.app.tv.TvConnectionIndicator;
 import de.sofacockpit.app.tv.TvConnectionDialog;
 import de.sofacockpit.app.tv.AppLaunchTest;
+import de.sofacockpit.app.tv.TclAppLauncher;
 import java.util.ArrayList;
 import java.util.List;
 import android.view.MotionEvent;
@@ -653,6 +654,37 @@ public class MainActivity extends ComponentActivity {
         renderSourcesApps();
     }
     private void launchStreaming(StreamingShortcuts.Entry entry) {
+        if (!tv.state().connected()) {
+            Toast.makeText(this, "Zuerst TV verbinden.", Toast.LENGTH_LONG).show(); return;
+        }
+        String pkg = TclAppLauncher.packageForLink(entry.link);
+        if (pkg == null) { launchStreamingLink(entry); return; }
+        if (!tv.canRequestTclApps()) {
+            Toast.makeText(this, "TV muss verbunden und eingeschaltet sein.", Toast.LENGTH_LONG).show(); return;
+        }
+        tv.launchTclApp(pkg, result -> {
+            if (isFinishing() || isDestroyed()) return;
+            switch (result.status) {
+                case SENT:
+                    Toast.makeText(this, entry.name + " – TCL-Startbefehl gesendet.", Toast.LENGTH_SHORT).show(); break;
+                case UNAVAILABLE:
+                    // No TCL launch attempted. Preserve the old link on other TVs.
+                    launchStreamingLink(entry); break;
+                case NOT_INSTALLED:
+                    // The inventory can be incomplete. Only a previously configured URL
+                    // may be used as an alternative; don't retry the old market route.
+                    if (!entry.link.startsWith("market://launch?id=")) launchStreamingLink(entry);
+                    else Toast.makeText(this, entry.name + " nicht in der TV-App-Liste gefunden.", Toast.LENGTH_LONG).show();
+                    break;
+                case FAILED:
+                    Toast.makeText(this, "TCL-App-Start nicht bestätigt. Kein automatischer weiterer Startversuch.", Toast.LENGTH_LONG).show(); break;
+                case BUSY:
+                    Toast.makeText(this, "App-Aufruf läuft bereits.", Toast.LENGTH_SHORT).show(); break;
+                default: break;
+            }
+        });
+    }
+    private void launchStreamingLink(StreamingShortcuts.Entry entry) {
         TvRemoteClient.State state = tv.state();
         if (!state.connected() || !state.apps) {
             Toast.makeText(this, !state.connected() ? "Zuerst TV verbinden." :
@@ -681,6 +713,10 @@ public class MainActivity extends ComponentActivity {
         List<String> labels = new ArrayList<>();
         List<Runnable> actions = new ArrayList<>();
         labels.add("Name / App-Link bearbeiten"); actions.add(() -> editStreamingShortcut(entry));
+        labels.add("Installierte TV-App zuordnen"); actions.add(() -> loadInstalledApps(entry));
+        if (!entry.link.startsWith("market://launch?id=") && TclAppLauncher.packageForLink(entry.link) != null) {
+            labels.add("Alternativ mit App-Link starten"); actions.add(() -> launchStreamingLink(entry));
+        }
         if (index > 0) {
             labels.add("Nach links verschieben");
             actions.add(() -> { java.util.Collections.swap(shortcuts.entries, index, index - 1); saveStreamingShortcuts(); });
@@ -699,15 +735,86 @@ public class MainActivity extends ComponentActivity {
         if (shortcuts.entries.size() >= 50) {
             Toast.makeText(this, "Maximal 50 Schnellwahltasten.", Toast.LENGTH_SHORT).show(); return;
         }
+        if (tv.canRequestTclApps()) { loadInstalledApps(null); return; }
+        showStreamingCatalog();
+    }
+    private void loadInstalledApps(StreamingShortcuts.Entry old) {
+        if (!tv.canRequestTclApps()) {
+            if (old == null) showStreamingCatalog();
+            else Toast.makeText(this, "Zuerst TV verbinden und einschalten.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        AlertDialog waiting = new AlertDialog.Builder(this).setTitle("Installierte TV-Apps")
+            .setMessage("App-Liste wird vom Fernseher geladen …")
+            .setNegativeButton("Abbrechen", (d, i) -> tv.cancelTclRequest()).create();
+        waiting.setOnCancelListener(d -> tv.cancelTclRequest());
+        waiting.show();
+        tv.requestTclApps(result -> {
+            if (!waiting.isShowing() || isFinishing() || isDestroyed()) return;
+            waiting.dismiss();
+            if (result.status == TclAppLauncher.Status.APPS) {
+                showInstalledApps(old, result.apps, false);
+            } else if (result.status != TclAppLauncher.Status.CANCELLED) {
+                Toast.makeText(this, result.status == TclAppLauncher.Status.BUSY ? "App-Aufruf läuft bereits." :
+                    "TV-App-Liste nicht verfügbar. App-Link-Katalog bleibt nutzbar.", Toast.LENGTH_LONG).show();
+                if (old == null && result.status != TclAppLauncher.Status.BUSY) showStreamingCatalog();
+            }
+        });
+    }
+
+    private void showInstalledApps(StreamingShortcuts.Entry old, List<TclAppLauncher.App> apps, boolean all) {
+        List<StreamingShortcuts.Entry> choices = new ArrayList<>();
+        List<String> names = new ArrayList<>();
+        for (TclAppLauncher.App app : apps) {
+            if (!all && app.systemLike()) continue;
+            StreamingShortcuts.Entry entry = new StreamingShortcuts.Entry(old == null ? app.name : old.name, app.packageName);
+            boolean duplicate = false;
+            for (StreamingShortcuts.Entry other : shortcuts.entries) {
+                if (other != old && StreamingShortcuts.sameTarget(other, entry)) { duplicate = true; break; }
+            }
+            if (duplicate) continue;
+            choices.add(entry);
+            names.add(app.name + "\n" + app.packageName);
+        }
+        int count = choices.size();
+        names.add(all ? "Nur normale Apps anzeigen" : "Auch System-Apps anzeigen");
+        names.add("App-Liste aktualisieren");
+        names.add(old == null ? "Katalog / App-Link …" : "App-Link bearbeiten …");
+        new AlertDialog.Builder(this).setTitle(old == null ? "Installierte TV-Apps" : "TV-App für " + old.name)
+            .setItems(names.toArray(new String[0]), (d, i) -> {
+                if (i == count) showInstalledApps(old, apps, !all);
+                else if (i == count + 1) loadInstalledApps(old);
+                else if (i == count + 2) {
+                    if (old == null) showStreamingCatalog(); else editStreamingShortcut(old);
+                } else {
+                    StreamingShortcuts.Entry entry = choices.get(i);
+                    if (old == null) {
+                        if (shortcuts.entries.size() >= 50 || shortcuts.contains(entry)) return;
+                        shortcuts.entries.add(entry);
+                    } else {
+                        int index = shortcuts.entries.indexOf(old);
+                        if (index < 0) return;
+                        shortcuts.entries.set(index, entry);
+                    }
+                    saveStreamingShortcuts();
+                }
+            })
+            .setNegativeButton("Schließen", null).show();
+    }
+
+    private void showStreamingCatalog() {
+        if (shortcuts.entries.size() >= 50) return;
         List<StreamingShortcuts.Entry> choices = new ArrayList<>();
         List<String> names = new ArrayList<>();
         for (StreamingShortcuts.Entry entry : StreamingShortcuts.CATALOG) {
             if (!shortcuts.contains(entry)) { choices.add(entry); names.add(entry.name); }
         }
-        names.add("Eigene TV-App hinzufügen …");
+        names.add("Eigene TV-App / App-Link hinzufügen …");
+        if (tv.canRequestTclApps()) names.add("Installierte TV-Apps laden …");
         new AlertDialog.Builder(this).setTitle("Dienst hinzufügen")
             .setItems(names.toArray(new String[0]), (d, i) -> {
                 if (i == choices.size()) editStreamingShortcut(null);
+                else if (i > choices.size()) loadInstalledApps(null);
                 else { shortcuts.entries.add(choices.get(i)); saveStreamingShortcuts(); }
             })
             .setNegativeButton("Schließen", null).show();
@@ -727,7 +834,7 @@ public class MainActivity extends ComponentActivity {
         link.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
         link.setHint("https://… oder com.beispiel.app");
         form.addView(link);
-        form.addView(label("Keine automatische App-Liste vom TV verfügbar. Paketnamen können nur den Play Store öffnen. Der TV muss den Link unterstützen.", 12, MUTED));
+        form.addView(label("Bei kompatiblen TCL-TVs werden Paketnamen direkt gestartet. Andere TVs benötigen einen funktionierenden App-Link.", 12, MUTED));
         if (old != null) { name.setText(old.name); link.setText(old.link); }
         AlertDialog dialog = new AlertDialog.Builder(this)
             .setTitle(old == null ? "Eigene TV-App" : "Dienst bearbeiten")
@@ -737,11 +844,17 @@ public class MainActivity extends ComponentActivity {
             try {
                 StreamingShortcuts.Entry entry = new StreamingShortcuts.Entry(name.getText().toString(), link.getText().toString());
                 for (StreamingShortcuts.Entry other : shortcuts.entries) {
-                    if (other != old && (other.name.equalsIgnoreCase(entry.name) || other.link.equals(entry.link)))
+                    if (other != old && StreamingShortcuts.sameTarget(other, entry))
                         throw new IllegalArgumentException("Dieser Name oder Link ist bereits vorhanden.");
                 }
-                if (old == null) shortcuts.entries.add(entry);
-                else shortcuts.entries.set(shortcuts.entries.indexOf(old), entry);
+                if (old == null) {
+                    if (shortcuts.entries.size() >= 50) throw new IllegalArgumentException("Maximal 50 Schnellwahltasten.");
+                    shortcuts.entries.add(entry);
+                } else {
+                    int index = shortcuts.entries.indexOf(old);
+                    if (index < 0) { dialog.dismiss(); return; }
+                    shortcuts.entries.set(index, entry);
+                }
                 saveStreamingShortcuts(); dialog.dismiss();
             } catch (IllegalArgumentException ex) { link.setError(ex.getMessage()); }
         });
@@ -908,10 +1021,10 @@ public class MainActivity extends ComponentActivity {
         inputs.addView(chooser,new LinearLayout.LayoutParams(-1,ViewGroup.LayoutParams.WRAP_CONTENT));
         inputs.addView(label("Lange drücken: HDMI-Eingang benennen. Direktwahl am TCL noch zu testen.",12,MUTED));
         LinearLayout apps = section(body,"APPS");
-        TextView add = actionButton("+ Eigene App / Favorit","");
+        TextView add = actionButton("+ TV-App / Favorit","");
         add.setOnClickListener(v -> addStreamingShortcut());
         apps.addView(add,new LinearLayout.LayoutParams(-1,dp(48)));
-        apps.addView(label("Lokaler App-Katalog, keine automatisch ausgelesene TV-App-Liste. ★ = Startscreen-Favorit. Lange drücken zum Verwalten.",12,MUTED));
+        apps.addView(label("+ lädt bei kompatiblen TCL-TVs die installierten Apps. ★ = Startscreen-Favorit. Lange drücken zum Verwalten.",12,MUTED));
         sourcesAppList = new LinearLayout(this);
         sourcesAppList.setOrientation(LinearLayout.VERTICAL);
         apps.addView(sourcesAppList,new LinearLayout.LayoutParams(-1,-2));

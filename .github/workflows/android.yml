@@ -85,7 +85,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v1.1.5
+          name: Sofacockpit-Android-v1.1.6
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -94,9 +94,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create sofacockpit-v1.1.5 \
+          gh release create sofacockpit-v1.1.6 \
             dist/Sofacockpit.apk dist/*.sofatheme \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "Sofacockpit v1.1.5 (Streaming-Start testen)" \
-            --notes "Gezielter Gerätetest: Start lange drücken → Streaming-Start testen. YouTube und Dyn einzeln über den vollständigen Play-Store-Aufruf testen. Der Dialog zeigt Versand, zuordenbare TV-Ablehnung mit Fehlercode und Verbindungsverlust; Ergebnisse lassen sich kopieren. Fünf Sekunden Beobachtung, keine automatische Testfolge und kein erneutes Senden. Ein Dyn-Direktstart ist noch nicht bestätigt. Favoriten, Standardlinks, Kopplung und Signatur unverändert; keine zusätzliche TV-App oder ADB."
+            --title "Sofacockpit v1.1.6 (Nativer TCL-App-Start)" \
+            --notes "T-Cast-App-Start über LAN ohne ADB oder zusätzliche TV-App. Dyn und YouTube zuvor am TCL per PowerShell bestätigt; integrierte Version noch zu testen. Plus lädt installierte Apps zur Auswahl; Paketnamen und bekannte Standardlinks bevorzugen den nativen Start. App-Liste aktualisieren, System-Apps optional anzeigen, bestehende Favoriten zuordnen. Alte Deep Links, Favoriten, Sicherungsformat, Google-TV-Kopplung und Soundbar bleiben erhalten. Keine automatische Wiederholung eines Startbefehls."
