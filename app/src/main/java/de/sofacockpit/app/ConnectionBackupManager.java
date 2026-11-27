@@ -124,12 +124,14 @@ final class ConnectionBackupManager implements AutoCloseable {
         final boolean auto = options.getBoolean("auto_connect", false);
         final String themeId = themes.selectedId();
         final String streams = shortcuts.exportEntries().toString();
+        final String appPresentation = AppPresentation.load(options.getString(AppPresentation.PREF,null)).toJson().toString();
         worker.execute(() -> {
             byte[] plain = null;
             try {
                 JSONObject root = new JSONObject().put("version",1).put("tv",tv.exportConfiguration())
                     .put("soundbarIp",soundIp).put("autoConnect",auto).put("themeId",themeId)
-                    .put("streaming",new org.json.JSONArray(streams));
+                    .put("streaming",new org.json.JSONArray(streams))
+                    .put("appPresentation",new JSONObject(appPresentation));
                 plain = root.toString().getBytes(StandardCharsets.UTF_8);
                 byte[] encrypted = BackupCrypto.encrypt(plain,password);
                 try (OutputStream out = activity.getContentResolver().openOutputStream(uri, "wt")) {
@@ -168,6 +170,8 @@ final class ConnectionBackupManager implements AutoCloseable {
                 if (!soundIp.isEmpty() && !Catalog.INSTANCE.validIp(soundIp)) throw new IOException("Ungültige Soundbar-IP");
                 List<StreamingShortcuts.Entry> streams = StreamingShortcuts.parseEntries(root.getJSONArray("streaming"));
                 boolean auto = root.getBoolean("autoConnect");
+                AppPresentation presentation = root.has("appPresentation") ?
+                    AppPresentation.parse(root.getJSONObject("appPresentation")) : null;
                 String themeId = root.has("themeId") ? root.getString("themeId") : null;
                 if (themeId != null && !CockpitTheme.validId(themeId)) throw new IOException("Ungültige Theme-ID");
                 TvRemoteClient.PreparedConfiguration tvConfig = tv.prepareConfiguration(root.getJSONObject("tv"));
@@ -191,6 +195,7 @@ final class ConnectionBackupManager implements AutoCloseable {
                             (themeId == null ? "" : themes.has(themeId) ?
                                 " Das gesicherte Design wird übernommen." :
                                 " Eigenes Design fehlt: Minimal Premium wird verwendet. Theme-Datei separat importieren.") +
+                            (presentation==null?"":" Die App-Darstellung wird übernommen.")+
                             " Es werden keine Steuerbefehle gesendet.")
                         .setView(fields)
                         .setNegativeButton("Abbrechen", null)
@@ -200,7 +205,9 @@ final class ConnectionBackupManager implements AutoCloseable {
                                 soundbar.disconnect();
                                 if (!soundbar.saveConnectionAddress(soundIp)) throw new IOException("Soundbar-IP");
                                 shortcuts.replaceEntries(streams);
-                                options.edit().putBoolean("auto_connect", auto).apply();
+                                SharedPreferences.Editor edit=options.edit().putBoolean("auto_connect",auto);
+                                if(presentation!=null)edit.putString(AppPresentation.PREF,presentation.toJson().toString());
+                                edit.apply();
                                 if (themeId != null) themes.select(themeId);
                                 changed.run();
                             } catch (Exception ex) {

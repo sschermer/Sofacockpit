@@ -85,12 +85,12 @@ jobs:
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist/Sofacockpit-Lab.apk > "$RUNNER_TEMP/lab-badging.txt"
-          grep -E "^package: name='de.sofacockpit.lab' versionCode='10' versionName='0.1.9' " "$RUNNER_TEMP/lab-badging.txt"
+          grep -E "^package: name='de.sofacockpit.lab' versionCode='11' versionName='0.1.10' " "$RUNNER_TEMP/lab-badging.txt"
           grep -F "application-label:'Sofacockpit Lab'" "$RUNNER_TEMP/lab-badging.txt"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Lab-Android-v0.1.9
+          name: Sofacockpit-Lab-Android-v0.1.10
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -105,10 +105,10 @@ jobs:
             echo "Skipping superseded Lab build."
             exit 0
           fi
-          if gh release view sofacockpit-lab-v0.1.9 >/dev/null 2>&1; then
+          if gh release view sofacockpit-lab-v0.1.10 >/dev/null 2>&1; then
             echo "Lab release already exists; never replace a published version."
             exit 0
           fi
-          gh release create sofacockpit-lab-v0.1.9 dist/Sofacockpit-Lab.apk \
-            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.9" \
-            --prerelease --latest=false --notes "Lab v0.1.9: GET-Inventar durch gezielte PACKAGEINFO-Abfragen für bekannte und gespeicherte Paketziele ergänzen. Prime Video wurde am TCL per PowerShell positiv bestätigt. Nur passende positive Antworten werden übernommen; begrenzte Abfragen, keine erfundenen Einträge. Favoriten, Filmabend, Quellen, Zuordnung und Sprachbibliothek nutzen den ergänzten Bestand. Nativer OPEN nach positiver Prüfung; Prime-App-Link als ausdrücklich wählbare Alternative erhalten. Gesendeter Befehl ist kein Startnachweis. Keine ADB-Abhängigkeit. Gerätetests: Prime erkennen, nativ starten, alternativ per Link, Netflix/Dyn, Quellen/Favoriten/Sprache. Weitere gemeinsame manuelle App-Verwaltung, Icons und neuer Zuordnungsdialog folgen getrennt."
+          gh release create sofacockpit-lab-v0.1.10 dist/Sofacockpit-Lab.apk \
+            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.10" \
+            --prerelease --latest=false --notes "Lab v0.1.10: Original-TV-App-Icons vom lokalen TCL-Endpunkt mit begrenztem Cache und Text-Fallback. Zahnrad > Darstellung der App-Schaltflächen: Nur Icon, Nur Text (Standard), Icon und Text. Lange auf App-Schaltfläche drücken > Darstellung: globale Vererbung oder individuelle Wahl, je App-Ziel gemeinsam in Favoriten, Filmabend und Quellen. Einstellungen werden gesichert; alte Sicherungen bleiben lesbar. Keine externen Logos, keine globale Cleartext-Freigabe. Gerätetests Icon-Abruf, Layout, Vererbung, Sicherung sowie Prime-Erkennung und nativer Start noch offen. Manuelle App-Verwaltung und neuer Zuordnungsdialog folgen separat."

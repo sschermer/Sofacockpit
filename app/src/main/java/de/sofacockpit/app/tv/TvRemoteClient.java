@@ -426,6 +426,13 @@ public final class TvRemoteClient implements AutoCloseable {
             current.ready && current.tls != null && !Boolean.FALSE.equals(state.powerOn);
     }
 
+    /** Numeric peer of the current paired foreground TLS session, never a URL-derived host. */
+    public InetAddress iconPeerAddress() {
+        if (!canRequestTclApps() || !paired() || !current.host.equals(lastAddress())) return null;
+        SSLSocket tls=current.tls;
+        return tls==null||tls.isClosed()?null:tls.getInetAddress();
+    }
+
     public void requestTclApps(java.util.function.Consumer<TclAppLauncher.Result> done) {
         requestTclApps(java.util.Collections.emptyList(), done);
     }

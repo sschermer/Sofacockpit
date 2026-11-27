@@ -93,6 +93,8 @@ public class MainActivity extends ComponentActivity {
     private LinearLayout sourcesAppList;
     private TextView sourcesStatus, systemStatus;
     private StreamingShortcuts shortcuts;
+    private AppPresentation appPresentation;
+    private AppIconCache appIcons;
     private LabSavedFavoritesDialog savedFavorites;
     private final TvAppInventory tvAppInventory = new TvAppInventory();
     private boolean includeSystemApps;
@@ -110,12 +112,17 @@ public class MainActivity extends ComponentActivity {
         tv = new TvRemoteClient(this, this::renderTvState);
         shortcuts = new StreamingShortcuts(this);
         connectionOptions = getSharedPreferences("connection_options", MODE_PRIVATE);
+        appPresentation = AppPresentation.load(connectionOptions.getString(AppPresentation.PREF,null));
+        appIcons = new AppIconCache(this,()->{
+            if(!isFinishing()&&!isDestroyed())renderStreamingShortcuts();
+        });
         themes = new ThemeStore(this, connectionOptions);
         theme = themes.selected();
         savedFavorites = new LabSavedFavoritesDialog(this, shortcuts, this::currentFavoriteInventory,
             () -> theme, entry -> shortcutOptions(entry, true));
         themePicker = new ThemePicker(this, themes, this::applySelectedTheme);
         backups = new ConnectionBackupManager(this, tv, soundbarModel, shortcuts, connectionOptions, themes, () -> {
+            appPresentation = AppPresentation.load(connectionOptions.getString(AppPresentation.PREF,null));
             applySelectedTheme();
             renderStreamingShortcuts();
             if (tvDialog != null) tvDialog.reloadAddresses();
@@ -431,7 +438,7 @@ public class MainActivity extends ComponentActivity {
     private void showStartMenu(View anchor) {
         if (quickMenu != null) quickMenu.dismiss();
         PopupMenu popup = new PopupMenu(this, anchor, Gravity.CENTER);
-        String[] items={"Design auswählen","Software-Updates","Verbindungen","Über Sofacockpit Lab","Verbindungen aktualisieren","Streaming-Start testen","Haptische Orientierung"};
+        String[] items={"Design auswählen","Software-Updates","Verbindungen","Über Sofacockpit Lab","Verbindungen aktualisieren","Streaming-Start testen","Haptische Orientierung","Darstellung der App-Schaltflächen"};
         for (int i=0;i<items.length;i++) popup.getMenu().add(0,i+1,i,items[i]);
         popup.setOnMenuItemClickListener(item -> {
             switch(item.getItemId()) {
@@ -450,6 +457,7 @@ public class MainActivity extends ComponentActivity {
                         .setSingleChoiceItems(new String[]{"Ein","Aus"},connectionOptions.getBoolean("lab_haptics",true)?0:1,
                             (d,i)->{connectionOptions.edit().putBoolean("lab_haptics",i==0).apply();d.dismiss();})
                         .setNegativeButton("Schließen",null).show();return true;
+                case 8: showAppPresentation(null,null); return true;
                 default: return false;
             }
         });
@@ -772,6 +780,48 @@ public class MainActivity extends ComponentActivity {
         row.addView(tile,lp);return tile;
     }
 
+    private void showAppPresentation(String link,String name){
+        final String key=link==null?null:AppPresentation.key(link);
+        AppPresentation.Mode[] modes=AppPresentation.Mode.values();
+        boolean global=key==null;
+        String[] choices=new String[modes.length+(global?0:1)];
+        int offset=global?0:1;
+        if(!global)choices[0]="Globale Einstellung übernehmen ("+appPresentation.global.label+")";
+        for(int i=0;i<modes.length;i++)choices[i+offset]=modes[i].label;
+        AppPresentation.Mode selected=global?appPresentation.global:appPresentation.override(key);
+        int checked=selected==null?0:selected.ordinal()+offset;
+        new AlertDialog.Builder(this).setTitle(global?"Darstellung – App-Schaltflächen":name+" – Darstellung")
+            .setSingleChoiceItems(choices,checked,(dialog,index)->{
+                try{
+                    appPresentation=global?appPresentation.withGlobal(modes[index]):
+                        appPresentation.withOverride(key,index==0?null:modes[index-1]);
+                    connectionOptions.edit().putString(AppPresentation.PREF,appPresentation.toJson().toString()).apply();
+                    dialog.dismiss();
+                    renderStreamingShortcuts();
+                }catch(IllegalArgumentException e){favoriteError(e.getMessage());}
+            }).setNegativeButton("Schließen",null).show();
+    }
+
+    /** Keep text until a valid local bitmap is available. Warning text is never hidden. */
+    private AppPresentation.Mode appArtwork(TextView tile,String link,TclAppLauncher.App app,boolean allowIcon){
+        AppPresentation.Mode mode=appPresentation.effective(AppPresentation.key(link));
+        tile.setTag(mode);
+        if(mode==AppPresentation.Mode.TEXT||!allowIcon||app==null)return mode;
+        appIcons.device(tvAppInventory.device());
+        android.graphics.Bitmap image=appIcons.get(app.packageName,app.iconUrl,tv.iconPeerAddress());
+        if(image==null)return mode;
+        android.graphics.drawable.BitmapDrawable art=new android.graphics.drawable.BitmapDrawable(getResources(),image);
+        float scale=Math.min((float)dp(52)/image.getWidth(),(float)dp(mode==AppPresentation.Mode.ICON?40:26)/image.getHeight());
+        art.setBounds(0,0,Math.max(1,Math.round(image.getWidth()*scale)),Math.max(1,Math.round(image.getHeight()*scale)));
+        tile.setCompoundDrawables(null,art,null,null);
+        tile.setCompoundDrawablePadding(dp(2));
+        tile.setIncludeFontPadding(false);
+        tile.setMaxLines(2);
+        tile.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        if(mode==AppPresentation.Mode.ICON){tile.setText("");tile.setTextSize(0);}
+        return mode;
+    }
+
     private void renderLabStreamChoices(){
         if(labStreamChoices==null)return;
         labStreamChoices.removeAllViews();
@@ -782,7 +832,11 @@ public class MainActivity extends ComponentActivity {
         }
         for(TclAppLauncher.App app:tvAppInventory.visible(false)){
             final StreamingShortcuts.Entry selected=StreamingShortcuts.forAppChoice(shortcuts.entries,app);
-            labChoice(labStreamChoices,selected.name,()->launchStreaming(selected));
+            TextView tile=labChoice(labStreamChoices,selected.name,()->launchStreaming(selected));
+            tile.setContentDescription(selected.name+"; lange drücken für Darstellung");
+            tile.setOnLongClickListener(v->{showAppPresentation(selected.link,selected.name);return true;});
+            if(appArtwork(tile,selected.link,app,true)==AppPresentation.Mode.BOTH)
+                tile.getLayoutParams().height=dp(72);
         }
         if(labStreamChoices.getChildCount()==0)labChoice(labStreamChoices,"TV-Apps aktualisieren",this::refreshTvAppInventory);
     }
@@ -919,15 +973,19 @@ public class MainActivity extends ComponentActivity {
     private void sizeStreamingTiles() {
         int width = streamScroll.getWidth();
         int tileWidth = width > 0 ? Math.max(dp(60), (width - 3 * dp(8)) / 4) : dp(80);
+        boolean combined=false;
+        for(int i=0;i<streamRow.getChildCount();i++)
+            if(streamRow.getChildAt(i).getTag()==AppPresentation.Mode.BOTH)combined=true;
         for (int i = 0; i < streamRow.getChildCount(); i++) {
             View tile = streamRow.getChildAt(i);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(tileWidth, dp(58));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(tileWidth, dp(combined?76:58));
             lp.rightMargin = i + 1 < streamRow.getChildCount() ? dp(8) : 0;
             tile.setLayoutParams(lp);
         }
     }
     private TvAppInventory currentFavoriteInventory() {
         tvAppInventory.device(tv.inventoryDeviceKey());
+        appIcons.device(tvAppInventory.device());
         if (!tv.state().connected()) tvAppInventory.stale();
         return tvAppInventory;
     }
@@ -960,6 +1018,8 @@ public class MainActivity extends ComponentActivity {
                 else shortcutOptions(entry, true);
             });
             tile.setOnLongClickListener(v -> { shortcutOptions(entry); return true; });
+            appArtwork(tile,entry.link,tvAppInventory.find(TclAppLauncher.packageForLink(entry.link)),
+                favorite.status==TvAppInventory.FavoriteStatus.AVAILABLE);
             streamRow.addView(tile);
         }
         int hdmiMask=connectionOptions.getInt("lab_hdmi_favorites",0);
@@ -1057,6 +1117,7 @@ public class MainActivity extends ComponentActivity {
         List<String> labels = new ArrayList<>();
         List<Runnable> actions = new ArrayList<>();
         labels.add("Name / App-Link bearbeiten"); actions.add(() -> editStreamingShortcut(entry));
+        labels.add("Darstellung"); actions.add(() -> showAppPresentation(entry.link,entry.name));
         labels.add("Installierte TV-App zuordnen"); actions.add(() -> loadInstalledApps(entry));
         if (!manageOnly && !entry.link.startsWith("market://launch?id=") && TclAppLauncher.packageForLink(entry.link) != null) {
             labels.add("Alternativ mit App-Link starten"); actions.add(() -> launchStreamingLink(entry));
@@ -1159,6 +1220,7 @@ public class MainActivity extends ComponentActivity {
     private void refreshTvAppInventory() {
         tvAppInventory.device(tv.inventoryDeviceKey());
         if (appInventoryLoading) return;
+        appIcons.retryFailures();
         if (!tv.canRequestTclApps()) {
             appInventoryError = "TV nicht verbunden oder ausgeschaltet.";
             tvAppInventory.stale();
@@ -1582,8 +1644,11 @@ public class MainActivity extends ComponentActivity {
         List<TclAppLauncher.App> entries = tvAppInventory.visible(includeSystemApps);
         for (int i = 0; i < entries.size(); i += 2) {
             LinearLayout row = new LinearLayout(this);
+            boolean combined=false;
+            for(int k=i;k<Math.min(i+2,entries.size());k++)
+                if(appPresentation.effective(AppPresentation.key(entries.get(k).packageName))==AppPresentation.Mode.BOTH)combined=true;
             for (int j = 0; j < 2; j++) {
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(56), 1f);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(combined?76:56), 1f);
                 if (j > 0) lp.leftMargin = dp(8);
                 if (i + j >= entries.size()) { row.addView(new View(this), lp); continue; }
                 TclAppLauncher.App app = entries.get(i + j);
@@ -1603,12 +1668,14 @@ public class MainActivity extends ComponentActivity {
                 tile.setOnLongClickListener(v -> {
                     if (favorite != null) shortcutOptions(favorite);
                     else new AlertDialog.Builder(this).setTitle(app.name)
-                        .setItems(new String[]{"Zum Startscreen hinzufügen","Gespeicherte Favoriten verwalten"}, (d, which) -> {
+                        .setItems(new String[]{"Zum Startscreen hinzufügen","Darstellung","Gespeicherte Favoriten verwalten"}, (d, which) -> {
                             if(which==0)assignInstalledFavorite(null,inventoryIdentity,app.packageName,false);
+                            else if(which==1)showAppPresentation(app.packageName,app.name);
                             else savedFavorites.show();
                         }).setNegativeButton("Schließen", null).show();
                     return true;
                 });
+                appArtwork(tile,app.packageName,app,tvAppInventory.verified());
                 row.addView(tile, lp);
             }
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
@@ -1819,6 +1886,7 @@ public class MainActivity extends ComponentActivity {
     }
 
     @Override protected void onPause() {
+        if (appIcons != null) appIcons.pause();
         if (voice != null) voice.pause();
         if (updates != null) updates.onPause();
         if (connectionRefresh != null) connectionRefresh.cancel();
@@ -1833,11 +1901,13 @@ public class MainActivity extends ComponentActivity {
         boolean allowed = Build.VERSION.SDK_INT < 37 ||
             checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED;
-        if (tv != null) { tv.onForeground(allowed); renderHdmiButtons(); }
+        if (appIcons != null && allowed) appIcons.resume();
+        if (tv != null) { tv.onForeground(allowed); renderHdmiButtons(); renderStreamingShortcuts(); }
         if (soundbarModel != null) soundbarModel.onForeground(allowed);
     }
 
     @Override protected void onDestroy() {
+        if (appIcons != null) appIcons.close();
         if (voice != null) voice.close();
         if (voiceEditor != null) voiceEditor.close();
         if (savedFavorites != null) savedFavorites.close();
