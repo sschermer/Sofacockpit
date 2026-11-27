@@ -468,6 +468,15 @@ public final class TvRemoteClient implements AutoCloseable {
             current.ready && current.tls != null && !Boolean.FALSE.equals(state.powerOn);
     }
 
+    /** Saved numeric peer for validating a local cache key only, never a network session. */
+    public InetAddress cachedIconPeerAddress(){
+        if(!paired())return null;
+        try{
+            InetAddress address=localAddress(lastAddress());
+            return address instanceof Inet4Address?address:null;
+        }catch(IOException|RuntimeException ex){return null;}
+    }
+
     /** Numeric peer of the current paired foreground TLS session, never a URL-derived host. */
     public InetAddress iconPeerAddress() {
         if (!canRequestTclApps() || !paired() || !current.host.equals(lastAddress())) return null;

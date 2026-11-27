@@ -105,6 +105,7 @@ public class MainActivity extends ComponentActivity {
     private AppIconCache appIcons;
     private LabSavedFavoritesDialog savedFavorites;
     private final TvAppInventory tvAppInventory = new TvAppInventory();
+    private TvInventoryCache tvInventoryCache;
     private boolean includeSystemApps;
     private boolean appInventoryLoading;
     private boolean wasTvInventoryConnected;
@@ -124,6 +125,7 @@ public class MainActivity extends ComponentActivity {
         pendingHdmiPort=savedInstanceState==null?0:savedInstanceState.getInt("pending_hdmi_port",0);
         hdmiPicker=registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),this::importHdmiImage);
         appPresentation = AppPresentation.load(connectionOptions.getString(AppPresentation.PREF,null));
+        tvInventoryCache=new TvInventoryCache(this);
         appIcons = new AppIconCache(this,()->{
             if(!isFinishing()&&!isDestroyed())renderStreamingShortcuts();
         });
@@ -328,7 +330,7 @@ public class MainActivity extends ComponentActivity {
     private VoiceCommands.Library baseVoiceLibrary(){
         VoiceCommands.Library library=new VoiceCommands.Library();
         if(tvAppInventory.verified() && tvAppInventory.device().equals(tv.inventoryDeviceKey())){
-            for(TclAppLauncher.App app:tvAppInventory.visible(false)){
+            for(TclAppLauncher.App app:tvAppInventory.confirmedVisible(false)){
                 library.app(app.name,app.packageName,app.name);
             }
             for(StreamingShortcuts.Entry entry:tvAppInventory.activeFavorites(shortcuts.entries)){
@@ -390,7 +392,7 @@ public class MainActivity extends ComponentActivity {
                 if(!tv.canRequestTclApps()||!tvAppInventory.verified()||!tvAppInventory.device().equals(tv.inventoryDeviceKey()))
                     return "TV-App-Liste nicht bestätigt. TV verbinden und Quellen aktualisieren.";
                 TclAppLauncher.App app=tvAppInventory.find(command.target);
-                if(app==null)return "App nicht in der aktuellen TV-Liste.";
+                if(app==null||!tvAppInventory.confirmed(command.target))return "App nicht in der aktuellen TV-Liste bestätigt.";
                 StreamingShortcuts.Entry selected=null;
                 for(StreamingShortcuts.Entry entry:tvAppInventory.activeFavorites(shortcuts.entries))
                     if(command.target.equals(TclAppLauncher.packageForLink(entry.link))){selected=entry;break;}
@@ -853,7 +855,7 @@ public class MainActivity extends ComponentActivity {
         for(TclAppLauncher.App app:tvAppInventory.visible(false)){
             AppPresentation.Mode mode=appPresentation.effective(AppPresentation.key(app.packageName));
             String status=mode==AppPresentation.Mode.TEXT?"Textdarstellung gewählt":
-                !tvAppInventory.verified()?"Inventar nicht bestätigt":appIcons.status(app.packageName);
+                !tvAppInventory.confirmed(app.packageName)?"Zuletzt bekannter Bestand · "+appIcons.status(app.packageName):appIcons.status(app.packageName);
             report.append("\n").append(app.name).append(" [").append(mode.label).append("]: ").append(status);
         }
         for(TvAppInventory.FavoriteTile favorite:tvAppInventory.homeFavorites(shortcuts.savedFavorites())){
@@ -876,7 +878,10 @@ public class MainActivity extends ComponentActivity {
         android.graphics.Bitmap image=null;
         if(mode!=AppPresentation.Mode.TEXT&&allowIcon&&app!=null){
             appIcons.device(tvAppInventory.device());
-            image=appIcons.get(app.packageName,app.iconUrl,tv.iconPeerAddress(),tv.iconLoader());
+            java.net.InetAddress livePeer=tv.iconPeerAddress();
+            boolean live=livePeer!=null&&tvAppInventory.confirmed(app.packageName);
+            image=appIcons.get(app.packageName,app.iconUrl,
+                live?livePeer:tv.cachedIconPeerAddress(),live?tv.iconLoader():null);
         }
         return new LabAppTile(this,caption,mode,image,TEXT,
             ThemeArt.typeface(theme.theme,Typeface.BOLD),textSize*theme.theme.fontScale,shape(SURFACE_ALT,14));
@@ -885,20 +890,21 @@ public class MainActivity extends ComponentActivity {
     private void renderLabStreamChoices(){
         if(labStreamChoices==null||labStreamScroll==null)return;
         labStreamChoices.removeAllViews();
-        if(!tvAppInventory.verified()){
+        if(!tvAppInventory.hasSnapshot()){
             labChoice(labStreamChoices,appInventoryLoading?"Lade TV-Apps …":"TV-App-Liste laden",
                 ()->{if(tv.state().connected())refreshTvAppInventory();else tvDialog.open();});
         }else{
             for(TclAppLauncher.App app:tvAppInventory.visible(false)){
                 final StreamingShortcuts.Entry selected=StreamingShortcuts.forAppChoice(shortcuts.entries,app);
                 LabAppTile tile=appTile(selected.name,13,selected.link,app,true);
-                tile.setContentDescription(selected.name+"; lange drücken für Darstellung");
+                tile.setContentDescription(selected.name+(tvAppInventory.confirmed(app.packageName)?"":"; zuletzt bekannter Bestand")+
+                    "; lange drücken für Darstellung");
                 tile.setOnClickListener(v->launchStreaming(selected));
                 tile.setOnLongClickListener(v->{showAppPresentation(selected.link,selected.name);return true;});
                 labStreamChoices.addView(tile);
             }
             if(labStreamChoices.getChildCount()==0)
-                labChoice(labStreamChoices,"TV-Apps aktualisieren",this::refreshTvAppInventory);
+                labChoice(labStreamChoices,"Keine TV-Apps · aktualisieren",this::refreshTvAppInventory);
         }
         labStreamScroll.resizeTiles();
     }
@@ -1049,10 +1055,29 @@ public class MainActivity extends ComponentActivity {
     private void sizeStreamingTiles() {
         if(streamScroll!=null)streamScroll.resizeTiles();
     }
+    private void syncInventoryDevice(){
+        String identity=tv.inventoryDeviceKey();
+        if(!identity.equals(tvAppInventory.device())){
+            tvAppInventory.device(identity);
+            wasTvInventoryConnected=false;
+            appInventoryError="";
+            if(tvInventoryCache!=null)tvAppInventory.restored(tvInventoryCache.load(tv.savedDeviceKey()));
+        }
+        if(appIcons!=null)appIcons.device(tvAppInventory.device());
+    }
+    private void persistInventory(){
+        if(tvInventoryCache!=null&&tvAppInventory.device().equals(tv.inventoryDeviceKey())&&tvAppInventory.hasSnapshot())
+            tvInventoryCache.save(tv.savedDeviceKey(),tvAppInventory.apps());
+    }
+    private void maybeRefreshInventory(){
+        boolean ready=tv.canRequestTclApps()&&tv.paired();
+        boolean becameReady=ready&&!wasTvInventoryConnected;
+        wasTvInventoryConnected=ready;
+        if(becameReady)refreshTvAppInventory();
+    }
     private TvAppInventory currentFavoriteInventory() {
-        tvAppInventory.device(tv.inventoryDeviceKey());
-        appIcons.device(tvAppInventory.device());
-        if (!tv.state().connected()) tvAppInventory.stale();
+        syncInventoryDevice();
+        if (!tv.state().connected()||Boolean.FALSE.equals(tv.state().powerOn)) tvAppInventory.stale();
         return tvAppInventory;
     }
     private void renderStreamingShortcuts() {
@@ -1064,7 +1089,9 @@ public class MainActivity extends ComponentActivity {
         for (TvAppInventory.FavoriteTile favorite : tvAppInventory.homeFavorites(shortcuts.savedFavorites())) {
             StreamingShortcuts.Entry entry = favorite.entry;
             CharSequence caption=entry.name;
-            if (favorite.status != TvAppInventory.FavoriteStatus.AVAILABLE) {
+            boolean cachedKnown=favorite.status==TvAppInventory.FavoriteStatus.UNCONFIRMED&&
+                tvAppInventory.find(TclAppLauncher.packageForLink(entry.link))!=null;
+            if (favorite.status != TvAppInventory.FavoriteStatus.AVAILABLE&&!cachedKnown) {
                 android.text.SpannableString marked = new android.text.SpannableString(entry.name + "\n" + favorite.status.shortLabel);
                 int start = entry.name.length() + 1;
                 marked.setSpan(new android.text.style.RelativeSizeSpan(.78f), start, marked.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -1072,7 +1099,7 @@ public class MainActivity extends ComponentActivity {
                 caption=marked;
             }
             LabAppTile tile=appTile(caption,12,entry.link,tvAppInventory.find(TclAppLauncher.packageForLink(entry.link)),
-                favorite.status==TvAppInventory.FavoriteStatus.AVAILABLE);
+                favorite.status==TvAppInventory.FavoriteStatus.AVAILABLE||cachedKnown);
             tile.setContentDescription(entry.name + "; " + favorite.status.label +
                 (favorite.canTryStart() ? "; antippen zum Starten" : "; antippen zum Verwalten") +
                 "; lange drücken zum Bearbeiten");
@@ -1116,8 +1143,9 @@ public class MainActivity extends ComponentActivity {
             // Reuse that response, only for the still-current paired session.
             if ((result.status == TclAppLauncher.Status.SENT || result.status == TclAppLauncher.Status.NOT_INSTALLED) &&
                 requestedDevice.equals(tv.inventoryDeviceKey()) && tv.canRequestTclApps()) {
-                tvAppInventory.device(requestedDevice);
+                syncInventoryDevice();
                 tvAppInventory.receivedLaunch(result.apps, pkg);
+                if(result.status==TclAppLauncher.Status.SENT)persistInventory();
                 renderStreamingShortcuts();
             }
             switch (result.status) {
@@ -1229,7 +1257,7 @@ public class MainActivity extends ComponentActivity {
         if(!tv.canRequestTclApps()||!tvAppInventory.verified()){loadInstalledApps(old);return;}
         if(old!=null&&!shortcuts.entries.contains(old)){favoriteError("Favorit nicht mehr vorhanden.");return;}
         final String identity=tvAppInventory.device();
-        List<TclAppLauncher.App> choices = tvAppInventory.visible(all);
+        List<TclAppLauncher.App> choices = tvAppInventory.confirmedVisible(all);
         List<String> names = new ArrayList<>();
         for (TclAppLauncher.App app : choices) {
             StreamingShortcuts.Entry entry = StreamingShortcuts.forInstalledApp(old,app);
@@ -1257,7 +1285,7 @@ public class MainActivity extends ComponentActivity {
             favoriteError("TV-App-Bestand nicht mehr aktuell. Bitte Auswahl erneut öffnen.");return;
         }
         TclAppLauncher.App app=tvAppInventory.find(pkg);
-        if(app==null){favoriteError("App wird nicht mehr vom Fernseher gemeldet.");return;}
+        if(app==null||!tvAppInventory.confirmed(pkg)){favoriteError("App wird nicht aktuell vom Fernseher bestätigt.");return;}
         try {
             StreamingShortcuts.Entry entry=StreamingShortcuts.forInstalledApp(old,app);
             List<StreamingShortcuts.Entry> next=StreamingShortcuts.updated(shortcuts.entries,old,entry);
@@ -1275,10 +1303,10 @@ public class MainActivity extends ComponentActivity {
     }
 
     private void refreshTvAppInventory() {
-        tvAppInventory.device(tv.inventoryDeviceKey());
+        syncInventoryDevice();
         if (appInventoryLoading) return;
         appIcons.retryFailures();
-        if (!tv.canRequestTclApps()) {
+        if (!tv.canRequestTclApps()||!tv.paired()) {
             appInventoryError = "TV nicht verbunden oder ausgeschaltet.";
             tvAppInventory.stale();
             renderSourcesApps();
@@ -1298,10 +1326,15 @@ public class MainActivity extends ComponentActivity {
         tv.requestTclApps(savedPackages, result -> {
             appInventoryLoading = false;
             if (isFinishing() || isDestroyed()) return;
-            tvAppInventory.device(tv.inventoryDeviceKey());
-            if (!identity.equals(tvAppInventory.device())) return;
-            if (result.status == TclAppLauncher.Status.APPS) {
-                tvAppInventory.received(result.apps);
+            syncInventoryDevice();
+            if (!identity.equals(tvAppInventory.device())) {
+                renderStreamingShortcuts();
+                if(tv.canRequestTclApps()&&tv.paired())refreshTvAppInventory();
+                return;
+            }
+            if (result.status == TclAppLauncher.Status.APPS&&tv.canRequestTclApps()) {
+                tvAppInventory.received(result.apps,result.supplementsIncomplete);
+                persistInventory();
                 appInventoryError = result.supplementsIncomplete ?
                     "Ergänzende Paketabfragen nicht vollständig bestätigt." : "";
             } else {
@@ -1747,7 +1780,7 @@ public class MainActivity extends ComponentActivity {
     }
     private void renderSourcesApps() {
         if (sourcesAppList == null) return;
-        tvAppInventory.device(tv.inventoryDeviceKey());
+        syncInventoryDevice();
         sourcesAppList.removeAllViews();
         if (appsInventoryStatus != null) {
             String status = appInventoryLoading ? "TV-App-Liste wird abgefragt …" :
@@ -1775,8 +1808,9 @@ public class MainActivity extends ComponentActivity {
                 final StreamingShortcuts.Entry favorite = favoriteEntry;
                 final String inventoryIdentity = tvAppInventory.device();
                 LabAppTile tile=appTile((favorite != null ? "★  " : "") + app.name,13,app.packageName,app,
-                    tvAppInventory.verified());
+                    true);
                 tile.setContentDescription(app.name + (favorite != null ? ", Favorit" : "") +
+                    (tvAppInventory.confirmed(app.packageName)?"":"; zuletzt bekannter Bestand") +
                     "; lange drücken zum Verwalten");
                 tile.setOnClickListener(v -> launchStreaming(
                     favorite == null ? StreamingShortcuts.forInstalledApp(null, app) : favorite));
@@ -1918,12 +1952,10 @@ public class MainActivity extends ComponentActivity {
                 (state.muted ? "Stummschaltung aufheben" : "Stummschaltung einschalten"));
             tvMute.invalidate();
         }
-        tvAppInventory.device(tv.inventoryDeviceKey());
-        if (!state.connected()) tvAppInventory.stale();
+        syncInventoryDevice();
+        if (!state.connected()||Boolean.FALSE.equals(state.powerOn)) tvAppInventory.stale();
         renderStreamingShortcuts();
-        boolean firstConnected = state.connected() && !wasTvInventoryConnected;
-        wasTvInventoryConnected = state.connected();
-        if (firstConnected) refreshTvAppInventory();
+        maybeRefreshInventory();
         renderVolumes(state);
         if (tvDialog != null) tvDialog.render(state);
     }
@@ -2001,6 +2033,8 @@ public class MainActivity extends ComponentActivity {
 
     @Override protected void onPause() {
         if(hapticLab!=null)hapticLab.close();
+        wasTvInventoryConnected=false;
+        tvAppInventory.stale();
         if (appIcons != null) appIcons.pause();
         if (voice != null) voice.pause();
         if (updates != null) updates.onPause();
@@ -2016,8 +2050,8 @@ public class MainActivity extends ComponentActivity {
         boolean allowed = Build.VERSION.SDK_INT < 37 ||
             checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED;
-        if (appIcons != null && allowed) appIcons.resume();
-        if (tv != null) { tv.onForeground(allowed); renderHdmiButtons(); renderStreamingShortcuts(); }
+        if (appIcons != null) appIcons.resume();
+        if (tv != null) { tv.onForeground(allowed); renderHdmiButtons(); renderStreamingShortcuts(); maybeRefreshInventory(); }
         if (soundbarModel != null) soundbarModel.onForeground(allowed);
     }
 

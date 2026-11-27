@@ -25,22 +25,24 @@ final class AppIconCache implements AutoCloseable {
         @Override protected int sizeOf(String key,Bitmap b){return b.getAllocationByteCount();}
     };
     private final Set<String> pending=new HashSet<>();
+    private final Set<String> offlineMisses=new HashSet<>();
     private final Map<String,Long> failures=new HashMap<>();
     private final Map<String,String> diagnostics=new HashMap<>();
-    private final File dir;
+    private final File dir,legacyDir;
     private final Runnable changed;
     private String device="";
     private boolean enabled,closed,refreshPosted;
     private volatile int generation;
     AppIconCache(Context context,Runnable changed){
-        dir=new File(context.getCacheDir(),"tv-app-icons");this.changed=changed;
+        dir=new File(context.getNoBackupFilesDir(),"tv-app-icons");
+        legacyDir=new File(context.getCacheDir(),"tv-app-icons");this.changed=changed;
     }
     void device(String key){
-        if(!device.equals(key)){device=key;cancelPending();failures.clear();diagnostics.clear();}
+        if(!device.equals(key)){device=key;cancelPending();failures.clear();offlineMisses.clear();diagnostics.clear();}
     }
     void resume(){if(!closed)enabled=true;}
     void pause(){enabled=false;cancelPending();}
-    void retryFailures(){failures.clear();diagnostics.clear();}
+    void retryFailures(){failures.clear();offlineMisses.clear();diagnostics.clear();}
     String status(String pkg){return diagnostics.getOrDefault(pkg,"Noch kein Abruf");}
     private void cancelPending(){
         generation++;
@@ -49,9 +51,8 @@ final class AppIconCache implements AutoCloseable {
     @Override public void close(){closed=true;pause();worker.shutdownNow();memory.evictAll();}
     Bitmap get(String pkg,String url,InetAddress peer,TvRemoteClient.IconLoader loader){
         if(closed||pkg==null)return null;
-        if(device.isEmpty()||!enabled||peer==null||loader==null){
-            diagnostics.put(pkg,"Kein aktiver gekoppelter TV / App im Hintergrund");
-            return null;
+        if(device.isEmpty()||peer==null){
+            diagnostics.put(pkg,"Kein passender gespeicherter TV");return null;
         }
         final TvIconHttp.Target target;
         try{target=TvIconHttp.target(url,peer);}
@@ -61,11 +62,12 @@ final class AppIconCache implements AutoCloseable {
         String key=hash(device+"\n"+pkg+"\n"+target.path);
         Bitmap bitmap=memory.get(key);
         if(bitmap!=null){diagnostics.put(pkg,"Icon verfügbar ("+bitmap.getWidth()+" × "+bitmap.getHeight()+")");return bitmap;}
-        if(pending.contains(key))return null;
+        if(!enabled||pending.contains(key))return null;
+        if(loader==null&&offlineMisses.contains(key))return null;
         Long failed=failures.get(key);
-        if(failed!=null&&SystemClock.elapsedRealtime()-failed<60000)return null;
+        if(loader!=null&&failed!=null&&SystemClock.elapsedRealtime()-failed<60000)return null;
         int token=generation;
-        pending.add(key);diagnostics.put(pkg,"Abruf eingeplant (vorheriger Port "+target.port+")");
+        pending.add(key);diagnostics.put(pkg,loader==null?"Lokalen Icon-Speicher prüfen":"Abruf eingeplant (vorheriger Port "+target.port+")");
         try{worker.execute(()->load(key,pkg,url,loader,token));}
         catch(RejectedExecutionException e){pending.remove(key);diagnostics.put(pkg,"Warteschlange voll");}
         return null;
@@ -82,10 +84,14 @@ final class AppIconCache implements AutoCloseable {
             if(bitmap!=null)file.setLastModified(System.currentTimeMillis());
             else{
                 file.delete();
-                // The HTTP server authorizes the current T-Cast session only.
-                data=loader.load(pkg,url,()->token==generation);
-                bitmap=decode(data);
+                data=read(new File(legacyDir,key+".img"));bitmap=decode(data);
                 if(bitmap!=null&&token==generation)save(file,data);
+                else if(loader!=null&&token==generation){
+                    // Null loader means strictly disk-only.
+                    data=loader.load(pkg,url,()->token==generation);
+                    bitmap=decode(data);
+                    if(bitmap!=null&&token==generation)save(file,data);
+                }
             }
         }catch(CancellationException ignored){cancelled=true;}
         catch(IOException|RuntimeException e){error=TvIconHttp.diagnostic(e);}
@@ -101,12 +107,17 @@ final class AppIconCache implements AutoCloseable {
                 return;
             }
             if(result==null){
-                if(failures.size()>512)failures.clear();
-                failures.put(key,SystemClock.elapsedRealtime());
-                diagnostics.put(pkg,failure);
+                if(loader==null){
+                    if(offlineMisses.size()>512)offlineMisses.clear();
+                    offlineMisses.add(key);diagnostics.put(pkg,"Kein lokal gespeichertes Icon");
+                    if(enabled)changed.run(); // retry with a live loader if a new list arrived
+                }else{
+                    if(failures.size()>512)failures.clear();
+                    failures.put(key,SystemClock.elapsedRealtime());diagnostics.put(pkg,failure);
+                }
                 return;
             }
-            failures.remove(key);memory.put(key,result);
+            offlineMisses.remove(key);failures.remove(key);memory.put(key,result);
             diagnostics.put(pkg,"Icon verfügbar ("+result.getWidth()+" × "+result.getHeight()+")");
             if(!refreshPosted){
                 refreshPosted=true;
