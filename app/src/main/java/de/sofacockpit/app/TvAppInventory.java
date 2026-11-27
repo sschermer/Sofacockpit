@@ -34,6 +34,14 @@ final class TvAppInventory {
             if (includeSystem || !app.systemLike()) result.add(app);
         return result;
     }
+    List<StreamingShortcuts.Entry> activeFavorites(List<StreamingShortcuts.Entry> saved) {
+        List<StreamingShortcuts.Entry> active = new ArrayList<>();
+        if (!verified) return active;
+        for (StreamingShortcuts.Entry entry : saved) {
+            if (find(TclAppLauncher.packageForLink(entry.link)) != null) active.add(entry);
+        }
+        return active;
+    }
     TclAppLauncher.App find(String packageName) {
         if (packageName == null) return null;
         for (TclAppLauncher.App app : apps)
