@@ -94,9 +94,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create sofacockpit-v1.1.8 \
-            dist/Sofacockpit.apk dist/*.sofatheme \
-            --target "$GITHUB_SHA" \
-            --title "Sofacockpit v1.1.8 (TV-App-Inventar – Testversion)" \
-            --prerelease \
-            --notes "Pre-Release: TV → Quellen und Streaming-Favoriten verwenden ausschließlich den abgefragten T-Cast-App-Bestand des verbundenen TVs. System-Apps sind einblendbar; Aktualisierung beim Öffnen und manuell. Gespeicherte Favoriten bleiben erhalten, nicht gemeldete Apps werden in der aktiven Leiste ausgeblendet. Leere und fehlgeschlagene Abfragen erzeugen keinen statischen Ersatzkatalog. Gerätetest erforderlich, insbesondere Start von Dyn, Netflix und YouTube sowie App-Installation und Deinstallation."
+          set -euo pipefail
+          # Do not publish a superseded build after a newer main commit has landed.
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq '.sha')
+          if [ "$latest" != "$GITHUB_SHA" ]; then
+            echo "Skipping release: a newer main commit exists."
+            exit 0
+          fi
+          notes="Pre-Release: TV → Quellen und Streaming-Favoriten verwenden ausschließlich den abgefragten T-Cast-App-Bestand des verbundenen TVs. System-Apps sind einblendbar; Aktualisierung beim Öffnen und manuell. Gespeicherte Favoriten bleiben erhalten, nicht gemeldete Apps werden in der aktiven Leiste ausgeblendet. Leere und fehlgeschlagene Abfragen erzeugen keinen statischen Ersatzkatalog. Gerätetest erforderlich, insbesondere Start von Dyn, Netflix und YouTube sowie App-Installation und Deinstallation."
+          if gh release view sofacockpit-v1.1.8 >/dev/null 2>&1; then
+            # Earlier queued builds may already have created this pre-release.
+            gh release upload sofacockpit-v1.1.8 dist/Sofacockpit.apk dist/*.sofatheme --clobber
+            gh release edit sofacockpit-v1.1.8 --target "$GITHUB_SHA" --title "Sofacockpit v1.1.8 (TV-App-Inventar – Testversion)" --prerelease --notes "$notes"
+          else
+            gh release create sofacockpit-v1.1.8 dist/Sofacockpit.apk dist/*.sofatheme \
+              --target "$GITHUB_SHA" --title "Sofacockpit v1.1.8 (TV-App-Inventar – Testversion)" \
+              --prerelease --notes "$notes"
+          fi
