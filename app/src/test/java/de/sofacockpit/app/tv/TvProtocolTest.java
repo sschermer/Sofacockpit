@@ -7,6 +7,22 @@ import java.math.BigInteger;
 import java.security.interfaces.RSAPublicKey;
 
 public class TvProtocolTest {
+    @Test public void tclHdmiCandidateUsesOnlyNativeInputLinksForFourPorts() throws Exception {
+        for (int port = 1; port <= 4; port++) {
+            String expected = "content://android.media.tv/passthrough/com.tcl.tvinput%2F.TvPassThroughService%2FHW" + (14 + port);
+            TvProtocol.Message outer = TvProtocol.parse(TvProtocol.tclHdmiInput(port));
+            TvProtocol.Message inner = outer.child(90);
+            assertEquals(expected, new String(inner.messages.get(1), java.nio.charset.StandardCharsets.UTF_8));
+            assertEquals(1, inner.messages.size());
+            try { TvProtocol.normalizeLaunchLink(expected); fail("Arbitrary content link accepted"); }
+            catch (IllegalArgumentException expectedRejection) {}
+        }
+        for (int bad : new int[]{Integer.MIN_VALUE, -1, 0, 5, Integer.MAX_VALUE}) {
+            try { TvProtocol.tclHdmiInput(bad); fail("Invalid HDMI port accepted: " + bad); }
+            catch (IllegalArgumentException expected) {}
+        }
+    }
+
     @Test public void newRemoteKeysAreExplicitlyAllowedAndEncodeCorrectly() throws Exception {
         int[] keys = {android.view.KeyEvent.KEYCODE_MEDIA_REWIND,
             android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,

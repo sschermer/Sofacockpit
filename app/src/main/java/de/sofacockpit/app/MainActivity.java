@@ -85,6 +85,7 @@ public class MainActivity extends ComponentActivity {
     private String appInventoryError = "";
     private TextView appsInventoryStatus;
     private final List<TextView> tvKeys = new ArrayList<>();
+    private final List<TextView> hdmiButtons = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -153,6 +154,7 @@ public class MainActivity extends ComponentActivity {
         CockpitTheme t=theme.theme;
         BG=t.background; SURFACE=t.panel; SURFACE_ALT=t.control; TEXT=t.text; MUTED=t.muted; ACCENT=t.accent;
         tvKeys.clear();
+        hdmiButtons.clear();
         refreshLayouts.clear();
         volumeControls.clear();
         tvConnectionButton=soundConnectionButton=tvHomeStatus=tvHomeDetail=tvRemoteStatus=sourcesStatus=systemStatus=null;
@@ -1011,18 +1013,21 @@ public class MainActivity extends ComponentActivity {
         LinearLayout body = fullPage();
         sourcesStatus = compactStatus(body, "Quellen");
         LinearLayout inputs = section(body, "HDMI-EINGÄNGE");
-        int[] keys = {KeyEvent.KEYCODE_TV_INPUT_HDMI_1, KeyEvent.KEYCODE_TV_INPUT_HDMI_2,
-            KeyEvent.KEYCODE_TV_INPUT_HDMI_3, KeyEvent.KEYCODE_TV_INPUT_HDMI_4};
         for (int rowIndex=0; rowIndex<2; rowIndex++) {
             LinearLayout row = new LinearLayout(this);
             row.setGravity(Gravity.CENTER_VERTICAL);
             for (int col=0; col<2; col++) {
                 final int port = rowIndex*2+col+1;
-                TextView tile = tvButton(hdmiLabel(port),keys[port-1]);
+                TextView tile = actionButton(hdmiLabel(port), "");
+                hdmiButtons.add(tile);
+                tile.setOnClickListener(v -> {
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
+                    selectHdmi(port, false);
+                });
                 tile.setTextSize(15 * theme.theme.fontScale);
                 compactInputButton(tile);
-                tile.setContentDescription("HDMI " + port + ": " + hdmiLabel(port) + "; lange drücken zum Umbenennen");
-                tile.setOnLongClickListener(v -> { editHdmiLabel(port,tile); return true; });
+                tile.setContentDescription("HDMI " + port + ": " + hdmiLabel(port) + "; lange drücken für Optionen");
+                tile.setOnLongClickListener(v -> { showHdmiOptions(port, tile); return true; });
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f);
                 if (col>0) lp.leftMargin=dp(8);
                 row.addView(tile,lp);
@@ -1034,7 +1039,7 @@ public class MainActivity extends ComponentActivity {
         TextView chooser = tvButton("TV-Eingangsauswahl",KeyEvent.KEYCODE_TV_INPUT);
         compactInputButton(chooser);
         inputs.addView(chooser,new LinearLayout.LayoutParams(-1,ViewGroup.LayoutParams.WRAP_CONTENT));
-        inputs.addView(label("Lange drücken: HDMI-Eingang benennen. Direktwahl am TCL noch zu testen.",12,MUTED));
+        inputs.addView(label("Direktwahl: Ersten Versuch je HDMI bestätigen. Lange drücken: Name ändern oder erneut testen. Die allgemeine Eingangsauswahl bleibt verfügbar.",12,MUTED));
         LinearLayout apps = section(body,"APPS");
         TextView add = actionButton("+ TV-App / Favorit","");
         add.setOnClickListener(v -> addStreamingShortcut());
@@ -1067,6 +1072,63 @@ public class MainActivity extends ComponentActivity {
         button.setPadding(dp(6),dp(4),dp(6),dp(4));
     }
 
+    private void renderHdmiButtons() {
+        boolean ready = tv.hdmiDeviceKey() != null;
+        for (TextView tile : hdmiButtons) {
+            // Keep rename and retest accessible even if not connected; clicks explain the reason.
+            tile.setAlpha(ready ? 1f : .55f);
+        }
+    }
+
+    private String hdmiConfirmationKey(String device, int port) {
+        return "hdmi_native_hw15_v1_" + device + "_" + port;
+    }
+
+    private void showHdmiOptions(int port, TextView tile) {
+        new AlertDialog.Builder(this).setTitle(hdmiLabel(port))
+            .setItems(new String[]{"Eingang umbenennen", "Direktwahl erneut testen"},
+                (d, i) -> { if (i == 0) editHdmiLabel(port, tile); else selectHdmi(port, true); })
+            .setNegativeButton("Schließen", null).show();
+    }
+
+    private void selectHdmi(int port, boolean retest) {
+        String device = tv.hdmiDeviceKey();
+        if (device == null) {
+            Toast.makeText(this, "TV verbinden und einschalten; App-Link-Unterstützung erforderlich.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        String key = hdmiConfirmationKey(device, port);
+        if (!retest && connectionOptions.getBoolean(key, false)) {
+            tv.selectTclHdmiInput(port, device);
+            return;
+        }
+        new AlertDialog.Builder(this).setTitle("HDMI " + port + " – Direktwahl testen")
+            .setMessage("Dieser native TCL-Befehl wurde bei einem anderen Modell beobachtet. Öffne vor dem Test einen anderen TV-Eingang oder die Startseite. Bestätige anschließend nur, wenn der Fernseher tatsächlich auf HDMI " + port + " wechselt.")
+            .setNegativeButton("Abbrechen", null)
+            .setPositiveButton("Testen", (d, w) -> {
+                if (!tv.selectTclHdmiInput(port, device)) {
+                    Toast.makeText(this, "Test nicht gestartet. TV-Verbindung prüfen.", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                // A confirmed mapping belongs to this TV and this exact native candidate.
+                // Re-testing invalidates the old confirmation until the user observes success.
+                connectionOptions.edit().remove(key).apply();
+                new AlertDialog.Builder(this).setTitle("HDMI " + port + " erreicht?")
+                    .setMessage("Warte auf das TV-Bild bzw. die Eingangsbezeichnung. Hat der Fernseher tatsächlich auf den gewünschten HDMI-Eingang gewechselt?")
+                    .setNegativeButton("Nein", (dd, ww) ->
+                        Toast.makeText(this, "Nicht bestätigt. Nutze vorerst die TV-Eingangsauswahl.", Toast.LENGTH_LONG).show())
+                    .setNeutralButton("Unklar", null)
+                    .setPositiveButton("Ja", (dd, ww) -> {
+                        if (device.equals(tv.hdmiDeviceKey())) {
+                            connectionOptions.edit().putBoolean(key, true).apply();
+                            Toast.makeText(this, "HDMI " + port + " bestätigt. Künftig genügt Antippen.", Toast.LENGTH_LONG).show();
+                        } else {
+                            Toast.makeText(this, "TV-Verbindung geändert. Test erneut durchführen.", Toast.LENGTH_LONG).show();
+                        }
+                    }).show();
+            }).show();
+    }
+
     private String hdmiLabel(int port) {
         return connectionOptions.getString("hdmi_name_" + port, "HDMI " + port);
     }
@@ -1082,7 +1144,7 @@ public class MainActivity extends ComponentActivity {
             if (value.isEmpty() || value.length()>40) { name.setError("1–40 Zeichen"); return; }
             connectionOptions.edit().putString("hdmi_name_" + port,value).apply();
             tile.setText(value);
-            tile.setContentDescription("HDMI " + port + ": " + value + "; lange drücken zum Umbenennen");
+            tile.setContentDescription("HDMI " + port + ": " + value + "; lange drücken für Optionen");
             dialog.dismiss();
         });
     }
@@ -1237,6 +1299,7 @@ public class MainActivity extends ComponentActivity {
             status.setContentDescription((indicator == TvConnectionIndicator.WAKE_READY
                 ? "Einschaltbereit – Wake-on-LAN eingerichtet" : state.detail) + " – TV-Verbindung öffnen");
         }
+        renderHdmiButtons();
         if (remoteDial != null) remoteDial.setEnabled(ready);
         for (TextView key : tvKeys) {
             key.setEnabled(ready);
@@ -1289,7 +1352,7 @@ public class MainActivity extends ComponentActivity {
         boolean allowed = Build.VERSION.SDK_INT < 37 ||
             checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED;
-        if (tv != null) tv.onForeground(allowed);
+        if (tv != null) { tv.onForeground(allowed); renderHdmiButtons(); }
         if (soundbarModel != null) soundbarModel.onForeground(allowed);
     }
 

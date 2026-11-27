@@ -49,12 +49,12 @@ Einzelne Detailtests (System-Apps ein-/ausblenden, App-Liste manuell aktualisier
 
 | ID | Aufgabe | Zielversion | Priorität | Status | Nachweis / tatsächliche Version |
 | --- | --- | --- | --- | --- | --- |
-| 0.3 | HDMI-Eingänge direkt auswählen | Offen (Patch-Pre-Release vorgeschlagen) | Hoch – Vorschlag vor Phase 1 | In Entwicklung | Nutzer meldet am 27.11.2026: Direkttasten HDMI 1–4 schalten nicht um; allgemeine TV-Eingangsauswahl funktioniert. Getestete App-Version nicht ausdrücklich genannt. Quellcode nutzt Android-Remote-v2-Keycodes für beide Wege. Ursache auf TV-Seite und alternative Direktsteuerung noch nicht nachgewiesen. |
+| 0.3 | HDMI-Eingänge direkt auswählen | 1.1.9 (Pre-Release) | Hoch – vor Neugestaltung und Phase 1 | In Entwicklung | Standard-Keycodes am Gerät erfolglos; allgemeine TV-Eingangsauswahl funktioniert. Nativer Remote-v2-Eingangslink als Testkandidat nach Berichten zu TCL C7K / 65Q7C-UK umgesetzt; lokale Bestätigung je TV und Port. CI, APK und Gerätetest noch ausstehend. |
 
 - Ziel: Einmaliges Antippen eines HDMI-Eingangs wechselt zuverlässig zum richtigen Eingang, ohne die manuelle Navigation im TV-Eingangsmenü. Individuelle HDMI-Namen und allgemeine TV-Eingangsauswahl bleiben erhalten.
 - Zunächst vorhandene T-Cast-Steuerung und mögliche TCL-spezifische lokale Befehle untersuchen. Keine feste Zuordnung ungeprüfter Hardware-IDs, keine blind ausgeführte Menü-Tastenfolge und kein dauerhaftes ADB oder zusätzliche TV-App.
 - Gerätetest aller vier Eingänge, aus verschiedenen Ausgangszuständen, auch mit erhaltenem HDMI-CEC/eARC-Verhalten. Keine Erfolgsmeldung allein aufgrund des Befehlsversands.
-- Reihenfolge: Aufgabe 0.2 bleibt bis zur Abnahme offen; 0.3 als vorrangige Korrektur vor neuen Funktionen vorgeschlagen. Konkrete Umsetzung und Zielversion noch festzulegen.
+- Reihenfolge am 27.11.2026 vom Nutzer bestätigt: HDMI-Direktwahl vor Neugestaltung und Tastatur. Aufgabe 0.2 bleibt bis zur separaten Geräteabnahme offen. Native TCL-Eingangslinks werden über die bestehende Remote-v2-Sitzung getestet, ohne ADB. Erst nach beobachtetem Wechsel wird die Zuordnung je TV und Anschluss gespeichert. Quellen: https://community.home-assistant.io/t/android-tv-hdmi/234411/107 und https://github.com/Linkestis/tcl-google-tv-adb-hdmi-ha .
 
 ## Phase 1 – TV-Fernbedienung vervollständigen (1.2.x)
 
@@ -115,3 +115,5 @@ Keine Änderung an TV-Systemsoftware, keine erfundenen Parameter. Die technische
 - 27.11.2026: Aufgabe 0.2 auf **Implementiert** hochgestuft. v1.1.8 Pre-Release mit vollständiger signierter APK nachgewiesen: [CI-Lauf](https://github.com/sschermer/Sofacockpit/actions/runs/45929486093), [Pre-Release](https://github.com/sschermer/Sofacockpit/releases/tag/sofacockpit-v1.1.8). JVM-Tests, Build, feste Signatur bestanden. Statischen Katalog auch als Neuinstallations-Vorauswahl entfernt. Gerätetest des tatsächlichen Inventars, von Deinstallationen und bestehender Favoritenzuordnung noch offen; daher nicht Getestet oder Abgeschlossen.
 
 - 27.11.2026: Fehlgeschlagene HDMI-Direktwahl am TCL gemeldet; allgemeine Eingangsauswahl funktioniert nach Nutzerbeobachtung. Separate Aufgabe 0.3 aufgenommen, Quellcode geprüft, kein Funktionscode geändert. Aufgabe 0.2 bleibt Implementiert; deren App-Inventar-Abnahme ist separat offen.
+
+- 27.11.2026: Aufgabe 0.3 priorisiert und v1.1.9-Testkandidat implementiert: explizite Bestätigung der nativen HDMI-Eingangslinks je gekoppeltem Gerät und Port, allgemeine Eingangsauswahl und Benennung bleiben unverändert. Automatisierte URI-/Wire-/Grenzwerttests ergänzt; Build und Gerätetest ausstehend. Keine neue Bibliothek oder TV-Software.

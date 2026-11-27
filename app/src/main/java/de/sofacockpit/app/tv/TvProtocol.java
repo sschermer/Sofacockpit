@@ -168,6 +168,17 @@ public final class TvProtocol {
         return bytes(90, string(1, normalizeLaunchLink(link)));
     }
 
+    /**
+     * Narrow native TCL input candidate for recent Android 14 models. Only four
+     * fixed generated URIs; never allow arbitrary content:// in the app-link editor.
+     * Physical port mapping must be confirmed by the user on this particular TV.
+     */
+    static byte[] tclHdmiInput(int port) {
+        if (port < 1 || port > 4) throw new IllegalArgumentException("HDMI 1–4 auswählen.");
+        String uri = "content://android.media.tv/passthrough/com.tcl.tvinput%2F.TvPassThroughService%2FHW" + (14 + port);
+        return bytes(90, string(1, uri));
+    }
+
     /** Explicit diagnostic request routed to the TV's Play Store, not a generic URI fallback. */
     static byte[] playStoreAppLink(String packageName) {
         String prefix = "https://play.google.com/apps/launch?id=";

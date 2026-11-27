@@ -397,6 +397,27 @@ public final class TvRemoteClient implements AutoCloseable {
         catch (IllegalArgumentException ex) { commandDetail(ex.getMessage()); }
     }
 
+    /** Locally scoped key, only for the currently connected and paired TV. */
+    public String hdmiDeviceKey() {
+        if (!canTestAppLaunch() || !paired() || !current.host.equals(lastAddress())) return null;
+        return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
+            TvProtocol.sha256(inventoryDeviceKey().getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+    }
+
+    /** One deliberate native input command, using the existing pinned TLS session. */
+    public boolean selectTclHdmiInput(int port, String expectedDeviceKey) {
+        if (port < 1 || port > 4 || expectedDeviceKey == null ||
+                !expectedDeviceKey.equals(hdmiDeviceKey())) {
+            commandDetail("HDMI-Direktwahl: TV muss verbunden und eingeschaltet sein.");
+            return false;
+        }
+        cancelTclRequest();
+        stopAppLaunchTest("HDMI-Direktwahl; Testbeobachtung beendet.");
+        if (!expectedDeviceKey.equals(hdmiDeviceKey())) return false;
+        return sendCommand(TvProtocol.tclHdmiInput(port), true,
+            "HDMI " + port + " – Direktwahlbefehl gesendet; Wechsel am TV prüfen.", null);
+    }
+
     /** Use only the address of the existing, certificate-pinned foreground session.
      * T-Cast itself is not authenticated like Remote-v2. No discovery or background polling.
      */
@@ -578,16 +599,16 @@ public final class TvRemoteClient implements AutoCloseable {
     private void sendCommand(byte[] message, boolean app, String sentDetail) {
         sendCommand(message, app, sentDetail, null);
     }
-    private void sendCommand(byte[] message, boolean app, String sentDetail, LaunchAttempt attempt) {
+    private boolean sendCommand(byte[] message, boolean app, String sentDetail, LaunchAttempt attempt) {
         Session s = current;
         if (s == null || !s.ready || !state.connected()) {
             if (attempt != null) appLaunchTestNotSent(attempt);
-            commandDetail("TV nicht verbunden. Zuerst verbinden."); return;
+            commandDetail("TV nicht verbunden. Zuerst verbinden."); return false;
         }
         if (app ? !s.apps : !s.keys) {
             if (attempt != null) appLaunchTestNotSent(attempt);
             commandDetail(app ? "TV meldet keine App-Link-Unterstützung." : "TV meldet keine Tastenunterstützung.");
-            return;
+            return false;
         }
         try {
             writers.execute(() -> {
@@ -621,9 +642,11 @@ public final class TvRemoteClient implements AutoCloseable {
                     s.closeSocket();
                 }
             });
+            return true;
         } catch (RejectedExecutionException ex) {
             if (attempt != null) appLaunchTestNotSent(attempt);
             if (!closed && current == s) commandDetail("Zu viele TV-Befehle. Bitte kurz warten.");
+            return false;
         }
     }
     static boolean allowedKey(int key) {
