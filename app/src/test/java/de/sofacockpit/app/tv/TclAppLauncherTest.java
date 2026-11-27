@@ -135,6 +135,57 @@ public class TclAppLauncherTest {
         supplementarySession(true, true, false);
     }
 
+    /** The HTTP read must run after fresh GET/PACKAGEINFO and before the command socket closes. */
+    private void iconSession(boolean supplemental, boolean matching) throws Exception {
+        String pkg = supplemental ? PRIME : "com.netflix.ninja";
+        String url = "http://127.0.0.1:34831/data/user_de/0/com.tcl.ttvs/files/" +
+            (supplemental ? "prime.jpg" : "screenShot/netflix.png");
+        byte[] expected = new byte[]{1,2,3};
+        java.util.concurrent.atomic.AtomicBoolean iconRead = new java.util.concurrent.atomic.AtomicBoolean();
+        ExecutorService server = Executors.newSingleThreadExecutor();
+        try (ServerSocket listener = new ServerSocket(0,1,InetAddress.getByName("127.0.0.1"));
+             TclAppLauncher client = new TclAppLauncher()) {
+            Future<?> remote=server.submit(()->{
+                try(Socket peer=listener.accept()){
+                    peer.setSoTimeout(5000);
+                    DataInputStream in=new DataInputStream(peer.getInputStream());
+                    DataOutputStream out=new DataOutputStream(peer.getOutputStream());
+                    assertTrue(TclAppLauncher.readFrame(in,0).startsWith("159>>"));
+                    TclAppLauncher.writeFrame(out,"159>>1>>version>>software>>model>>mac>>1",0);
+                    assertEquals("223>>GET",TclAppLauncher.readFrame(in,1));
+                    String inventoryUrl=supplemental?"http://127.0.0.1:34831/data/user_de/0/com.tcl.ttvs/files/netflix.png":
+                        (matching?url:url.replace("netflix.png","changed.png"));
+                    TclAppLauncher.writeFrame(out,"223>>GET>>com.netflix.ninja::Netflix::"+inventoryUrl,1);
+                    if(supplemental||!matching){
+                        assertEquals("223>>PACKAGEINFO>>"+pkg,TclAppLauncher.readFrame(in,1));
+                        TclAppLauncher.writeFrame(out,supplemental?PRIME_RESPONSE.replace("http://tv.invalid:34831/icon.jpg",url):
+                            "223>>PACKAGEINFO>>"+pkg+">>",1);
+                    }
+                    assertEquals(-1,in.read());
+                    assertEquals(matching,iconRead.get());
+                }catch(Exception e){throw new AssertionError(e);}
+            });
+            try {
+                byte[] data=client.executeIcon(InetAddress.getByName("127.0.0.1"),listener.getLocalPort(),pkg,url,()->true,
+                    (host,path)->{
+                        assertFalse(remote.isDone());
+                        assertTrue(path.endsWith(supplemental?"prime.jpg":"netflix.png"));
+                        iconRead.set(true);
+                        return expected;
+                    });
+                assertTrue(matching);
+                assertArrayEquals(expected,data);
+            }catch(IOException e){assertFalse(matching);}
+            remote.get(6,TimeUnit.SECONDS);
+        }finally{server.shutdownNow();}
+    }
+
+    @Test public void iconDownloadUsesLiveSessionAndFreshMatchingMetadata() throws Exception {
+        iconSession(false,true);
+        iconSession(true,true);
+        iconSession(false,false);
+    }
+
     @Test public void invalidPackageAndCancellationDoNotConnect() {
         try (TclAppLauncher client = new TclAppLauncher()) {
             assertEquals(TclAppLauncher.Status.FAILED, client.execute(InetAddress.getLoopbackAddress(), "bad>>OPEN", () -> true).status);

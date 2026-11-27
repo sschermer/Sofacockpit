@@ -73,6 +73,19 @@ public final class TvRemoteClient implements AutoCloseable {
         new ArrayBlockingQueue<>(32), new ThreadPoolExecutor.AbortPolicy());
     private final ExecutorService tclWorker = Executors.newSingleThreadExecutor();
     private TclRequest tclRequest;
+    private final java.util.concurrent.atomic.AtomicInteger iconEpoch = new java.util.concurrent.atomic.AtomicInteger();
+    private final java.util.concurrent.atomic.AtomicReference<TclAppLauncher> activeIcon =
+        new java.util.concurrent.atomic.AtomicReference<>();
+
+    @FunctionalInterface public interface IconLoader {
+        byte[] load(String pkg, String url, java.util.function.BooleanSupplier wanted) throws IOException;
+    }
+
+    private void cancelIconSession() {
+        iconEpoch.incrementAndGet();
+        TclAppLauncher loader = activeIcon.get();
+        if (loader != null) loader.close();
+    }
     private static final class TclRequest {
         final TclAppLauncher launcher = new TclAppLauncher();
         final java.util.function.Consumer<TclAppLauncher.Result> done;
@@ -433,6 +446,59 @@ public final class TvRemoteClient implements AutoCloseable {
         return tls==null||tls.isClosed()?null:tls.getInetAddress();
     }
 
+    /** Capture only a current paired foreground session. Called on UI, loader on
+     * the cache worker. T-Cast transactions remain serialized; commands preempt icons. */
+    public IconLoader iconLoader() {
+        InetAddress host = iconPeerAddress();
+        if (host == null) return null;
+        Session session = current;
+        return (pkg, url, wanted) -> {
+            int epoch = iconEpoch.get();
+            java.util.function.BooleanSupplier active = () -> wanted.getAsBoolean()
+                && iconEpoch.get() == epoch && !session.cancelled && session.ready
+                && !Boolean.FALSE.equals(session.reportedPower);
+            Future<byte[]> future;
+            try {
+                future = tclWorker.submit(() -> {
+                    if (!active.getAsBoolean()) throw new CancellationException();
+                    try (TclAppLauncher loader = new TclAppLauncher()) {
+                        activeIcon.set(loader);
+                        ScheduledFuture<?> deadline = null;
+                        try {
+                            if (!active.getAsBoolean()) throw new CancellationException();
+                            deadline = watchdogs.schedule(loader::close, 7, TimeUnit.SECONDS);
+                            try {
+                                byte[] data = loader.executeIcon(host, pkg, url, active);
+                                if (!active.getAsBoolean()) throw new CancellationException();
+                                return data;
+                            } catch (IOException e) {
+                                if (!active.getAsBoolean()) throw new CancellationException();
+                                throw e;
+                            }
+                        } finally {
+                            if (deadline != null) deadline.cancel(false);
+                            activeIcon.compareAndSet(loader, null);
+                        }
+                    }
+                });
+            } catch (RejectedExecutionException e) { throw new CancellationException(); }
+            try {
+                return future.get(16, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                future.cancel(true);
+                Thread.currentThread().interrupt();
+                throw new CancellationException();
+            } catch (TimeoutException e) {
+                future.cancel(true);
+                throw new IOException("Icon-Zeitlimit");
+            } catch (ExecutionException e) {
+                if (e.getCause() instanceof CancellationException) throw new CancellationException();
+                if (e.getCause() instanceof IOException) throw (IOException)e.getCause();
+                throw new IOException("Icon-Abfrage fehlgeschlagen",e.getCause());
+            }
+        };
+    }
+
     public void requestTclApps(java.util.function.Consumer<TclAppLauncher.Result> done) {
         requestTclApps(java.util.Collections.emptyList(), done);
     }
@@ -461,6 +527,7 @@ public final class TvRemoteClient implements AutoCloseable {
             done.accept(new TclAppLauncher.Result(TclAppLauncher.Status.CANCELLED)); return;
         }
         InetAddress host = tls.getInetAddress();
+        cancelIconSession();
         TclRequest request = new TclRequest(done);
         tclRequest = request;
         stopAppLaunchTest("TCL-App-Aufruf; Testbeobachtung beendet.");
@@ -496,6 +563,7 @@ public final class TvRemoteClient implements AutoCloseable {
     }
 
     public void cancelTclRequest() {
+        cancelIconSession();
         TclRequest request = tclRequest;
         if (request == null) return;
         tclRequest = null;

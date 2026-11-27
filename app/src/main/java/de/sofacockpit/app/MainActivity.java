@@ -796,6 +796,7 @@ public class MainActivity extends ComponentActivity {
                     appPresentation=global?appPresentation.withGlobal(modes[index]):
                         appPresentation.withOverride(key,index==0?null:modes[index-1]);
                     connectionOptions.edit().putString(AppPresentation.PREF,appPresentation.toJson().toString()).apply();
+                    appIcons.retryFailures();
                     dialog.dismiss();
                     renderStreamingShortcuts();
                 }catch(IllegalArgumentException e){favoriteError(e.getMessage());}
@@ -808,7 +809,7 @@ public class MainActivity extends ComponentActivity {
         tile.setTag(mode);
         if(mode==AppPresentation.Mode.TEXT||!allowIcon||app==null)return mode;
         appIcons.device(tvAppInventory.device());
-        android.graphics.Bitmap image=appIcons.get(app.packageName,app.iconUrl,tv.iconPeerAddress());
+        android.graphics.Bitmap image=appIcons.get(app.packageName,app.iconUrl,tv.iconPeerAddress(),tv.iconLoader());
         if(image==null)return mode;
         android.graphics.drawable.BitmapDrawable art=new android.graphics.drawable.BitmapDrawable(getResources(),image);
         float scale=Math.min((float)dp(52)/image.getWidth(),(float)dp(mode==AppPresentation.Mode.ICON?40:26)/image.getHeight());

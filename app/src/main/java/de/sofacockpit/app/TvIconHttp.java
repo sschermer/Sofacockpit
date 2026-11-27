@@ -7,13 +7,13 @@ import java.util.Locale;
 
 /** Narrow, read-only HTTP subset for the observed local TCL icon endpoint.
  * No DNS, proxy, redirect, cookies, arbitrary host/path or global cleartext policy change. */
-final class TvIconHttp {
+public final class TvIconHttp {
     static final int PORT=34831;
     static final int MAX_BYTES=512*1024;
     private static final int MAX_HEADERS=16384;
     private static final String BASE="/data/user_de/0/com.tcl.ttvs/files/";
     private TvIconHttp(){}
-    static String requestPath(String url, InetAddress peer) {
+    public static String requestPath(String url, InetAddress peer) {
         if(peer==null||!(peer instanceof Inet4Address)||url==null||url.length()>4096)return null;
         try{
             URI u=new URI(url);
@@ -34,7 +34,7 @@ final class TvIconHttp {
         }catch(IllegalArgumentException|URISyntaxException e){return null;}
     }
 
-    static byte[] fetch(Socket socket,InetAddress peer,String path) throws IOException {
+    public static byte[] fetch(Socket socket,InetAddress peer,String path) throws IOException {
         socket.connect(new InetSocketAddress(peer,PORT),1500);
         socket.setSoTimeout(1800);
         long deadline=System.nanoTime()+5_000_000_000L;
@@ -46,7 +46,9 @@ final class TvIconHttp {
     }
     static byte[] readResponse(InputStream in,long deadline) throws IOException {
         String status=line(in,deadline);
-        if(!status.matches("HTTP/1\\.[01] 200(?: .*)?"))throw new IOException("Unexpected HTTP status");
+        if(!status.matches("HTTP/1\\.[01] 200(?: .*)?"))
+            throw new IOException(status.matches("HTTP/1\\.[01] [0-9]{3}(?: .*)?") ?
+                "HTTP " + status.substring(9,12) : "Ungültiger HTTP-Status");
         int length=-1,headerBytes=status.length();boolean chunked=false;
         for(;;){
             String h=line(in,deadline);headerBytes+=h.length()+2;

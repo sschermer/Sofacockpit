@@ -1,5 +1,6 @@
 package de.sofacockpit.app.tv;
 
+import de.sofacockpit.app.TvIconHttp;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
@@ -185,7 +186,62 @@ public final class TclAppLauncher implements AutoCloseable {
     }
 
     private final Socket socket = new Socket();
-    @Override public void close() { try { socket.close(); } catch (IOException ignored) {} }
+    private Socket iconSocket;
+    @Override public synchronized void close() {
+        try { socket.close(); } catch (IOException ignored) {}
+        if (iconSocket != null) try { iconSocket.close(); } catch (IOException ignored) {}
+    }
+
+    @FunctionalInterface interface IconReader {
+        byte[] read(InetAddress peer, String path) throws IOException;
+    }
+
+    byte[] executeIcon(InetAddress host, String pkg, String url, BooleanSupplier active) throws IOException {
+        return executeIcon(host, PORT, pkg, url, active, (peer, path) -> {
+            try (Socket http = new Socket(Proxy.NO_PROXY)) {
+                synchronized (this) {
+                    if (socket.isClosed() || !active.getAsBoolean()) throw new InterruptedIOException();
+                    iconSocket = http;
+                }
+                try { return TvIconHttp.fetch(http, peer, path); }
+                finally { synchronized (this) { if (iconSocket == http) iconSocket = null; } }
+            }
+        });
+    }
+
+    /** TCL's local file service is available only during an active T-Cast session.
+     * Re-request the actual app metadata, read its matching icon before closing.
+     * No OPEN or other control command, and never use an unconfirmed URL. */
+    byte[] executeIcon(InetAddress host, int port, String pkg, String url, BooleanSupplier active,
+                       IconReader reader) throws IOException {
+        try {
+            String path = TvIconHttp.requestPath(url, host);
+            if (!validPackage(pkg) || path == null) throw new IOException("Ungültiges Icon-Ziel");
+            if (!active.getAsBoolean()) throw new InterruptedIOException();
+            socket.connect(new InetSocketAddress(host, port), 1800);
+            socket.setSoTimeout(3000);
+            DataInputStream in = new DataInputStream(socket.getInputStream());
+            DataOutputStream out = new DataOutputStream(socket.getOutputStream());
+            writeFrame(out, "159>>Sofacockpit>>1>>" + UUID.randomUUID() + ">>1", 0);
+            int mode = algorithm(receive(in, 0, "159>>"));
+            if (!active.getAsBoolean()) throw new InterruptedIOException();
+            writeFrame(out, "223>>GET", mode);
+            App match = null;
+            for (App app : parseApps(receive(in, mode, "223>>GET>>")))
+                if (pkg.equals(app.packageName)) { match = app; break; }
+            if (!active.getAsBoolean()) throw new InterruptedIOException();
+            // PACKAGEINFO generates its own image (including Prime Video).
+            // If the cached URL was obtained by that route, revalidate it likewise.
+            if (match == null || !path.equals(TvIconHttp.requestPath(match.iconUrl, host)))
+                match = queryPackage(in, out, mode, pkg);
+            if (match == null || !path.equals(TvIconHttp.requestPath(match.iconUrl, host)))
+                throw new IOException("Icon-Adresse nicht erneut bestätigt");
+            if (!active.getAsBoolean() || socket.isClosed()) throw new InterruptedIOException();
+            return reader.read(host, path);
+        } catch (GeneralSecurityException e) {
+            throw new IOException("T-Cast-Icon-Protokoll", e);
+        } finally { close(); }
+    }
 
     /** packageName == null requests the inventory only. The owner enforces a whole-session deadline. */
     Result execute(InetAddress host, String packageName, BooleanSupplier active) {

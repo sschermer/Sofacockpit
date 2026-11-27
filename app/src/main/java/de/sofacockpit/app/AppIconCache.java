@@ -1,6 +1,7 @@
 package de.sofacockpit.app;
 
 import android.content.Context;
+import de.sofacockpit.app.tv.TvRemoteClient;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Handler;
@@ -30,7 +31,6 @@ final class AppIconCache implements AutoCloseable {
     private String device="";
     private boolean enabled,closed,refreshPosted;
     private volatile int generation;
-    private Socket activeSocket;
     AppIconCache(Context context,Runnable changed){
         dir=new File(context.getCacheDir(),"tv-app-icons");this.changed=changed;
     }
@@ -41,32 +41,30 @@ final class AppIconCache implements AutoCloseable {
     void pause(){enabled=false;cancelPending();}
     void retryFailures(){failures.clear();}
     private void cancelPending(){
-        synchronized(this){
-            generation++;
-            if(activeSocket!=null)try{activeSocket.close();}catch(IOException ignored){}
-        }
+        generation++;
         worker.getQueue().clear();pending.clear();refreshPosted=false;
     }
     @Override public void close(){closed=true;pause();worker.shutdownNow();memory.evictAll();}
-    Bitmap get(String pkg,String url,InetAddress peer){
+    Bitmap get(String pkg,String url,InetAddress peer,TvRemoteClient.IconLoader loader){
         if(closed||device.isEmpty()||pkg==null||url==null||url.isEmpty())return null;
         String key=hash(device+"\n"+pkg+"\n"+url);
         Bitmap bitmap=memory.get(key);
         if(bitmap!=null)return bitmap;
-        if(!enabled||peer==null||pending.contains(key))return null;
+        if(!enabled||peer==null||loader==null||pending.contains(key))return null;
         String path=TvIconHttp.requestPath(url,peer);
         if(path==null)return null;
         Long failed=failures.get(key);
         if(failed!=null&&SystemClock.elapsedRealtime()-failed<60000)return null;
         int token=generation;
         pending.add(key);
-        try{worker.execute(()->load(key,peer,path,token));}
+        try{worker.execute(()->load(key,pkg,url,loader,token));}
         catch(RejectedExecutionException e){pending.remove(key);}
         return null;
     }
-    private void load(String key,InetAddress peer,String path,int token){
+    private void load(String key,String pkg,String url,TvRemoteClient.IconLoader loader,int token){
         if(token!=generation)return;
         Bitmap bitmap=null;
+        boolean cancelled=false;
         File file=new File(dir,key+".img");
         try{
             byte[] data=read(file);
@@ -74,22 +72,22 @@ final class AppIconCache implements AutoCloseable {
             if(bitmap!=null)file.setLastModified(System.currentTimeMillis());
             else{
                 file.delete();
-                try(Socket socket=new Socket(Proxy.NO_PROXY)){
-                    synchronized(this){
-                        if(token!=generation)return;
-                        activeSocket=socket;
-                    }
-                    try{data=TvIconHttp.fetch(socket,peer,path);}
-                    finally{synchronized(this){if(activeSocket==socket)activeSocket=null;}}
-                }
+                // The HTTP server authorizes the current T-Cast session only.
+                data=loader.load(pkg,url,()->token==generation);
                 bitmap=decode(data);
                 if(bitmap!=null&&token==generation)save(file,data);
             }
-        }catch(IOException|RuntimeException ignored){}
+        }catch(CancellationException ignored){cancelled=true;}
+        catch(IOException|RuntimeException ignored){}
         Bitmap result=bitmap;
+        boolean preempted=cancelled;
         main.post(()->{
             if(token!=generation||closed)return;
             pending.remove(key);
+            if(preempted){
+                // User action wins. Permit another foreground lookup, no failure cooldown.
+                return;
+            }
             if(result==null){
                 if(failures.size()>512)failures.clear();
                 failures.put(key,SystemClock.elapsedRealtime());

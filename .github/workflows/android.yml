@@ -85,12 +85,12 @@ jobs:
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist/Sofacockpit-Lab.apk > "$RUNNER_TEMP/lab-badging.txt"
-          grep -E "^package: name='de.sofacockpit.lab' versionCode='11' versionName='0.1.10' " "$RUNNER_TEMP/lab-badging.txt"
+          grep -E "^package: name='de.sofacockpit.lab' versionCode='12' versionName='0.1.11' " "$RUNNER_TEMP/lab-badging.txt"
           grep -F "application-label:'Sofacockpit Lab'" "$RUNNER_TEMP/lab-badging.txt"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Lab-Android-v0.1.10
+          name: Sofacockpit-Lab-Android-v0.1.11
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -105,10 +105,10 @@ jobs:
             echo "Skipping superseded Lab build."
             exit 0
           fi
-          if gh release view sofacockpit-lab-v0.1.10 >/dev/null 2>&1; then
+          if gh release view sofacockpit-lab-v0.1.11 >/dev/null 2>&1; then
             echo "Lab release already exists; never replace a published version."
             exit 0
           fi
-          gh release create sofacockpit-lab-v0.1.10 dist/Sofacockpit-Lab.apk \
-            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.10" \
-            --prerelease --latest=false --notes "Lab v0.1.10: Original-TV-App-Icons vom lokalen TCL-Endpunkt mit begrenztem Cache und Text-Fallback. Zahnrad > Darstellung der App-Schaltflächen: Nur Icon, Nur Text (Standard), Icon und Text. Lange auf App-Schaltfläche drücken > Darstellung: globale Vererbung oder individuelle Wahl, je App-Ziel gemeinsam in Favoriten, Filmabend und Quellen. Einstellungen werden gesichert; alte Sicherungen bleiben lesbar. Keine externen Logos, keine globale Cleartext-Freigabe. Gerätetests Icon-Abruf, Layout, Vererbung, Sicherung sowie Prime-Erkennung und nativer Start noch offen. Manuelle App-Verwaltung und neuer Zuordnungsdialog folgen separat."
+          gh release create sofacockpit-lab-v0.1.11 dist/Sofacockpit-Lab.apk \
+            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.11" \
+            --prerelease --latest=false --notes "Lab v0.1.11: Korrektur des Icon-Abrufs nach negativem Gerätetest v0.1.10. TCL stellt Icon-Dateien nur bei laufender T-Cast-Sitzung bereit; Icons werden nun während einer kurz geöffneten, serialisierten Sitzung nach erneuter Bestätigung von GET/PACKAGEINFO und passender URL geladen. Keine OPEN-Befehle bei Icon-Abruf. Lokale Caches, URL-/Bildgrößenprüfungen und Text-Fallback unverändert. Steuerbefehle können Icon-Sitzungen abbrechen. Gerätetest erforderlich: TV verbinden, globale Wahl Nur Icon, Favoriten/Filmabend/Quellen sowie App-Starts prüfen."
