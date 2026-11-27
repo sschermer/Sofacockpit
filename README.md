@@ -46,9 +46,9 @@ Unter **Start → Favoriten → Plus → Gespeicherte Favoriten verwalten** werd
 
 [Signierte Lab-APK v0.1.6](https://github.com/sschermer/Sofacockpit/releases/download/sofacockpit-lab-v0.1.6/Sofacockpit-Lab.apk) · [CI erfolgreich](https://github.com/sschermer/Sofacockpit/actions/runs/45954824732). Bekannte Anzeigeabweichung: individuelle Namen werden gespeichert, aber auf Start/Filmabend noch nicht angezeigt; L21.1 in Entwicklung.
 
-### Lab v0.1.7 – persönliche Favoritennamen (Build ausstehend)
+### Lab v0.1.7 – persönliche Favoritennamen (Pre-Release veröffentlicht; Namenskorrektur bestätigt)
 
-Die Favoritenleiste auf Start und die Auswahl unter Filmabend verwenden nach einer Umbenennung den gespeicherten persönlichen Namen; bei nicht favorisierten Apps bleibt der gemeldete Name sichtbar. Die Verwaltung speichert weiterhin Name und Link. TV → Quellen zeigt unverändert den Originalbestand. Paketzuordnung, Startlogik, Sprachsynonyme und Sicherungsformat bleiben erhalten. Regressionstest ergänzt; Geräteabnahme offen.
+Die Favoritenleiste auf Start und die Auswahl unter Filmabend verwenden nach einer Umbenennung den gespeicherten persönlichen Namen; bei nicht favorisierten Apps bleibt der gemeldete Name sichtbar. Die Verwaltung speichert weiterhin Name und Link. TV → Quellen zeigt unverändert den Originalbestand. Paketzuordnung, Startlogik, Sprachsynonyme und Sicherungsformat bleiben erhalten. Regressionstest und CI erfolgreich. Nutzer bestätigt die Namenskorrektur; vollständige Geräteabnahme L21 weiterhin offen. [Signierte Lab-APK v0.1.7](https://github.com/sschermer/Sofacockpit/releases/download/sofacockpit-lab-v0.1.7/Sofacockpit-Lab.apk).
 
 **Designstudie 01 (27.11.2026):** Ein eigenständiger [klickbarer HTML-Prototyp](https://github.com/sschermer/Sofacockpit/blob/experiment/intuitive-ui/docs/prototype/Sofacockpit_Prototyp.html) liegt ausschließlich im Experimentierzweig. Datei herunterladen und im Browser öffnen. Alle Geräteaktionen und Zustände sind simuliert; die wichtigsten Abläufe sind im Browser getestet. Keine Änderung der Android-App oder des stabilen Releases. Details und offene technische Voraussetzungen in Aufgabe 0.4 der Roadmap.
 
