@@ -34,11 +34,24 @@ final class TvAppInventory {
             if (includeSystem || !app.systemLike()) result.add(app);
         return result;
     }
+    enum FavoriteStatus {
+        AVAILABLE("Installierte TV-App zugeordnet"),
+        UNCONFIRMED("TV-App-Bestand nicht aktuell bestätigt"),
+        NOT_REPORTED("Zugeordnete App aktuell nicht gemeldet"),
+        UNMAPPED("Individueller App-/Inhaltslink · keine eindeutige TV-App-Zuordnung");
+        final String label;
+        FavoriteStatus(String label) { this.label = label; }
+    }
+    FavoriteStatus favoriteStatus(StreamingShortcuts.Entry entry) {
+        String pkg = TclAppLauncher.packageForLink(entry.link);
+        if (pkg == null) return FavoriteStatus.UNMAPPED;
+        if (!verified) return FavoriteStatus.UNCONFIRMED;
+        return find(pkg) != null ? FavoriteStatus.AVAILABLE : FavoriteStatus.NOT_REPORTED;
+    }
     List<StreamingShortcuts.Entry> activeFavorites(List<StreamingShortcuts.Entry> saved) {
         List<StreamingShortcuts.Entry> active = new ArrayList<>();
-        if (!verified) return active;
         for (StreamingShortcuts.Entry entry : saved) {
-            if (find(TclAppLauncher.packageForLink(entry.link)) != null) active.add(entry);
+            if (favoriteStatus(entry) == FavoriteStatus.AVAILABLE) active.add(entry);
         }
         return active;
     }

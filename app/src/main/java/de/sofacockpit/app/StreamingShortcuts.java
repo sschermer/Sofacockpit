@@ -49,9 +49,48 @@ final class StreamingShortcuts {
         return a != null && a.equals(b);
     }
     boolean contains(Entry candidate) {
-        for (Entry entry : entries) if (sameTarget(entry, candidate)) return true;
-        return false;
+        return conflict(entries, null, candidate) != null;
     }
+    /** Check the exact proposed entry; skip only the entry being deliberately replaced. */
+    static Entry conflict(List<Entry> saved, Entry old, Entry candidate) {
+        for (Entry entry : saved)
+            if (entry != old && sameTarget(entry, candidate)) return entry;
+        return null;
+    }
+    static List<Entry> updated(List<Entry> saved, Entry old, Entry replacement) {
+        List<Entry> next = new ArrayList<>(saved);
+        int index = old == null ? -1 : next.indexOf(old);
+        if (old != null && index < 0) throw new IllegalArgumentException("Favorit wurde geändert. Verwaltung erneut öffnen.");
+        Entry duplicate = conflict(saved, old, replacement);
+        if (duplicate != null)
+            throw new IllegalArgumentException("Name oder Ziel bereits vorhanden: " + duplicate.name +
+                ". Unter Gespeicherte Favoriten verwalten korrigieren.");
+        if (old == null) {
+            if (next.size() >= 50) throw new IllegalArgumentException("Maximal 50 Schnellwahltasten.");
+            next.add(replacement);
+        } else next.set(index, replacement);
+        return next;
+    }
+    static List<Entry> moved(List<Entry> saved, Entry entry, int direction) {
+        List<Entry> next = new ArrayList<>(saved);
+        int index = next.indexOf(entry);
+        if (index < 0 || (direction != -1 && direction != 1) ||
+            index + direction < 0 || index + direction >= next.size())
+            throw new IllegalArgumentException("Favoritenreihenfolge wurde geändert. Verwaltung erneut öffnen.");
+        java.util.Collections.swap(next, index, index + direction);
+        return next;
+    }
+    static List<Entry> removed(List<Entry> saved, Entry entry) {
+        List<Entry> next = new ArrayList<>(saved);
+        if (!next.remove(entry)) throw new IllegalArgumentException("Favorit nicht mehr vorhanden.");
+        return next;
+    }
+    /** A reassign action replaces the target deliberately, retaining label and position. */
+    static Entry forInstalledApp(Entry old, TclAppLauncher.App app) {
+        return new Entry(old == null ? app.name : old.name, app.packageName);
+    }
+    /** All stored favorites, not only the launchable subset; in saved order. */
+    List<Entry> savedFavorites() { return new ArrayList<>(entries); }
     JSONArray exportEntries() {
         JSONArray array = new JSONArray();
         for (Entry entry : entries) {
