@@ -12,6 +12,8 @@ Das stabile [Release v1.1.10](https://github.com/sschermer/Sofacockpit/releases/
 
 **Lab-Entwicklungsplan:** [ROADMAP_LAB.md](https://github.com/sschermer/Sofacockpit/blob/experiment/intuitive-ui/ROADMAP_LAB.md) – nächste Aufgaben: Sprachsteuerung, Tastatur, Touchpad/Mauszeiger. Weitere offene Funktionen und Gerätetests sind dort aufgeführt. Die Haupt-Roadmap bleibt verbindlich für die reguläre App.
 
+**Lab v0.1.1 (Kandidat):** Erste lokale Sprachsteuerung mit deutscher Befehlsbibliothek und Text-Fallback im Experimentierzweig. [CI-Lauf 45940069614](https://github.com/sschermer/Sofacockpit/actions/runs/45940069614); Build/Veröffentlichung noch nicht verifiziert. Haupt-App unverändert. Details siehe [Lab-Roadmap](https://github.com/sschermer/Sofacockpit/blob/experiment/intuitive-ui/ROADMAP_LAB.md).
+
 **Designstudie 01 (27.11.2026):** Ein eigenständiger [klickbarer HTML-Prototyp](https://github.com/sschermer/Sofacockpit/blob/experiment/intuitive-ui/docs/prototype/Sofacockpit_Prototyp.html) liegt ausschließlich im Experimentierzweig. Datei herunterladen und im Browser öffnen. Alle Geräteaktionen und Zustände sind simuliert; die wichtigsten Abläufe sind im Browser getestet. Keine Änderung der Android-App oder des stabilen Releases. Details und offene technische Voraussetzungen in Aufgabe 0.4 der Roadmap.
 
 **Designstudie 02:** [Überarbeiteter HTML-Prototyp](https://github.com/sschermer/Sofacockpit/blob/experiment/intuitive-ui/docs/prototype/Sofacockpit_Prototyp_02.html) mit größtmöglichem Steuerkreis und kompakter DRC-/Night-Time-Zeile. Konzept für haptische Orientierung in Aufgabe 0.4 dokumentiert; Android-Code und stabile APK bleiben unverändert.
