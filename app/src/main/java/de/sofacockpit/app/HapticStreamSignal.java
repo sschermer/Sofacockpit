@@ -30,6 +30,12 @@ final class HapticStreamSignal {
         }else if(latched)desired=0;
         else desired=maximum*approach(position);
     }
+    /** Spatial production field. Its geometry supplies a one-time snap;
+     * ongoing gain updates use the existing phase-continuous carrier. */
+    synchronized void field(float gain,boolean snap){
+        desired=maximum*(Float.isFinite(gain)?Math.max(0,Math.min(PLATEAU_GAIN,gain)):0);
+        if(snap){desired=0;snapRemaining=SNAP_FRAMES;}
+    }
     synchronized boolean latched(){return latched;}
     synchronized void render(float[] out,boolean direct,boolean allowSignal){
         int channels=direct?3:2;

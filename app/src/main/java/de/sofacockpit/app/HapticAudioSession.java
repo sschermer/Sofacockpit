@@ -30,10 +30,14 @@ final class HapticAudioSession implements Runnable {
     private final HapticStreamSignal signal;
     private final Consumer<String> status;
     private final Runnable finished;
-    private final long deadline=SystemClock.elapsedRealtime()+LIMIT_MS;
-    private volatile boolean cancelled;
+    private final long deadline;
+    private volatile boolean cancelled,formatRejected;
 
     HapticAudioSession(Context context,Mode mode,int strength,Consumer<String> status,Runnable finished){
+        this(context,mode,strength,LIMIT_MS,status,finished);
+    }
+    HapticAudioSession(Context context,Mode mode,int strength,long budgetMs,Consumer<String> status,Runnable finished){
+        deadline=SystemClock.elapsedRealtime()+Math.max(0,Math.min(LIMIT_MS,budgetMs));
         audio=context.getSystemService(AudioManager.class);
         this.mode=mode;signal=new HapticStreamSignal(strength);
         this.status=status;this.finished=finished;
@@ -47,6 +51,8 @@ final class HapticAudioSession implements Runnable {
         catch(RuntimeException|LinkageError e){return false;}
     }
     void position(float fraction){signal.position(fraction);}
+    void field(float gain,boolean snap){signal.field(gain,snap);}
+    boolean formatRejected(){return formatRejected;}
     boolean latched(){return signal.latched();}
     void cancel(){cancelled=true;}
     private boolean running(){return !cancelled&&SystemClock.elapsedRealtime()<deadline;}
@@ -117,7 +123,11 @@ final class HapticAudioSession implements Runnable {
             catch(RuntimeException|LinkageError first){
                 if(!running())return;
                 encoding=AudioFormat.ENCODING_PCM_FLOAT;
-                track=open(direct,encoding,speaker);
+                try{track=open(direct,encoding,speaker);}
+                catch(RuntimeException|LinkageError second){
+                    if(direct&&!cancelled)formatRejected=true;
+                    throw second;
+                }
             }
             if(!running())return;
             if(!direct)generator=new Generator(track.getAudioSessionId());

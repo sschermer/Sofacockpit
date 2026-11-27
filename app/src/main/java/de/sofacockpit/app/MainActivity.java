@@ -73,7 +73,8 @@ public class MainActivity extends ComponentActivity {
     private final List<TextView> labNightButtons=new ArrayList<>(), labDrcButtons=new ArrayList<>();
     private final List<View> labHapticKeys=new ArrayList<>();
     private TextView labMode, labProfile;
-    private final LabHapticTracker labHaptics=new LabHapticTracker();
+    private final RemoteMagnetField remoteMagnet=new RemoteMagnetField();
+    private RemoteHaptics remoteHaptics;
     private HapticLabDialog hapticLab;
     private boolean labTracking,labMoved,labMulti;
     private int labDownZone=-1;
@@ -121,6 +122,7 @@ public class MainActivity extends ComponentActivity {
         tv = new TvRemoteClient(this, this::renderTvState);
         shortcuts = new StreamingShortcuts(this);
         connectionOptions = getSharedPreferences("connection_options", MODE_PRIVATE);
+        remoteHaptics=new RemoteHaptics(this,this::remoteHapticsAllowed);
         hdmiImages=new HdmiImages(connectionOptions);
         pendingHdmiPort=savedInstanceState==null?0:savedInstanceState.getInt("pending_hdmi_port",0);
         hdmiPicker=registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),this::importHdmiImage);
@@ -190,6 +192,7 @@ public class MainActivity extends ComponentActivity {
 
     /** Rebuild presentation only; keep the Activity, TV client and sound ViewModel. */
     private void buildShell(int categoryToShow, int pageToShow) {
+        endRemoteExploration();
         if (quickMenu != null) quickMenu.dismiss();
         if (shell != null) {
             // Detach first so disposed ComposeViews cannot recreate their compositions in layout.
@@ -476,7 +479,7 @@ public class MainActivity extends ComponentActivity {
                 case 7:
                     new AlertDialog.Builder(this).setTitle("Haptische Orientierung")
                         .setSingleChoiceItems(new String[]{"Ein","Aus"},connectionOptions.getBoolean("lab_haptics",true)?0:1,
-                            (d,i)->{connectionOptions.edit().putBoolean("lab_haptics",i==0).apply();d.dismiss();})
+                            (d,i)->{endRemoteExploration();connectionOptions.edit().putBoolean("lab_haptics",i==0).apply();d.dismiss();})
                         .setNegativeButton("Schließen",null).show();return true;
                 case 8: showAppPresentation(null,null); return true;
                 case 9: showIconDiagnosis(); return true;
@@ -648,7 +651,7 @@ public class MainActivity extends ComponentActivity {
 
     private void selectScreen(int category, int page) {
         if (!CockpitNavigation.valid(category, page)) return;
-        labTracking=false;labHaptics.reset();
+        endRemoteExploration();
         navigation.select(category, page);
         for (int i = 0; i < categoryViews.length; i++) {
             if (i != category && categoryPagers[i] != null) categoryPagers[i].finishGesture();
@@ -661,6 +664,7 @@ public class MainActivity extends ComponentActivity {
 
     private void onPageChanged(int category, int page) {
         if (navigation.category() != category) return;
+        if(navigation.page()!=page)endRemoteExploration();
         navigation.select(category, page);
         renderNavigation();
         if (category == CockpitNavigation.TV && page == 1) refreshTvAppInventory();
@@ -1985,37 +1989,81 @@ public class MainActivity extends ComponentActivity {
         return LabHapticTracker.NONE;
     }
 
+    private boolean remoteHapticsAllowed(){
+        try{
+            return labTracking&&!labMulti&&hasWindowFocus()&&labExploreEnabled()&&
+                android.provider.Settings.System.getInt(getContentResolver(),
+                    android.provider.Settings.System.HAPTIC_FEEDBACK_ENABLED,1)!=0;
+        }catch(RuntimeException|LinkageError e){return false;}
+    }
+    private void stopRemoteSignal(){
+        remoteMagnet.reset();
+        if(remoteHaptics!=null)remoteHaptics.stop();
+    }
+    private void endRemoteExploration(){labTracking=false;stopRemoteSignal();}
+
+    private void updateRemoteMagnet(float x,float y){
+        if(remoteHaptics==null)return;
+        try{
+            if(!remoteHaptics.canUpdate())return;
+            // Work only in the TV remote's scroll viewport, not on the tabs
+            // or a partly hidden control. Actual hit testing is untouched.
+            android.view.ViewParent parent=remoteDial.getParent();
+            android.view.ViewParent viewport=parent==null?null:parent.getParent();
+            int[] xy=new int[2];
+            if(!(viewport instanceof View)||!labContains((View)viewport,x,y,xy)){
+                remoteMagnet.reset();
+                remoteHaptics.update(new RemoteMagnetField.Reading(0,false,RemoteMagnetField.NONE));
+                return;
+            }
+            List<RemoteMagnetField.Target> targets=new ArrayList<>(5+labHapticKeys.size());
+            android.graphics.Rect visible=new android.graphics.Rect();
+            if(remoteDial.isEnabled()&&remoteDial.isShown()&&remoteDial.getLocalVisibleRect(visible)){
+                remoteDial.getLocationOnScreen(xy);
+                float side=Math.min(remoteDial.getWidth(),remoteDial.getHeight());
+                float cx=xy[0]+remoteDial.getWidth()*.5f,cy=xy[1]+remoteDial.getHeight()*.5f;
+                for(RemoteMagnetField.Target target:RemoteMagnetField.dial(cx,cy,side*.5f,theme.theme.centerRatio,dp(28))){
+                    if(target.visibleWithin(xy[0]+visible.left,xy[1]+visible.top,
+                        xy[0]+visible.right,xy[1]+visible.bottom))targets.add(target);
+                }
+            }
+            for(int i=0;i<labHapticKeys.size();i++){
+                View key=labHapticKeys.get(i);
+                if(!key.isEnabled()||!key.isShown()||!key.getLocalVisibleRect(visible))continue;
+                key.getLocationOnScreen(xy);
+                RemoteMagnetField.Target target=RemoteMagnetField.Target.rectangle(
+                    LabHapticTracker.FIRST_BUTTON+i,xy[0],xy[1],xy[0]+key.getWidth(),xy[1]+key.getHeight(),dp(8),dp(28));
+                if(target.visibleWithin(xy[0]+visible.left,xy[1]+visible.top,
+                    xy[0]+visible.right,xy[1]+visible.bottom))targets.add(target);
+            }
+            remoteHaptics.update(remoteMagnet.sample(x,y,targets,dp(4)));
+        }catch(RuntimeException|LinkageError e){
+            // Haptics is optional and must never intercept ordinary controls.
+            stopRemoteSignal();
+        }
+    }
+
     @Override public boolean dispatchTouchEvent(MotionEvent e){
         int action=e.getActionMasked();
         float x=e.getRawX(),y=e.getRawY();
         if(action==MotionEvent.ACTION_DOWN){
+            stopRemoteSignal();
             labTracking=labExploreEnabled();labMoved=false;labMulti=false;
             if(labTracking){
                 labDownX=x;labDownY=y;labDownZone=labZone(x,y);
-                labHaptics.begin(labDownZone,x,y,e.getEventTime());
+                if(remoteHaptics!=null)remoteHaptics.begin();
             }
         }else if(labTracking){
-            if(!labExploreEnabled()){labTracking=false;labHaptics.reset();}
-            else if(action==MotionEvent.ACTION_POINTER_DOWN){labMulti=true;labHaptics.reset();}
+            if(!labExploreEnabled()){endRemoteExploration();}
+            else if(action==MotionEvent.ACTION_POINTER_DOWN){labMulti=true;stopRemoteSignal();}
             else if(action==MotionEvent.ACTION_MOVE&&!labMulti){
                 if(Math.hypot(x-labDownX,y-labDownY)>android.view.ViewConfiguration.get(this).getScaledTouchSlop())
                     labMoved=true;
-                if(labMoved){
-                    LabHapticTracker.Cue cue=labHaptics.move(labZone(x,y),x,y,e.getEventTime(),dp(6));
-                    int feedback=-1;
-                    switch(cue){
-                        case CIRCLE:feedback=android.view.HapticFeedbackConstants.LONG_PRESS;break;
-                        case DIRECTION:feedback=android.view.HapticFeedbackConstants.CLOCK_TICK;break;
-                        case CENTER:feedback=android.view.HapticFeedbackConstants.CONTEXT_CLICK;break;
-                        case BUTTON:feedback=android.view.HapticFeedbackConstants.KEYBOARD_TAP;break;
-                        default:break;
-                    }
-                    if(feedback>=0)shell.performHapticFeedback(feedback);
-                }
+                if(labMoved)updateRemoteMagnet(x,y);
             }
             if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){
                 boolean cancel=action==MotionEvent.ACTION_UP&&labDownZone>=0&&(labMoved||labMulti);
-                labTracking=false;labHaptics.reset();
+                endRemoteExploration();
                 if(cancel){
                     MotionEvent aborted=MotionEvent.obtain(e);
                     aborted.setAction(MotionEvent.ACTION_CANCEL);
@@ -2028,6 +2076,7 @@ public class MainActivity extends ComponentActivity {
 
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        if(!hasFocus)endRemoteExploration();
         if (hasFocus && updates != null) updates.onWindowFocus();
         if (hasFocus && soundbarModel != null &&
             getLifecycle().getCurrentState().isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
@@ -2039,6 +2088,7 @@ public class MainActivity extends ComponentActivity {
     }
 
     @Override protected void onPause() {
+        endRemoteExploration();
         if(hapticLab!=null)hapticLab.close();
         wasTvInventoryConnected=false;
         tvAppInventory.stale();
@@ -2063,6 +2113,8 @@ public class MainActivity extends ComponentActivity {
     }
 
     @Override protected void onDestroy() {
+        endRemoteExploration();
+        if(remoteHaptics!=null){remoteHaptics.close();remoteHaptics=null;}
         if(hapticLab!=null)hapticLab.close();
         hdmiWorker.shutdownNow();
         if (appIcons != null) appIcons.close();
