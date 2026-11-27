@@ -8,11 +8,11 @@ android {
     compileSdk 36
 
     defaultConfig {
-        applicationId "de.sofacockpit.app"
+        applicationId "de.sofacockpit.lab"
         minSdk 26
         targetSdk 36
-        versionCode 29
-        versionName "1.1.10"
+        versionCode 1
+        versionName "0.1.0"
     }
     buildFeatures { compose true }
     compileOptions {

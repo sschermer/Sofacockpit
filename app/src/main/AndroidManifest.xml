@@ -5,13 +5,13 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application
         android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
-        android:label="Sofacockpit"
+        android:icon="@drawable/lab_launcher"
+        android:roundIcon="@drawable/lab_launcher"
+        android:label="Sofacockpit Lab"
         android:usesCleartextTraffic="false"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <provider
-            android:name=".update.UpdateFileProvider"
+            android:name="de.sofacockpit.app.update.UpdateFileProvider"
             android:authorities="${applicationId}.updates"
             android:exported="false"
             android:grantUriPermissions="true">
@@ -19,8 +19,8 @@
                 android:resource="@xml/update_paths" />
         </provider>
         <activity
-            android:name=".MainActivity"
-            android:label="Sofacockpit"
+            android:name="de.sofacockpit.app.MainActivity"
+            android:label="Sofacockpit Lab"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

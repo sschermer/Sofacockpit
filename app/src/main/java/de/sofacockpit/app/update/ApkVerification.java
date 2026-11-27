@@ -11,7 +11,7 @@ import java.security.MessageDigest;
 
 /** Android reads/verifies the archive signer; the system installer verifies again. */
 final class ApkVerification {
-    static final String PACKAGE = "de.sofacockpit.app";
+    static final String PACKAGE = "de.sofacockpit.lab";
     static final String CERT_SHA256 = "6bc8b1ff2f2f2bc6db4c56d4ffa53c080c05f48089dab7b66ccb7d74fa54ac83";
     private ApkVerification(){}
     private static int flags(){

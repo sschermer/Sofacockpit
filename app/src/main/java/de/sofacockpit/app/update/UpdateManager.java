@@ -72,7 +72,7 @@ public final class UpdateManager implements AutoCloseable {
 
     public String versionName(){return installedName;}
     private boolean automatic(){return prefs.getBoolean(AUTO,true);}
-    private boolean all(){return prefs.getBoolean(ALL,true);}
+    private boolean all(){return true;}
     private String skipKey(boolean all){return all?"skipped_all":"skipped_stable";}
     public void startAutomaticCheck(){if(automatic())check(false);}
     /** Pull-to-refresh respects the existing automatic-check preference and skipped releases. */
@@ -188,17 +188,9 @@ public final class UpdateManager implements AutoCloseable {
         auto.setChecked(automatic());
         auto.setOnCheckedChangeListener((button,checked)->prefs.edit().putBoolean(AUTO,checked).apply());
         b.addView(auto);
-        b.addView(text("Update-Kanal",14,t.muted,true));
-        RadioGroup group=new RadioGroup(activity);group.setOrientation(RadioGroup.VERTICAL);
-        RadioButton stable=new RadioButton(activity),both=new RadioButton(activity);
-        stable.setId(View.generateViewId());both.setId(View.generateViewId());
-        stable.setText("Nur stabile Releases");both.setText("Releases und Pre-Releases");
-        for(RadioButton radio:new RadioButton[]{stable,both}){
-            radio.setTextColor(t.text);radio.setButtonTintList(ColorStateList.valueOf(t.accent));group.addView(radio);
-        }
-        group.check(all()?both.getId():stable.getId());
-        group.setOnCheckedChangeListener((g,id)->prefs.edit().putBoolean(ALL,id==both.getId()).apply());
-        b.addView(group);
+        b.addView(text("Update-Kanal: Sofacockpit Lab",14,t.muted,true));
+        b.addView(text("Nur Lab-Versionen werden angeboten. Die Original-App hat ihren eigenen Update-Kanal.",13,t.muted,false));
+
         b.addView(text("Pre-Releases sind Entwicklungsversionen und können Fehler enthalten. "+
             "Die manuelle Prüfung bietet auch übersprungene Versionen wieder an.",13,t.muted,false));
         b.addView(text("Bei der Prüfung wird ausschließlich das öffentliche Sofacockpit-Repository auf GitHub abgefragt. "+
