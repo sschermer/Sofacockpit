@@ -36,12 +36,14 @@ Einzelne Detailtests (System-Apps ein-/ausblenden, App-Liste manuell aktualisier
 
 **Ziel / Abnahmekriterien:**
 
-- Bei einem kompatiblen verbundenen TCL die Übersicht unter TV → Quellen aus dem tatsächlich gelieferten App-Bestand aufbauen; den alten Dienstekatalog nicht mit installierten Apps vermischen.
-- Installierte startfähige Apps unabhängig von der Favoritenauswahl anzeigen, anhand des Paketnamens eindeutig zuordnen und den tatsächlichen Namen verwenden. System-Apps sinnvoll filtern und bei Bedarf einblendbar lassen; nicht jede installierte Android-Komponente ist startfähig.
-- Aktualisierung bei Bedarf; prüfen, ob ein einmaliger Abruf beim Öffnen der Quellen-Seite und bei TV-Wechsel sinnvoll ist. Kein Hintergrund-Polling, keine zusätzliche TV-App, kein ADB.
-- Favoriten, Reihenfolge und gespeicherte Deep Links erhalten; nicht installierte oder nicht überprüfbare Favoriten nicht als tatsächlich installierte Apps darstellen oder stillschweigend löschen.
-- Bei fehlender Verbindung, fehlender T-Cast-Unterstützung oder Abruffehler Status transparent anzeigen; bisheriger manueller App-Link-Weg kann separat gekennzeichnet verfügbar bleiben.
-- Tests: App-Übersicht mit TV-App-Liste vergleichen, neue App installieren bzw. deinstallieren und aktualisieren, Favoriten markieren/zuordnen, App-Start und Verbindungswechsel prüfen. Rückmeldungen bei leerer Liste, Fehlern und nicht kompatiblen TVs testen.
+- Verbindliche Datenrichtung: **TV (tatsächlich abgefragtes App-Inventar) → TV → Quellen (App-Übersicht) → Startbildschirm (aus dieser Übersicht ausgewählte Favoriten).** Die beiden Oberflächen verwenden denselben TV-bezogenen App-Bestand. Keine zweite unabhängig gepflegte App-Liste.
+- Die App-Übersicht unter TV → Quellen ausschließlich aus dem tatsächlich vom verbundenen TV gelieferten Bestand (`223>>GET`) aufbauen. Kein statischer Dienstekatalog, keine Ergänzung durch gespeicherte Favoriten oder manuell eingegebene Links, auch nicht als Ersatz bei fehlgeschlagener Abfrage.
+- Startfähige Apps unabhängig von der Favoritenauswahl anzeigen, anhand des Paketnamens eindeutig zuordnen und den tatsächlichen Namen verwenden. System-Apps standardmäßig ausblenden, bei Bedarf einblendbar lassen. Die Abfrage kann nur Apps anzeigen, die der TV über diese Schnittstelle meldet; nicht jede Android-Komponente ist startfähig.
+- Der Startbildschirm zeigt eine konfigurierbare Teilmenge dieser TV-App-Übersicht. Favoriten über TV → Quellen auswählen bzw. über Plus dieselbe Auswahl verwenden. Favoritenmarkierung, Reihenfolge und gegebenenfalls benutzerdefinierte Bezeichnungen als lokale Metadaten erhalten, nicht als zusätzliche Quelle für die App-Übersicht. Bereits gespeicherte Zuordnungen und Deep Links kompatibel halten; nicht mehr gemeldete Apps nicht als verfügbare Favoriten darstellen oder gespeicherte Einstellungen ungefragt löschen.
+- App-Bestand beim Öffnen der Quellen-Seite bzw. bei Bedarf aktualisieren, bei TV-Wechsel eindeutig trennen. Änderungen der bestätigten Liste auf beiden Oberflächen berücksichtigen. Kein Hintergrund-Polling, keine zusätzliche TV-App, kein ADB.
+- Bei fehlender Verbindung, fehlender T-Cast-Unterstützung oder Abruffehler Status transparent anzeigen. Einen eventuell weiter angezeigten zuletzt bestätigten Bestand eindeutig als nicht aktuell verifiziert kennzeichnen. Kein Rückfall auf den eingebauten Dienstekatalog in Quellen oder Start-Favoritenauswahl.
+- HDMI-Eingänge und deren vorhandene Steuerung sind nicht Gegenstand dieser App-Inventar-Korrektur.
+- Tests: App-Übersicht mit gemeldetem TV-App-Bestand vergleichen, Installation/Deinstallation und Aktualisierung prüfen, Favoriten ausschließlich aus der Übersicht auswählen, konsistente Darstellung beider Oberflächen, App-Start und TV-Wechsel prüfen. Leere Liste, Abruffehler und nicht kompatible TVs berücksichtigen.
 
 ## Phase 1 – TV-Fernbedienung vervollständigen (1.2.x)
 
@@ -94,3 +96,5 @@ Keine Änderung an TV-Systemsoftware, keine erfundenen Parameter. Die technische
 - 27.11.2026: Roadmap angelegt. Alle 15 identifizierten Funktionslücken in elf Entwicklungsaufgaben zusammengefasst; Reihenfolge vom Nutzer bestätigt. Nativer TCL-App-Start, App-Liste, Neuzuordnung und neuer Favorit in v1.1.6 am Gerät bestätigt. Stabile Veröffentlichung als v1.1.7 vorgesehen.
 
 - 27.11.2026: Stabile v1.1.7 (versionCode 26) und erfolgreicher CI-Lauf verifiziert. Aufgabe 0.1 abgeschlossen. Neue Nutzeranforderung mit hoher Priorität als 0.2 vor Phase 1 aufgenommen; Ursache für die falsche App-Übersicht im Quellcode bestätigt. Alle bestehenden Aufgaben und IDs bleiben erhalten.
+
+- 27.11.2026: Aufgabe 0.2 präzisiert: Der abgefragte TV-App-Bestand ist die einzige Datenquelle für die App-Übersicht und die daraus ausgewählten Start-Favoriten. Kein statischer Katalog oder manuell ergänzter Dienst als angeblich installierte App. Keine funktionale Codeänderung; Priorität und Status unverändert.
