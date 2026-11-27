@@ -30,6 +30,22 @@ public class MagnetFieldTest {
         assertEquals(HUM,f.sample(147,100,200,200,1030).kind);
         assertEquals(SNAP,f.sample(139,100,200,200,1040).kind);
     }
+    @Test public void stationaryJitterDoesNotModulateLevel(){
+        MagnetField f=new MagnetField();f.begin(0);
+        MagnetField.Reading first=f.sample(150,100,200,200,1);
+        assertEquals(HUM,first.kind);
+        assertEquals(first.percent,f.sample(150.6f,100,200,200,100).percent);
+        assertEquals(first.percent,f.sample(149.4f,100,200,200,200).percent);
+        assertTrue(f.sample(146,100,200,200,300).percent>first.percent);
+    }
+    @Test public void outerBoundaryDoesNotChatter(){
+        MagnetField f=new MagnetField();f.begin(0);
+        assertEquals(QUIET,f.sample(191.5f,100,200,200,1).kind);
+        assertEquals(HUM,f.sample(189,100,200,200,2).kind);
+        assertEquals(HUM,f.sample(191.5f,100,200,200,3).kind);
+        assertEquals(QUIET,f.sample(192.1f,100,200,200,4).kind);
+        assertEquals(QUIET,f.sample(191.5f,100,200,200,5).kind);
+    }
     @Test public void directTouchAndFiveSecondDeadline(){
         MagnetField f=new MagnetField();f.begin(100);
         assertEquals(SNAP,f.sample(100,100,200,200,100).kind);

@@ -37,7 +37,7 @@ final class HapticLabPatterns {
         TEXTURES("Texturen","Links glatt, Mitte fein geriffelt, rechts grob geriffelt. Langsam und schnell streichen."),
         DETENTS("Rastleiste","Von links nach rechts: einzelne mechanisch wirkende Rastpunkte."),
         RAMP("Stärkerampe","Von links nach rechts: zehn ansteigende Stärkestufen bis zur gewählten Maximalstärke."),
-        MAGNET("Magnetismus","Von außen zur OK-Taste streichen: stärkeres Dauersignal im Annäherungsring, kräftiges Einrasten und anschließend Ruhe. Zum erneuten Einrasten deutlich aus der Taste herausstreichen.");
+        MAGNET("Magnetismus","Von außen zur OK-Taste streichen: bei ruhendem Finger gleichmäßige Dauervibration, beim Annähern zunehmend stärker. Beim Einrasten kurzer kräftiger Impuls, danach Ruhe. Zum erneuten Einrasten deutlich aus der Taste herausstreichen.");
         final String label,description;
         Surface(String label,String description){this.label=label;this.description=description;}
     }

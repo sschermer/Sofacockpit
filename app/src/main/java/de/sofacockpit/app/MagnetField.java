@@ -16,9 +16,15 @@ final class MagnetField {
         }
     }
     private boolean active,latched;
+    // Radial dead band filters the tiny touch-coordinate changes that are
+    // common when the finger rests on a capacitive screen.
+    static final double DISTANCE_DEADBAND_DP=1.25;
+    private double lastHumDistance=Double.NaN;
+    private int lastHumPercent;
     private long started;
-    void begin(long now){started=now;active=true;latched=false;}
-    void stop(){active=false;latched=false;}
+    void begin(long now){started=now;active=true;latched=false;resetHum();}
+    void stop(){active=false;latched=false;resetHum();}
+    private void resetHum(){lastHumDistance=Double.NaN;lastHumPercent=0;}
     long remaining(long now){
         if(!active||now<started)return 0;
         return Math.max(0,MAX_GESTURE_MS-(now-started));
@@ -34,7 +40,7 @@ final class MagnetField {
         if(remaining(now)==0){stop();return quiet(false);}
         if(!Float.isFinite(x)||!Float.isFinite(y)||!Float.isFinite(width)||!Float.isFinite(height)||
             width<=0||height<=0||x<0||x>=width||y<0||y>=height){
-            latched=false;return quiet(false);
+            latched=false;resetHum();return quiet(false);
         }
         float inner=targetRadius(width,height),outer=haloRadius(width,height);
         double distance=Math.hypot(x-width/2f,y-height/2f);
@@ -45,10 +51,18 @@ final class MagnetField {
             latched=false;
         }
         if(distance<=inner){
-            latched=true;return new Reading(Kind.SNAP,100,true);
+            latched=true;resetHum();return new Reading(Kind.SNAP,100,true);
         }
-        int percent=proximity(distance,inner,outer);
-        return percent==0?quiet(false):new Reading(Kind.HUM,percent,false);
+        // Slight hysteresis at the halo boundary prevents starting and
+        // stopping the motor repeatedly when a stationary finger straddles it.
+        if(distance>=outer||(Double.isNaN(lastHumDistance)&&distance>outer-DISTANCE_DEADBAND_DP)){
+            resetHum();return quiet(false);
+        }
+        if(!Double.isNaN(lastHumDistance)&&Math.abs(distance-lastHumDistance)<DISTANCE_DEADBAND_DP)
+            return new Reading(Kind.HUM,lastHumPercent,false);
+        lastHumDistance=distance;
+        lastHumPercent=proximity(distance,inner,outer);
+        return new Reading(Kind.HUM,lastHumPercent,false);
     }
     private static Reading quiet(boolean latched){return new Reading(Kind.QUIET,0,latched);}
 }

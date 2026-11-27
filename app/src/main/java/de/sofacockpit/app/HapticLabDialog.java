@@ -39,11 +39,8 @@ final class HapticLabDialog implements AutoCloseable {
     private HapticLabPatterns.Surface surface=HapticLabPatterns.Surface.MAGNET;
     private long lastStart=-1000;
     private long busyUntil=0;
-    // Finite segments rather than an unbounded repeating vibration. Update
-    // amplitude at most every 45 ms; refresh unchanged segments before expiry.
-    private static final long MAGNET_TICK=45,MAGNET_SEGMENT=180,MAGNET_REFRESH=120;
-    private long magnetLast=-1000,magnetUntil=0,magnetSnapUntil=0;
-    private int magnetAmplitude=0;
+    // One bounded vibration for a stationary finger; no periodic restart.
+    private final MagnetOutput magnetOutput=new MagnetOutput();
 
     HapticLabDialog(Activity activity,int bg,int panel,int text,int muted,int accent){
         this.activity=activity;this.bg=bg;this.panel=panel;this.text=text;this.muted=muted;this.accent=accent;
@@ -160,7 +157,7 @@ final class HapticLabDialog implements AutoCloseable {
             r.addView(button("Verlauf",()->playEnvelope(0,100)),new LinearLayout.LayoutParams(0,dp(48),1));
             body.addView(r);
         }else body.addView(label("Android meldet keine Hüllkurvenunterstützung. Die Amplitudenmuster oben bleiben verfügbar.",13,muted));
-        body.addView(label("100 % = maximaler angeforderter API-Wert; Android-Einstellungen und Motor begrenzen die reale Stärke. Bei ausgeschalteter Systemhaptik bleibt der Test stumm. Relief, Texturen und Rastleiste geben Bewegungsimpulse ab; Magnetismus bleibt im Annäherungsring auch bei ruhendem Finger spürbar. Alle Testflächen enden nach 5 Sekunden pro Berührung; danach erneut ansetzen.",12,muted));
+        body.addView(label("100 % = maximaler angeforderter API-Wert; Android-Einstellungen und Motor begrenzen die reale Stärke. Bei ausgeschalteter Systemhaptik bleibt der Test stumm. Relief, Texturen und Rastleiste geben Bewegungsimpulse ab; Magnetismus: eine gleichbleibende Vibration bei ruhendem Finger; Änderung nur bei merklichem Abstandswandel. Alle Testflächen enden nach 5 Sekunden pro Berührung; danach erneut ansetzen.",12,muted));
         Button stop=button("Vibration stoppen",this::stop);
         outer.addView(stop,new LinearLayout.LayoutParams(-1,dp(48)));
         d.setContentView(outer);
@@ -175,7 +172,7 @@ final class HapticLabDialog implements AutoCloseable {
 
     private String surfaceDescription(){
         return surface.description+(surface==HapticLabPatterns.Surface.MAGNET&&!amplitude?
-            "\nOhne Amplitudenregelung: dichter werdende Einzelpulse statt veränderlicher Dauerstärke.":"");
+            "\nOhne Amplitudenregelung: gleichmäßige Vibration mit System-Standardstärke; Abstandsregelung nicht verfügbar.":"");
     }
     private void chooseSurface(HapticLabPatterns.Surface option){
         stop();surface=option;description.setText(surfaceDescription());pad.invalidate();
@@ -234,60 +231,32 @@ final class HapticLabDialog implements AutoCloseable {
                 .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).build());
         }
     }
-    private void clearMagnetOutput(){
-        magnetAmplitude=0;magnetLast=-1000;magnetUntil=0;magnetSnapUntil=0;
-    }
-    /** Snap bypasses ordinary cue debounce. It replaces the hum rather than
-     * waiting behind a still running vibration. No output can outlive the
-     * touch budget by more than OS scheduling/cancellation latency. */
+    /** No timer-driven restart while the requested level is steady. The tick
+     * only checks touch safety and delivers a pending change after rate limiting. */
     private void playMagnet(MagnetField.Reading reading,long now,long remaining){
         if(remaining<=0||!available()){stop();return;}
         try{
-            if(reading.kind==MagnetField.Kind.SNAP){
-                motor.cancel();
-                clearMagnetOutput();
-                long duration=Math.min(42,remaining);
-                int value=amplitude?Math.max(1,Math.round(255f*strength/100f)):VibrationEffect.DEFAULT_AMPLITUDE;
-                vibrate(VibrationEffect.createOneShot(duration,value));
-                magnetSnapUntil=now+duration;
-                magnetUntil=magnetSnapUntil;
-                magnetLast=now;
-                report("Eingerastet · "+strength+" % · danach Ruhe");
-                return;
+            MagnetOutput.Plan plan=magnetOutput.update(reading,strength,amplitude,now,remaining);
+            switch(plan.kind){
+                case NONE:return;
+                case STOP:
+                    motor.cancel();report("Außerhalb des Annäherungsrings");return;
+                case SNAP:
+                    motor.cancel();
+                    vibrate(VibrationEffect.createOneShot(plan.duration,plan.amplitude));
+                    report("Eingerastet · "+strength+" % · danach Ruhe");return;
+                case HUM:
+                    // Avoid explicit cancel between nonzero amplitude levels.
+                    // One finite effect covers the remainder of the touch.
+                    VibrationEffect effect=plan.hasRamp()?
+                        VibrationEffect.createWaveform(plan.times,plan.amplitudes,-1):
+                        VibrationEffect.createOneShot(plan.duration,plan.amplitude);
+                    vibrate(effect);
+                    report(amplitude?"Annäherung · "+Math.round(plan.amplitude*100f/255f)+" % · Dauervibration":
+                        "Annäherung · konstante Systemstärke");
+                    return;
             }
-            // Allow the snap to finish even when the next sample is silent.
-            if(now<magnetSnapUntil)return;
-            if(reading.kind==MagnetField.Kind.QUIET){
-                if(magnetAmplitude!=0||magnetUntil>now){
-                    motor.cancel();clearMagnetOutput();
-                }
-                return;
-            }
-            int percent=Math.max(1,Math.round(strength*reading.percent/100f));
-            if(amplitude){
-                int value=Math.max(1,Math.round(255f*percent/100f));
-                if(now-magnetLast<MAGNET_TICK)return;
-                if(magnetAmplitude!=0&&Math.abs(value-magnetAmplitude)<5&&
-                    now-magnetLast<MAGNET_REFRESH&&now<magnetUntil)return;
-                long duration=Math.min(MAGNET_SEGMENT,remaining);
-                // A new finite one-shot replaces the preceding segment; do not
-                // explicitly cancel between hum segments, to minimize gaps.
-                vibrate(VibrationEffect.createOneShot(duration,value));
-                magnetAmplitude=value;magnetUntil=now+duration;magnetLast=now;
-                report("Annäherung · "+percent+" %");
-            }else{
-                // A motor without amplitude control cannot produce a graded
-                // sustained hum. Vary pulse density instead.
-                long interval=240-Math.round(1.85f*reading.percent);
-                if(now-magnetLast<interval)return;
-                long duration=Math.min(32,remaining);
-                vibrate(VibrationEffect.createOneShot(duration,VibrationEffect.DEFAULT_AMPLITUDE));
-                magnetAmplitude=-1;magnetUntil=now+duration;magnetLast=now;
-                report("Annäherung · Pulsabstand "+interval+" ms");
-            }
-        }catch(RuntimeException e){
-            stop();report("Magneteffekt konnte nicht gestartet werden");
-        }
+        }catch(RuntimeException e){stop();report("Magneteffekt konnte nicht gestartet werden");}
     }
     private void play(HapticLabPatterns.Cue cue,int scale,boolean motion){
         if(!available())return;
@@ -354,7 +323,7 @@ final class HapticLabDialog implements AutoCloseable {
     private void stop(){
         if(pad!=null)pad.reset();
         if(hasMotor)try{motor.cancel();}catch(RuntimeException ignored){}
-        busyUntil=0;clearMagnetOutput();
+        busyUntil=0;magnetOutput.reset();
     }
     @Override public void close(){
         stop();Dialog d=dialog;if(d!=null)d.dismiss();
@@ -387,7 +356,7 @@ final class HapticLabDialog implements AutoCloseable {
         }
         private void tickMagnet(){
             updateMagnet();
-            if(down&&surface==HapticLabPatterns.Surface.MAGNET)postDelayed(magnetTick,MAGNET_TICK);
+            if(down&&surface==HapticLabPatterns.Surface.MAGNET)postDelayed(magnetTick,MagnetOutput.TICK_MS);
         }
         @Override public boolean onTouchEvent(MotionEvent event){
             int action=event.getActionMasked();
