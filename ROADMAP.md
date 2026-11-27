@@ -30,7 +30,7 @@ Einzelne Detailtests (System-Apps ein-/ausblenden, App-Liste manuell aktualisier
 
 | ID | Aufgabe | Zielversion | Priorität | Status | Nachweis / tatsächliche Version |
 | --- | --- | --- | --- | --- | --- |
-| 0.2 | TV → Quellen: tatsächlichen TV-App-Bestand anzeigen | 1.1.8 (Pre-Release) | Hoch – vor Tastatur | In Entwicklung | Code für gemeinsames, TV-bezogenes T-Cast-Inventar, Quellen-/Favoritenansicht und Regressionstests eingecheckt; CI- und Geräteprüfung noch ausstehend. Finale Einstufung nach verifiziertem Build. |
+| 0.2 | TV → Quellen: tatsächlichen TV-App-Bestand anzeigen | 1.1.8 (Pre-Release) | Hoch – vor Tastatur | Implementiert | v1.1.8, versionCode 27: JVM-Tests, Release-Build und feste APK-Signaturprüfung erfolgreich; Pre-Release mit Sofacockpit.apk (14.744.512 Bytes) veröffentlicht. Gerätetest und stabile Freigabe ausstehend. |
 
 **Ursache:** `MainActivity.renderSourcesApps()` verwendet gespeicherte Favoriten und den statischen 15-Dienste-Katalog aus `StreamingShortcuts.CATALOG`, nicht den per T-Cast abgerufenen App-Bestand. Der bereits funktionierende Live-Abruf (`223>>GET`) wird bisher für den Plus-/Zuordnungsdialog und die Paketprüfung beim Start eingesetzt. Der Plus-Dialog blendet vorhandene Favoriten und standardmäßig wahrscheinliche System-Apps aus.
 
@@ -89,7 +89,7 @@ Keine Änderung an TV-Systemsoftware, keine erfundenen Parameter. Die technische
 
 ## Nächste Aufgabe
 
-**0.2 – TV-App-Übersicht korrigieren (hohe Priorität).** Umsetzung v1.1.8 im Repository; CI, Signatur, APK-Veröffentlichung sowie Gerätetest prüfen. Erst danach Aufgabe 1 – Tastatur.
+**0.2 – TV-App-Übersicht korrigieren (hohe Priorität).** v1.1.8 ist als Pre-Release mit bestandenen automatisierten Tests, Build, Signaturprüfung und APK verfügbar. Jetzt am TCL testen, insbesondere Bestandswechsel und Favoriten. Erst nach Gerätebestätigung und stabiler Veröffentlichung als abgeschlossen einstufen; danach Aufgabe 1 – Tastatur.
 
 ## Änderungsverlauf
 
@@ -100,3 +100,5 @@ Keine Änderung an TV-Systemsoftware, keine erfundenen Parameter. Die technische
 - 27.11.2026: Aufgabe 0.2 präzisiert: Der abgefragte TV-App-Bestand ist die einzige Datenquelle für die App-Übersicht und die daraus ausgewählten Start-Favoriten. Kein statischer Katalog oder manuell ergänzter Dienst als angeblich installierte App. Keine funktionale Codeänderung; Priorität und Status unverändert.
 
 - 27.11.2026: Aufgabe 0.2 umgesetzt (Code): gemeinsames gerätebezogenes T-Cast-Inventar ohne Persistenz, Quellen und aktive Favoriten daraus abgeleitet, System-App-Filter, Aktualisierung beim Öffnen und manuell; gespeicherte Zuordnungen bleiben erhalten. Unit-Tests ergänzt; v1.1.8 Pre-Release/CI zur Prüfung vorbereitet. **Keine Gerätetestbestätigung; Status bis zum CI-Nachweis In Entwicklung.**
+
+- 27.11.2026: Aufgabe 0.2 auf **Implementiert** hochgestuft. v1.1.8 Pre-Release mit vollständiger signierter APK nachgewiesen: [CI-Lauf](https://github.com/sschermer/Sofacockpit/actions/runs/45929486093), [Pre-Release](https://github.com/sschermer/Sofacockpit/releases/tag/sofacockpit-v1.1.8). JVM-Tests, Build, feste Signatur bestanden. Statischen Katalog auch als Neuinstallations-Vorauswahl entfernt. Gerätetest des tatsächlichen Inventars, von Deinstallationen und bestehender Favoritenzuordnung noch offen; daher nicht Getestet oder Abgeschlossen.
