@@ -188,6 +188,10 @@ public final class TclAppLauncher implements AutoCloseable {
     @Override public void close() { try { socket.close(); } catch (IOException ignored) {} }
 
     /** packageName == null requests the inventory only. The owner enforces a whole-session deadline. */
+    Result execute(InetAddress host, String packageName, BooleanSupplier active) {
+        return execute(host, PORT, packageName, Collections.emptyList(), active);
+    }
+
     Result execute(InetAddress host, String packageName, Collection<String> candidates, BooleanSupplier active) {
         return execute(host, PORT, packageName, candidates, active);
     }
