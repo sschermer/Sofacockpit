@@ -55,6 +55,7 @@ public final class TclAppLauncher implements AutoCloseable {
             String pkg = link.substring(MARKET.length());
             return validPackage(pkg) ? pkg : null;
         }
+        if (validPackage(link)) return link;
         switch (link) {
             case "netflix://": return "com.netflix.ninja";
             case "https://www.youtube.com": return "com.google.android.youtube.tv";
