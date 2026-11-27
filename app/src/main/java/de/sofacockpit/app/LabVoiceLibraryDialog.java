@@ -1,6 +1,8 @@
 package de.sofacockpit.app;
 
 import android.app.AlertDialog;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
@@ -98,7 +100,7 @@ final class LabVoiceLibraryDialog implements AutoCloseable {
         VoiceCommands.Command command=live==null?selected:live;
         LinearLayout content=body();
         text(content,live==null?"Ziel derzeit nicht verfügbar. Gespeicherte Synonyme werden nicht ausgeführt. Einträge können gelöscht werden.":
-            "Eigene Formulierungen ergänzen die fest hinterlegten Standardbefehle.");
+            "Eigene Formulierungen ergänzen die Standardbefehle. Kurze Namen erhalten passende Satzvarianten; vollständige Sätze bleiben exakt.");
         List<String> standard=library.standardPhrases(command);
         if(!standard.isEmpty()){
             final TextView[] standardText=new TextView[1];
@@ -115,8 +117,14 @@ final class LabVoiceLibraryDialog implements AutoCloseable {
         text(content,"Eigene Synonyme");
         List<VoiceAliases.Entry> own=forCommand(entries,command);
         if(own.isEmpty())text(content,"Noch keine eigenen Formulierungen.");
-        for(VoiceAliases.Entry e:own)
+        for(VoiceAliases.Entry e:own){
             button(content,e.text+(live==null?"  · Löschen":"  · Bearbeiten"),()->edit(command,e));
+            if(live!=null){
+                List<String> variants=VoicePhrases.variants(e.kind,e.target,e.text);
+                if(variants.size()>1)text(content,"Auch erkannt: "+String.join(" · ",variants.subList(1,Math.min(4,variants.size())))+
+                    (variants.size()>4?" … ("+variants.size()+" Formulierungen)":""));
+            }
+        }
         if(live!=null)button(content,"+ Synonym hinzufügen",()->edit(command,null));
         ScrollView scroll=new ScrollView(activity);scroll.addView(content);
         present(new AlertDialog.Builder(activity).setTitle(command.label).setView(scroll)
@@ -131,13 +139,31 @@ final class LabVoiceLibraryDialog implements AutoCloseable {
         }
         LinearLayout content=body();
         text(content,"Zuordnung: "+command.label);
-        text(content,"Gib eine vollständige eigene Formulierung ein, die du künftig sprechen möchtest.");
+        text(content,"Gib einen kurzen Zielnamen oder einen vollständigen eigenen Satz ein. Die Vorschau zeigt, welche Formulierungen daraus entstehen.");
         EditText input=new EditText(activity);input.setSingleLine(true);input.setSaveEnabled(false);
         input.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(VoiceAliases.MAX_TEXT)});
-        input.setHint("z. B. Schlafenszeit");if(previous!=null)input.setText(previous.text);
+        input.setHint("z. B. Basketball");if(previous!=null)input.setText(previous.text);
         content.addView(input,new LinearLayout.LayoutParams(-1,dp(56)));
+        TextView preview=text(content,"");
+        Runnable showPatterns=()->{
+            String value=input.getText().toString();
+            List<String> variants=VoicePhrases.variants(command.kind,command.target,value);
+            if(variants.isEmpty()){preview.setText("Vorschau: noch keine Formulierung.");return;}
+            try{
+                VoiceAliases.change(base.get(),store.read(),previous,command,value);
+                preview.setText("Erkannte Formulierungen ("+variants.size()+")\n"+String.join("\n",variants)+
+                    "\n\nAusführung weiterhin erst nach Bestätigung im Sprachdialog.");
+            }catch(RuntimeException ex){preview.setText("Noch nicht speicherbar: "+error(ex));}
+        };
+        input.addTextChangedListener(new TextWatcher(){
+            public void beforeTextChanged(CharSequence s,int start,int count,int after){}
+            public void onTextChanged(CharSequence s,int start,int before,int count){showPatterns.run();}
+            public void afterTextChanged(Editable s){}
+        });
+        showPatterns.run();
+        ScrollView scroll=new ScrollView(activity);scroll.addView(content);
         AlertDialog.Builder b=new AlertDialog.Builder(activity)
-            .setTitle(previous==null?"Synonym hinzufügen":"Synonym bearbeiten").setView(content)
+            .setTitle(previous==null?"Synonym hinzufügen":"Synonym bearbeiten").setView(scroll)
             .setNegativeButton("Abbrechen",(d,w)->showCommand(command))
             .setPositiveButton("Speichern",null);
         if(previous!=null)b.setNeutralButton("Löschen",(d,w)->confirmDelete(command,previous));

@@ -71,7 +71,7 @@ final class LabVoiceDialog implements AutoCloseable {
         LinearLayout body=new LinearLayout(activity);body.setOrientation(LinearLayout.VERTICAL);
         body.setPadding(dp(20),dp(8),dp(20),dp(8));
         TextView info=new TextView(activity);
-        info.setText("Sprich einen kurzen Befehl oder gib ihn ein. Prüfe die Vorschau und bestätige mit Ausführen. Erkennung nur auf dem Smartphone.");
+        info.setText("Sprich einen Befehl oder gib ihn ein. Eigene kurze Zielnamen funktionieren auch in passenden Sätzen. Prüfe die Vorschau und bestätige mit Ausführen. Erkennung nur auf dem Smartphone.");
         body.addView(info);
         microphone=new Button(activity);microphone.setText("Sprechen");
         microphone.setMinimumHeight(dp(48));microphone.setAllCaps(false);
@@ -94,7 +94,7 @@ final class LabVoiceDialog implements AutoCloseable {
         editLibrary.setOnClickListener(v->{if(!visible())return;stop();dialog.dismiss();openLibrary.run();});
         body.addView(editLibrary,new LinearLayout.LayoutParams(-1,dp(48)));
         TextView examples=new TextView(activity);
-        examples.setText("Beispiele\nLauter · Leiser · Stumm · Ton an\nStarte Netflix · HDMI zwei · PS5 spielen\nNight Time an · DRC aus\nKlangprofil Kino · Klangmodus Cinema\nFernseher aus · Soundbar an\nZurück · Home · OK · Wiedergabe umschalten\n\nApp-, HDMI-, Profil- und Klangmodusnamen werden aus der aktuellen Konfiguration übernommen. Bei TV-Befehlen gelten die vorhandenen Verbindungs- und Statusprüfungen.");
+        examples.setText("Beispiele\nLauter · Leiser · Stumm · Ton an\nMach Netflix an · HDMI zwei · Ich möchte PS5 spielen\nNight Time an · DRC aus\nKlangprofil Kino · Klangmodus Cinema\nFernseher aus · Soundbar an\nZurück · Home · OK · Wiedergabe umschalten\n\nApp-, HDMI-, Profil- und Klangmodusnamen werden aus der aktuellen Konfiguration übernommen. Bei TV-Befehlen gelten die vorhandenen Verbindungs- und Statusprüfungen.");
         body.addView(examples);
         ScrollView scroll=new ScrollView(activity);scroll.setFillViewport(true);scroll.addView(body);
         body.setFocusableInTouchMode(true);body.requestFocus();
