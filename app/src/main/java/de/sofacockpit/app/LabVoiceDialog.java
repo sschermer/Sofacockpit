@@ -48,6 +48,7 @@ final class LabVoiceDialog implements AutoCloseable {
     private boolean listening,closed,permissionPending;
     private int generation;
     private VoiceCommands.Command previewed;
+    private VoiceDispatch dispatch;
     private final Runnable timeout=()->{
         if(listening){stop();status("Zeitlimit erreicht. Erneut versuchen oder Text eingeben.");}
     };
@@ -73,7 +74,10 @@ final class LabVoiceDialog implements AutoCloseable {
         });
     }
     private boolean visible(){return !closed && !activity.isFinishing() && !activity.isDestroyed() && dialog!=null && dialog.isShowing();}
-    private int dp(int n){return Math.round(n*activity.getResources().getDisplayMetrics().density);}
+    private boolean foreground(){
+        return visible() && activity.getLifecycle().getCurrentState().isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) &&
+            dialog.getWindow()!=null && dialog.getWindow().getDecorView().hasWindowFocus();
+    }
     private boolean available(){
         if(Build.VERSION.SDK_INT<31)return false;
         try{return SpeechRecognizer.isOnDeviceRecognitionAvailable(activity);}
@@ -81,9 +85,10 @@ final class LabVoiceDialog implements AutoCloseable {
     }
     void show(){
         if(closed||visible())return;
+        dispatch=new VoiceDispatch();
         ui=new LabVoiceUi(activity,theme.get());
         LinearLayout body=ui.root();
-        ui.header(body,"Stimme","Lokale Spracherkennung",null,()->{if(dialog!=null)dialog.dismiss();});
+        ui.header(body,"Stimme","Eindeutige Sprachbefehle direkt ausführen",null,()->{if(dialog!=null)dialog.dismiss();});
         LinearLayout capture=ui.panel();
         microphone=ui.button("Sprechen",true,()->{
             if(listening){stop();status("Aufnahme abgebrochen.");}else requestMicrophone();
@@ -118,7 +123,7 @@ final class LabVoiceDialog implements AutoCloseable {
         dialog=created;
         created.setOnDismissListener(v->{
             if(dialog!=created)return;
-            stop();dialog=null;input=null;status=null;preview=null;microphone=null;executeButton=null;previewed=null;ui=null;
+            stop();dialog=null;input=null;status=null;preview=null;microphone=null;executeButton=null;previewed=null;ui=null;dispatch=null;
         });
         created.show();ui.configure(created,false,body);body.requestFocus();
         input.addTextChangedListener(new TextWatcher(){
@@ -135,20 +140,21 @@ final class LabVoiceDialog implements AutoCloseable {
         VoiceCommands.Match match=library.get().resolve(input.getText().toString());
         previewed=match.command;
         preview.setText(match.command==null?match.message:"Befehl: "+match.command.label);
-        boolean canExecute=!listening&&match.command!=null;
+        boolean canExecute=!listening&&match.command!=null&&dispatch!=null&&!dispatch.claimed();
         executeButton.setEnabled(canExecute);executeButton.setAlpha(canExecute?1f:.45f);
     }
     private void confirm(){
-        if(!visible()||listening||previewed==null)return;
-        // Re-resolve against the live inventory; do not execute stale or changed aliases.
+        if(!foreground()||listening||previewed==null||dispatch==null||dispatch.claimed())return;
+        // Manual text submission and final local speech share the same live target checks.
         VoiceCommands.Match latest=library.get().resolve(input.getText().toString());
-        if(!previewed.equals(latest.command)||!previewed.label.equals(latest.command.label)){
+        VoiceCommands.Command command=dispatch.claim(previewed,latest);
+        if(command==null){
             renderPreview();status("Befehlszuordnung geändert. Bitte erneut prüfen.");return;
         }
-        VoiceCommands.Command command=latest.command;
+        // Claim before dismissing/dispatching, so reentrant or duplicate callbacks cannot repeat it.
         dialog.dismiss();
         String message=execute.apply(command);
-        if(message!=null&&!message.isEmpty())Toast.makeText(activity,message,Toast.LENGTH_LONG).show();
+        if(message!=null&&!message.isEmpty())Toast.makeText(activity,"Erkannt: "+command.label+"\n"+message,Toast.LENGTH_LONG).show();
     }
     private void status(String message){if(visible())status.setText(message);}
     private void requestMicrophone(){
@@ -192,9 +198,16 @@ final class LabVoiceDialog implements AutoCloseable {
                     if(!current())return;
                     ArrayList<String> results=b==null?null:b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     stop();
-                    if(results==null||results.isEmpty()){status("Kein Befehl erkannt.");return;}
-                    input.setText(results.get(0));input.setSelection(input.length());
-                    status("Erkannt – bitte Vorschau prüfen.");
+                    if(!foreground()){status("Aufnahme beendet. Bei Bedarf erneut sprechen.");return;}
+                    String transcript=results==null||results.isEmpty()?null:results.get(0);
+                    if(!VoiceDispatch.acceptableTranscript(transcript)){
+                        status("Kein gültiger vollständiger Befehl erkannt. Erneut sprechen oder Text eingeben.");return;
+                    }
+                    input.setText(transcript);input.setSelection(input.length());
+                    // Only a completed, deliberately started recording can submit automatically.
+                    // TextWatcher and partial recognition never send a device command.
+                    if(previewed!=null)confirm();
+                    else status("Keine eindeutige Zuordnung. Erneut sprechen oder Text eingeben.");
                 }
                 public void onPartialResults(Bundle b){}
                 public void onEvent(int type,Bundle b){}

@@ -85,12 +85,12 @@ jobs:
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist/Sofacockpit-Lab.apk > "$RUNNER_TEMP/lab-badging.txt"
-          grep -E "^package: name='de.sofacockpit.lab' versionCode='5' versionName='0.1.4' " "$RUNNER_TEMP/lab-badging.txt"
+          grep -E "^package: name='de.sofacockpit.lab' versionCode='6' versionName='0.1.5' " "$RUNNER_TEMP/lab-badging.txt"
           grep -F "application-label:'Sofacockpit Lab'" "$RUNNER_TEMP/lab-badging.txt"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Lab-Android-v0.1.4
+          name: Sofacockpit-Lab-Android-v0.1.5
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -105,10 +105,10 @@ jobs:
             echo "Skipping superseded Lab build."
             exit 0
           fi
-          if gh release view sofacockpit-lab-v0.1.4 >/dev/null 2>&1; then
+          if gh release view sofacockpit-lab-v0.1.5 >/dev/null 2>&1; then
             echo "Lab release already exists; never replace a published version."
             exit 0
           fi
-          gh release create sofacockpit-lab-v0.1.4 dist/Sofacockpit-Lab.apk \
-            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.4" \
-            --prerelease --latest=false --notes "Lab v0.1.4: kurzer Tipp auf Stimme startet bei vorhandener lokaler Spracherkennung und Mikrofonfreigabe sofort die Aufnahme. Langer Druck öffnet ausschließlich die Sprachbibliothek. Bibliothek als eigener Vollbildbereich im gewählten Sofacockpit-Theme: Suchfeld, Befehlsgruppen, Filter Nur eigene, Synonymübersicht, Detailansichten, Editor und vollständige Varianten-Vorschau. Nicht verfügbare Ziele separat sichtbar, bestehende Synonyme und Standardbefehle unverändert. Kompakter Sprachdialog im gleichen Theme mit Aufnahmezustand, Texteingabe und Ausführen-Bestätigung. Beim ersten Berechtigungsdialog kann ein erneuter Tipp nötig sein. Keine Änderung der Sprachinterpretation, keine zusätzliche Berechtigung oder Cloud. Gesprochene Rückfragen und KI noch nicht enthalten. Gerätetest offen."
+          gh release create sofacockpit-lab-v0.1.5 dist/Sofacockpit-Lab.apk \
+            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.5" \
+            --prerelease --latest=false --notes "Lab v0.1.5: eindeutige vollständige lokal erkannte Sprachbefehle werden nach bewusstem Sprachstart sofort einmalig ausgeführt, ohne zusätzlichen Tipp auf Ausführen. Manuelle Texteingabe weiterhin mit Bestätigung. Unbekannte, negierte, mehrdeutige, zu lange, geänderte oder nicht verfügbare Zuordnungen werden nicht automatisch ausgeführt. Kein automatischer Versand aus Teilresultaten, nach Abbruch, Timeout oder im Hintergrund; bestehende Geräteprüfungen und erforderliche erstmalige HDMI-Konfigurationsauswahl bleiben erhalten. Keine neue Berechtigung, Cloud oder KI. Gerätetest der direkten Ausführung offen."
