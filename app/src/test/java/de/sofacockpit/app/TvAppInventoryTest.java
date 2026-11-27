@@ -58,6 +58,22 @@ public class TvAppInventoryTest {
         assertTrue(inventory.hasSnapshot());
     }
 
+    @Test public void favoritesRemainOrderedAndAreNotDeletedWhenMissing() {
+        TvAppInventory inventory = new TvAppInventory();
+        inventory.device("tv");
+        StreamingShortcuts.Entry dyn = new StreamingShortcuts.Entry("Dyn", "sport.dyn.app.android.prod");
+        StreamingShortcuts.Entry netflix = new StreamingShortcuts.Entry("Mein Netflix", "netflix://");
+        java.util.List<StreamingShortcuts.Entry> saved = Arrays.asList(dyn, netflix);
+        inventory.received(Collections.singletonList(app("Netflix", "com.netflix.ninja")));
+        assertEquals(Collections.singletonList(netflix), inventory.activeFavorites(saved));
+        assertEquals(2, saved.size());
+        inventory.received(Arrays.asList(app("Dyn", "sport.dyn.app.android.prod"),
+            app("Netflix", "com.netflix.ninja")));
+        assertEquals(saved, inventory.activeFavorites(saved));
+        inventory.stale();
+        assertTrue(inventory.activeFavorites(saved).isEmpty());
+    }
+
     @Test public void savedNativeAndLegacyPackagesAreRecognized() {
         assertEquals("sport.dyn.app.android.prod",
             TclAppLauncher.packageForLink("sport.dyn.app.android.prod"));
