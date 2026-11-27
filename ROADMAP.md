@@ -45,6 +45,17 @@ Einzelne Detailtests (System-Apps ein-/ausblenden, App-Liste manuell aktualisier
 - HDMI-Eingänge und deren vorhandene Steuerung sind nicht Gegenstand dieser App-Inventar-Korrektur.
 - Tests: App-Übersicht mit gemeldetem TV-App-Bestand vergleichen, Installation/Deinstallation und Aktualisierung prüfen, Favoriten ausschließlich aus der Übersicht auswählen, konsistente Darstellung beider Oberflächen, App-Start und TV-Wechsel prüfen. Leere Liste, Abruffehler und nicht kompatible TVs berücksichtigen.
 
+## Weitere gemeldete Funktionslücke vor Phase 1
+
+| ID | Aufgabe | Zielversion | Priorität | Status | Nachweis / tatsächliche Version |
+| --- | --- | --- | --- | --- | --- |
+| 0.3 | HDMI-Eingänge direkt auswählen | Offen (Patch-Pre-Release vorgeschlagen) | Hoch – Vorschlag vor Phase 1 | In Entwicklung | Nutzer meldet am 27.11.2026: Direkttasten HDMI 1–4 schalten nicht um; allgemeine TV-Eingangsauswahl funktioniert. Getestete App-Version nicht ausdrücklich genannt. Quellcode nutzt Android-Remote-v2-Keycodes für beide Wege. Ursache auf TV-Seite und alternative Direktsteuerung noch nicht nachgewiesen. |
+
+- Ziel: Einmaliges Antippen eines HDMI-Eingangs wechselt zuverlässig zum richtigen Eingang, ohne die manuelle Navigation im TV-Eingangsmenü. Individuelle HDMI-Namen und allgemeine TV-Eingangsauswahl bleiben erhalten.
+- Zunächst vorhandene T-Cast-Steuerung und mögliche TCL-spezifische lokale Befehle untersuchen. Keine feste Zuordnung ungeprüfter Hardware-IDs, keine blind ausgeführte Menü-Tastenfolge und kein dauerhaftes ADB oder zusätzliche TV-App.
+- Gerätetest aller vier Eingänge, aus verschiedenen Ausgangszuständen, auch mit erhaltenem HDMI-CEC/eARC-Verhalten. Keine Erfolgsmeldung allein aufgrund des Befehlsversands.
+- Reihenfolge: Aufgabe 0.2 bleibt bis zur Abnahme offen; 0.3 als vorrangige Korrektur vor neuen Funktionen vorgeschlagen. Konkrete Umsetzung und Zielversion noch festzulegen.
+
 ## Phase 1 – TV-Fernbedienung vervollständigen (1.2.x)
 
 | ID | Aufgabe | Ziel / Abnahmekriterien | Aufwand | Status | Tatsächliche Version / Nachweis |
@@ -89,7 +100,7 @@ Keine Änderung an TV-Systemsoftware, keine erfundenen Parameter. Die technische
 
 ## Nächste Aufgabe
 
-**0.2 – TV-App-Übersicht korrigieren (hohe Priorität).** v1.1.8 ist als Pre-Release mit bestandenen automatisierten Tests, Build, Signaturprüfung und APK verfügbar. Jetzt am TCL testen, insbesondere Bestandswechsel und Favoriten. Erst nach Gerätebestätigung und stabiler Veröffentlichung als abgeschlossen einstufen; danach Aufgabe 1 – Tastatur.
+**0.2 – TV-App-Übersicht korrigieren (hohe Priorität).** v1.1.8 ist als Pre-Release mit bestandenen automatisierten Tests, Build, Signaturprüfung und APK verfügbar. Jetzt am TCL testen, insbesondere Bestandswechsel und Favoriten. Erst nach Gerätebestätigung und stabiler Veröffentlichung als abgeschlossen einstufen; danach die gemeldete HDMI-Direktwahl (0.3) priorisiert angehen; Tastatur anschließend gemäß bestätigter Reihenfolge.
 
 ## Änderungsverlauf
 
@@ -102,3 +113,5 @@ Keine Änderung an TV-Systemsoftware, keine erfundenen Parameter. Die technische
 - 27.11.2026: Aufgabe 0.2 umgesetzt (Code): gemeinsames gerätebezogenes T-Cast-Inventar ohne Persistenz, Quellen und aktive Favoriten daraus abgeleitet, System-App-Filter, Aktualisierung beim Öffnen und manuell; gespeicherte Zuordnungen bleiben erhalten. Unit-Tests ergänzt; v1.1.8 Pre-Release/CI zur Prüfung vorbereitet. **Keine Gerätetestbestätigung; Status bis zum CI-Nachweis In Entwicklung.**
 
 - 27.11.2026: Aufgabe 0.2 auf **Implementiert** hochgestuft. v1.1.8 Pre-Release mit vollständiger signierter APK nachgewiesen: [CI-Lauf](https://github.com/sschermer/Sofacockpit/actions/runs/45929486093), [Pre-Release](https://github.com/sschermer/Sofacockpit/releases/tag/sofacockpit-v1.1.8). JVM-Tests, Build, feste Signatur bestanden. Statischen Katalog auch als Neuinstallations-Vorauswahl entfernt. Gerätetest des tatsächlichen Inventars, von Deinstallationen und bestehender Favoritenzuordnung noch offen; daher nicht Getestet oder Abgeschlossen.
+
+- 27.11.2026: Fehlgeschlagene HDMI-Direktwahl am TCL gemeldet; allgemeine Eingangsauswahl funktioniert nach Nutzerbeobachtung. Separate Aufgabe 0.3 aufgenommen, Quellcode geprüft, kein Funktionscode geändert. Aufgabe 0.2 bleibt Implementiert; deren App-Inventar-Abnahme ist separat offen.
