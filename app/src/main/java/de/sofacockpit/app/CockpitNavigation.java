@@ -4,7 +4,7 @@ final class CockpitNavigation {
     static final int START = 0, TV = 1, SOUND = 2;
     private static final String[] TABS = {"Start", "TV", "Sound"};
     private static final String[][] PAGES = {
-        {"Start"}, {"Fernbedienung", "Quellen", "Bild & System"}, {"Klangsteuerung", "Klangprofile", "Feinabstimmung"}
+        {"Start"}, {"Fernbedienung", "Quellen", "Bild & System", "Gaming"}, {"Klangsteuerung", "Klangprofile", "Feinabstimmung"}
     };
     private int category, page;
     int category() { return category; }

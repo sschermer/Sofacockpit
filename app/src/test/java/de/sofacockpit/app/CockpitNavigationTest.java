@@ -8,7 +8,8 @@ public class CockpitNavigationTest {
         CockpitNavigation n = new CockpitNavigation();
         assertEquals(CockpitNavigation.START,n.category());
         assertEquals(1,CockpitNavigation.pageCount(0));
-        assertEquals(3,CockpitNavigation.pageCount(1));
+        assertEquals(4,CockpitNavigation.pageCount(1));
+        assertTrue(CockpitNavigation.valid(CockpitNavigation.TV,3));
         assertEquals(3,CockpitNavigation.pageCount(2));
         n.select(2,2); assertEquals(2,n.page());
         n.select(1,0); assertEquals(0,n.page());

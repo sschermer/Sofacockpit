@@ -58,9 +58,17 @@ public class MainActivity extends ComponentActivity {
     private final View[] categoryViews = new View[3];
     private final SwipeCategoryPager[] categoryPagers = new SwipeCategoryPager[3];
     private final TextView[] tabs = new TextView[3];
-    private final TextView[] dots = new TextView[3];
-    private LinearLayout footer;
-    private TextView footerPageName;
+    private TextView labTitle, labPages, labPower, labActivityTab, labGameStatus;
+    private int labActiveCategory=-1, labActivePage;
+    private String labActiveName="";
+    private int labExpanded=-1;
+    private final FrameLayout[] labActivityRows=new FrameLayout[3];
+    private final TextView[] labActivityFaces=new TextView[3];
+    private final View[] labActivityPanels=new View[3];
+    private LinearLayout labStreamChoices, labHdmiChoices, labAudioChoices;
+    private final List<TextView> labNightButtons=new ArrayList<>(), labDrcButtons=new ArrayList<>();
+    private final List<View> labHapticKeys=new ArrayList<>();
+    private TextView labMode, labProfile;
     private PopupMenu quickMenu;
     private AlertDialog appLaunchTestDialog;
     private MainViewModel soundbarModel;
@@ -113,6 +121,11 @@ public class MainActivity extends ComponentActivity {
         int savedCategory = savedInstanceState == null ? 0 : savedInstanceState.getInt("navigation_category", 0);
         int savedPage = savedInstanceState == null ? 0 : savedInstanceState.getInt("navigation_page", 0);
         if (!CockpitNavigation.valid(savedCategory, savedPage)) { savedCategory = 0; savedPage = 0; }
+        if(savedInstanceState!=null){
+            labActiveCategory=savedInstanceState.getInt("lab_active_category",-1);
+            labActivePage=savedInstanceState.getInt("lab_active_page",0);
+            labActiveName=savedInstanceState.getString("lab_active_name","");
+        }
         buildShell(savedCategory, savedPage);
         SofacockpitComposeViewsKt.observeSoundbarConnection(this, soundbarModel, this::renderSoundConnection);
         if (savedInstanceState == null && connectionOptions.getBoolean("auto_connect", false)) {
@@ -157,6 +170,12 @@ public class MainActivity extends ComponentActivity {
         hdmiButtons.clear();
         refreshLayouts.clear();
         volumeControls.clear();
+        labHapticKeys.clear();labNightButtons.clear();labDrcButtons.clear();
+        labMode=labProfile=labGameStatus=null;
+        labStreamChoices=labHdmiChoices=labAudioChoices=null;labExpanded=-1;
+        java.util.Arrays.fill(labActivityRows,null);
+        java.util.Arrays.fill(labActivityFaces,null);
+        java.util.Arrays.fill(labActivityPanels,null);
         tvConnectionButton=soundConnectionButton=tvHomeStatus=tvHomeDetail=tvRemoteStatus=sourcesStatus=systemStatus=null;
         tvDeviceHeader=null; tvPower=tvMute=null; remoteDial=null;
         streamRow=sourcesAppList=null; streamScroll=null;
@@ -167,7 +186,7 @@ public class MainActivity extends ComponentActivity {
         shell.setOrientation(LinearLayout.VERTICAL);
         shell.setBackgroundColor(BG);
 
-        shell.addView(createTabs(), new LinearLayout.LayoutParams(-1, -2));
+        shell.addView(labHeader(),new LinearLayout.LayoutParams(-1,-2));
         FrameLayout pages = new FrameLayout(this);
         shell.addView(pages, new LinearLayout.LayoutParams(-1, 0, 1));
         categoryViews[0] = refreshPage(homePage(soundbarModel), CockpitNavigation.START);
@@ -180,6 +199,7 @@ public class MainActivity extends ComponentActivity {
                 pager.addPage(refreshPage(remotePage(), group));
                 pager.addPage(refreshPage(sourcesPage(), group));
                 pager.addPage(refreshPage(systemPage(), group));
+                pager.addPage(refreshPage(labGamingPage(), CockpitNavigation.START));
             } else {
                 for (int section = 1; section <= 3; section++)
                     pager.addPage(SofacockpitComposeViewsKt.createTonmaschineComposePage(
@@ -187,24 +207,8 @@ public class MainActivity extends ComponentActivity {
             }
         }
         for (View view : categoryViews) pages.addView(view, new FrameLayout.LayoutParams(-1, -1));
-        footer = new LinearLayout(this);
-        footer.setGravity(Gravity.CENTER_VERTICAL);
-        footer.setPadding(dp(theme.theme.paddingDp),0,dp(theme.theme.paddingDp),0);
-        footerPageName = label("", 12, MUTED);
-        footerPageName.setMaxLines(1);
-        footerPageName.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        footerPageName.setGravity(Gravity.CENTER_VERTICAL);
-        footer.addView(footerPageName,new LinearLayout.LayoutParams(0,-1,1f));
-        for (int i = 0; i < dots.length; i++) {
-            final int index = i;
-            TextView dot = label("●", 12, MUTED);
-            dot.setGravity(Gravity.CENTER);
-            dot.setFocusable(true);
-            dot.setOnClickListener(v -> selectScreen(navigation.category(), index));
-            dots[i] = dot;
-            footer.addView(dot, new LinearLayout.LayoutParams(dp(48), dp(44)));
-        }
-        shell.addView(footer, new LinearLayout.LayoutParams(-1, dp(44)));
+        shell.addView(createTabs(),new LinearLayout.LayoutParams(-1,-2));
+
         SystemBarInsets.install(getWindow(), shell);
         setContentView(shell);
         selectScreen(categoryToShow, pageToShow);
@@ -225,28 +229,71 @@ public class MainActivity extends ComponentActivity {
             layout.setRefreshing(Boolean.TRUE.equals(refreshing));
     }
 
-    private View createTabs() {
-        LinearLayout row = new LinearLayout(this);
+    private View labHeader(){
+        LinearLayout row=new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(12), dp(8), dp(12), dp(4));
-        for (int category = 0; category < tabs.length; category++) {
-            final int group = category;
-            TextView tab = label(CockpitNavigation.tabLabel(group) + "  ▾", 15, TEXT);
-            tab.setGravity(Gravity.CENTER);
-            tab.setTypeface(ThemeArt.typeface(theme.theme, Typeface.BOLD));
+        row.setPadding(dp(8),dp(4),dp(8),dp(2));
+        labTitle=label("Sofacockpit Lab",17,TEXT);
+        labTitle.setTypeface(ThemeArt.typeface(theme.theme,Typeface.BOLD));
+        labTitle.setMaxLines(2);
+        row.addView(labTitle,new LinearLayout.LayoutParams(0,-2,1));
+        labPages=actionButton("Seiten ▾","");
+        labPages.setTextSize(12*theme.theme.fontScale);
+        labPages.setOnClickListener(v->showQuickMenu(navigation.category(),v));
+        row.addView(labPages,new LinearLayout.LayoutParams(dp(76),dp(48)));
+        labPower=actionButton("⏻","");
+        labPower.setContentDescription("Geräte ein- und ausschalten");
+        labPower.setOnClickListener(this::labPowerMenu);
+        row.addView(labPower,new LinearLayout.LayoutParams(dp(48),dp(48)));
+        TextView settings=actionButton("⚙","");
+        settings.setContentDescription("Einstellungen");
+        settings.setOnClickListener(this::showStartMenu);
+        row.addView(settings,new LinearLayout.LayoutParams(dp(48),dp(48)));
+        return row;
+    }
+
+    private View createTabs() {
+        LinearLayout row=new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(4),dp(4),dp(4),dp(4));
+        for(int position=0;position<5;position++){
+            TextView tab=actionButton(new String[]{"Start","Aktivität","TV","Sound","Stimme"}[position],"");
+            tab.setTextSize(12*theme.theme.fontScale);
             tab.setFocusable(true);
-            tab.setOnClickListener(v -> selectScreen(group, 0));
-            tab.setOnLongClickListener(v -> {
-                if (group == 0) showStartMenu(v);
-                else showQuickMenu(group, v);
-                return true; // native long-press haptic feedback
-            });
-            tabs[group] = tab;
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(48), 1f);
-            if (group != 0) lp.leftMargin = dp(6);
-            row.addView(tab, lp);
+            if(position==1){
+                labActivityTab=tab;
+                tab.setOnClickListener(v->{if(CockpitNavigation.valid(labActiveCategory,labActivePage))
+                    selectScreen(labActiveCategory,labActivePage);});
+            }else if(position==4){
+                tab.setEnabled(false);tab.setAlpha(.45f);
+                tab.setContentDescription("Sprachsteuerung – in Vorbereitung");
+            }else{
+                final int group=position==0?0:position-1;
+                tabs[group]=tab;
+                tab.setOnClickListener(v->selectScreen(group,0));
+                tab.setOnLongClickListener(v->{if(group==0)showStartMenu(v);else showQuickMenu(group,v);return true;});
+            }
+            row.addView(tab,new LinearLayout.LayoutParams(0,dp(52),1));
         }
         return row;
+    }
+
+    private void labPowerMenu(View anchor){
+        PopupMenu popup=new PopupMenu(this,anchor);
+        TvRemoteClient.State t=tv.state();
+        DeviceState s=soundbarModel.getDevice().getValue();
+        popup.getMenu().add(0,1,0,t.powerOn==null?"TV Power / Aufwecken":t.powerOn?"TV ausschalten":"TV einschalten")
+            .setEnabled((t.connected()&&t.keys)||tv.canWake());
+        popup.getMenu().add(0,2,1,s.getPowerOn()==null?"Soundbar – Power unbekannt":s.getPowerOn()?"Soundbar ausschalten":"Soundbar einschalten")
+            .setEnabled(s.getConnection()==Connection.CONNECTED&&s.getPowerOn()!=null);
+        popup.setOnMenuItemClickListener(item->{
+            if(item.getItemId()==1){tv.requestPower();return true;}
+            DeviceState latest=soundbarModel.getDevice().getValue();
+            if(latest.getConnection()==Connection.CONNECTED&&latest.getPowerOn()!=null)
+                soundbarModel.setPower(!latest.getPowerOn());
+            return true;
+        });
+        popup.show();
     }
 
     private void showStartMenu(View anchor) {
@@ -260,7 +307,7 @@ public class MainActivity extends ComponentActivity {
                 case 2: updates.showSettings(); return true;
                 case 3: tvDialog.open(); return true;
                 case 4:
-                    new AlertDialog.Builder(this).setTitle("Sofacockpit")
+                    new AlertDialog.Builder(this).setTitle("Sofacockpit Lab")
                         .setMessage("Version "+updates.versionName()+"\n\nTV- und Soundbar-Steuerung.\nÖffentliches Projekt: github.com/sschermer/Sofacockpit")
                         .setPositiveButton("Schließen",null).show();
                     return true;
@@ -448,101 +495,199 @@ public class MainActivity extends ComponentActivity {
     }
 
     private void renderNavigation() {
-        int category = navigation.category();
-        for (int i = 0; i < tabs.length; i++) {
-            boolean selected = i == category;
-            tabs[i].setBackground(ThemeArt.surface(theme,selected?theme.theme.selected:SURFACE_ALT,
-                theme.theme.cornerDp,getResources().getDisplayMetrics().density,selected,true));
-            tabs[i].setTextColor(selected ? ACCENT : MUTED);
+        int category=navigation.category(),page=navigation.page();
+        for(int i=0;i<tabs.length;i++){
+            boolean selected=i==category;
+            tabs[i].setBackground(shape(selected?theme.theme.selected:SURFACE_ALT,12));
+            tabs[i].setTextColor(selected?ACCENT:MUTED);
             tabs[i].setSelected(selected);
-            tabs[i].setContentDescription(CockpitNavigation.tabLabel(i) + (selected ? ", ausgewählt" : "") +
-                (i == 0 ? ", lange drücken für App-Menü" : ", lange drücken für Seitenauswahl"));
         }
-        footer.setVisibility(category == 0 ? View.GONE : View.VISIBLE);
-        footerPageName.setText(category == 0 ? "" : CockpitNavigation.pageLabel(category,navigation.page()));
-        for (int i = 0; i < dots.length; i++) {
-            boolean selected = i == navigation.page();
-            dots[i].setTextColor(selected ? ACCENT : MUTED);
-            dots[i].setSelected(selected);
-            if (category != 0) dots[i].setContentDescription(CockpitNavigation.pageLabel(category, i) +
-                (selected ? ", ausgewählt" : ""));
-        }
+        boolean active=CockpitNavigation.valid(labActiveCategory,labActivePage);
+        labActivityTab.setEnabled(active);
+        labActivityTab.setAlpha(active?1f:.45f);
+        labActivityTab.setTextColor(active&&category==labActiveCategory&&page==labActivePage?ACCENT:MUTED);
+        labActivityTab.setContentDescription(active?"Zur gewählten Aktivität "+labActiveName:"Noch keine Aktivität gewählt");
+        labTitle.setText(category==0?"Sofacockpit Lab":active&&category==labActiveCategory&&page==labActivePage?
+            "Gewählt: "+labActiveName:CockpitNavigation.pageLabel(category,page));
+        labPages.setVisibility(category==0?View.GONE:View.VISIBLE);
+        labPower.setVisibility(category==0?View.VISIBLE:View.GONE);
+    }
+
+    private void labActivate(int category,int page,String title){
+        labActiveCategory=category;labActivePage=page;labActiveName=title;
+        labExpand(-1);
+        selectScreen(category,page);
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
         state.putInt("navigation_category", navigation.category());
         state.putInt("navigation_page", navigation.page());
+        state.putInt("lab_active_category",labActiveCategory);
+        state.putInt("lab_active_page",labActivePage);
+        state.putString("lab_active_name",labActiveName);
         super.onSaveInstanceState(state);
     }
 
     private View homePage(MainViewModel vm) {
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(false);
-        scroll.setClipToPadding(false);
-        scroll.setPadding(dp(theme.theme.paddingDp), dp(12), dp(theme.theme.paddingDp), dp(12));
-
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        scroll.addView(content, new ScrollView.LayoutParams(-1, -2));
-
-        LinearLayout titleRow = new LinearLayout(this);
+        LinearLayout content=fullPage();
+        LinearLayout titleRow=new LinearLayout(this);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = label("Verbindung", 21, TEXT);
-        title.setTypeface(ThemeArt.typeface(theme.theme, Typeface.BOLD));
-        titleRow.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        tvConnectionButton = connectionButton("TV");
-        soundConnectionButton = connectionButton("Sound");
-        LinearLayout.LayoutParams tvLp = new LinearLayout.LayoutParams(dp(66), dp(48));
-        tvLp.rightMargin = dp(8);
-        titleRow.addView(tvConnectionButton, tvLp);
-        titleRow.addView(soundConnectionButton, new LinearLayout.LayoutParams(dp(80), dp(48)));
+        TextView title=label("Aktivitäten",19,TEXT);
+        titleRow.addView(title,new LinearLayout.LayoutParams(0,-2,1));
+        tvConnectionButton=connectionButton("TV");
+        soundConnectionButton=connectionButton("Sound");
+        titleRow.addView(tvConnectionButton,new LinearLayout.LayoutParams(dp(64),dp(48)));
+        titleRow.addView(soundConnectionButton,new LinearLayout.LayoutParams(dp(76),dp(48)));
         content.addView(titleRow);
-        LinearLayout.LayoutParams titleLp = (LinearLayout.LayoutParams) titleRow.getLayoutParams();
-        titleLp.bottomMargin = dp(12);
-        titleRow.setLayoutParams(titleLp);
-
-        tvHomeStatus = deviceHeader(content, "FERNSEHER", "Nicht verbunden");
-        LinearLayout tvHeader = (LinearLayout) tvHomeStatus.getParent();
-        tvDeviceHeader = tvHeader;
-        tvHeader.setOnClickListener(v -> tvDialog.open());
-        // Connection is shown by the TV chip; power by its icon.
-        tvHomeStatus.setVisibility(View.GONE);
-        tvMute = new TvIconButton(false, KeyEvent.KEYCODE_VOLUME_MUTE);
-        tvPower = new TvIconButton(true, KeyEvent.KEYCODE_POWER);
-        tvHeader.addView(tvMute, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        tvHeader.addView(tvPower, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        tvHomeDetail = label("", 12, MUTED);
-        tvHomeDetail.setVisibility(View.GONE);
-        tvHomeDetail.setOnClickListener(v -> tvDialog.open());
-        content.addView(tvHomeDetail);
-
-        LinearLayout streaming = section(content, "STREAMING");
-        LinearLayout streamHeader = (LinearLayout) ((LinearLayout) streaming.getParent()).getChildAt(0);
-        View heading = streamHeader.getChildAt(0);
-        heading.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
-        TextView add = actionButton("+", "");
-        add.setContentDescription("Streaming-Dienst hinzufügen");
-        add.setOnClickListener(v -> addStreamingShortcut());
-        streamHeader.addView(add, new LinearLayout.LayoutParams(dp(44), dp(44)));
-        streamScroll = new HorizontalScrollView(this);
+        labStreamChoices=labActivityRow(content,0,"Filmabend","Streamingdienste");
+        labHdmiChoices=labActivityRow(content,1,"Konsole spielen","HDMI-Eingänge");
+        labAudioChoices=labActivityRow(content,2,"Musik hören","Soundbar");
+        renderLabHdmiChoices();renderLabAudioChoices();
+        LinearLayout streaming=section(content,"FAVORITEN");
+        LinearLayout streamHeader=(LinearLayout)((LinearLayout)streaming.getParent()).getChildAt(0);
+        streamHeader.getChildAt(0).setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));
+        TextView add=actionButton("+","");
+        add.setContentDescription("Favoriten verwalten");
+        add.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("Favoriten")
+            .setItems(new String[]{"TV-App hinzufügen","HDMI-Favoriten wählen"},(d,i)->{
+                if(i==0)addStreamingShortcut();else labChooseHdmiFavorites();
+            }).setNegativeButton("Schließen",null).show());
+        streamHeader.addView(add,new LinearLayout.LayoutParams(dp(48),dp(48)));
+        streamScroll=new HorizontalScrollView(this);
         streamScroll.setHorizontalScrollBarEnabled(false);
-        streamScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        streamRow = new LinearLayout(this);
-        streamRow.setOrientation(LinearLayout.HORIZONTAL);
-        streamScroll.addView(streamRow);
-        streaming.addView(streamScroll);
-        streamScroll.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> {
-            if (r-l != or-ol && r>l) sizeStreamingTiles();
-        });
+        streamRow=new LinearLayout(this);streamRow.setOrientation(LinearLayout.HORIZONTAL);
+        streamScroll.addView(streamRow);streaming.addView(streamScroll);
+        streamScroll.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{if(r-l!=or-ol&&r>l)sizeStreamingTiles();});
         renderStreamingShortcuts();
+        content.addView(label("Eigene Aktivitäten (Makros) und Sprache: in Vorbereitung",12,MUTED));
+        return scrollPage(content);
+    }
 
-        LinearLayout volume = section(content, "LAUTSTÄRKE");
-        addVolumeControl(volume);
-        LinearLayout.LayoutParams soundbarLp = new LinearLayout.LayoutParams(-1, -2);
-        soundbarLp.topMargin = dp(2);
-        soundbarLp.bottomMargin = dp(12);
-        content.addView(SofacockpitComposeViewsKt.createSoundbarHomeComposeView(this, vm, theme), soundbarLp);
-        return scroll;
+    private LinearLayout labActivityRow(LinearLayout content,int index,String title,String subtitle){
+        FrameLayout frame=new FrameLayout(this);
+        frame.setClipChildren(true);
+        frame.setBackground(shape(SURFACE,14));
+        TextView face=actionButton(title+"  ›\n"+subtitle,"");
+        face.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);
+        face.setPadding(dp(16),dp(6),dp(8),dp(6));
+        face.setTextSize(16*theme.theme.fontScale);
+        face.setOnClickListener(v->{
+            labExpand(index);
+            if(index==0&&!tvAppInventory.verified()){refreshTvAppInventory();renderLabStreamChoices();}
+        });
+        frame.addView(face,new FrameLayout.LayoutParams(-1,-1));
+        LinearLayout panel=new LinearLayout(this);
+        panel.setGravity(Gravity.CENTER_VERTICAL);
+        panel.setPadding(dp(4),dp(4),dp(4),dp(4));
+        panel.setBackground(shape(SURFACE,14));
+        TextView back=actionButton("‹","");
+        back.setContentDescription("Quellenauswahl schließen");
+        back.setOnClickListener(v->labExpand(-1));
+        panel.addView(back,new LinearLayout.LayoutParams(dp(48),dp(60)));
+        HorizontalScrollView scroll=new HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout choices=new LinearLayout(this);
+        choices.setGravity(Gravity.CENTER_VERTICAL);
+        scroll.addView(choices,new HorizontalScrollView.LayoutParams(-2,-1));
+        panel.addView(scroll,new LinearLayout.LayoutParams(0,-1,1));
+        frame.addView(panel,new FrameLayout.LayoutParams(-1,-1));
+        panel.setVisibility(View.INVISIBLE);
+        panel.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        labActivityRows[index]=frame;labActivityFaces[index]=face;labActivityPanels[index]=panel;
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(80));
+        lp.topMargin=dp(6);lp.bottomMargin=dp(4);
+        content.addView(frame,lp);
+        return choices;
+    }
+
+    private void labExpand(int target){
+        int previous=labExpanded;labExpanded=target;
+        for(int i=0;i<3;i++){
+            if(labActivityRows[i]==null||((i==previous)==(i==target)))continue;
+            final int index=i;
+            View face=labActivityFaces[i],panel=labActivityPanels[i];
+            float w=labActivityRows[i].getWidth();
+            boolean open=i==target;
+            face.animate().cancel();panel.animate().cancel();
+            if(open){face.setVisibility(View.VISIBLE);panel.setVisibility(View.VISIBLE);panel.setTranslationX(w);}
+            else{face.setVisibility(View.VISIBLE);face.setTranslationX(-w);}
+            face.setImportantForAccessibility(open?View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS:View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+            panel.setImportantForAccessibility(open?View.IMPORTANT_FOR_ACCESSIBILITY_AUTO:View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+            long duration=android.animation.ValueAnimator.areAnimatorsEnabled()?220:0;
+            face.animate().translationX(open?-w:0).setDuration(duration).withEndAction(()->{
+                if(labExpanded==index)face.setVisibility(View.INVISIBLE);
+            }).start();
+            panel.animate().translationX(open?0:w).setDuration(duration).withEndAction(()->{
+                if(labExpanded!=index)panel.setVisibility(View.INVISIBLE);
+            }).start();
+        }
+    }
+
+    private TextView labChoice(LinearLayout row,String name,Runnable run){
+        TextView tile=actionButton(name,"");
+        tile.setTextSize(13*theme.theme.fontScale);
+        tile.setPadding(dp(8),dp(4),dp(8),dp(4));tile.setMinWidth(dp(92));
+        tile.setOnClickListener(v->run.run());
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,dp(64));lp.leftMargin=dp(6);
+        row.addView(tile,lp);return tile;
+    }
+
+    private void renderLabStreamChoices(){
+        if(labStreamChoices==null)return;
+        labStreamChoices.removeAllViews();
+        if(!tvAppInventory.verified()){
+            labChoice(labStreamChoices,appInventoryLoading?"Lade TV-Apps …":"TV-App-Liste laden",
+                ()->{if(tv.state().connected())refreshTvAppInventory();else tvDialog.open();});
+            return;
+        }
+        for(TclAppLauncher.App app:tvAppInventory.visible(false)){
+            StreamingShortcuts.Entry entry=new StreamingShortcuts.Entry(app.name,app.packageName);
+            for(StreamingShortcuts.Entry saved:shortcuts.entries)
+                if(app.packageName.equals(TclAppLauncher.packageForLink(saved.link))){entry=saved;break;}
+            final StreamingShortcuts.Entry selected=entry;
+            labChoice(labStreamChoices,app.name,()->launchStreaming(selected));
+        }
+        if(labStreamChoices.getChildCount()==0)labChoice(labStreamChoices,"TV-Apps aktualisieren",this::refreshTvAppInventory);
+    }
+
+    private void renderLabHdmiChoices(){
+        if(labHdmiChoices==null)return;
+        labHdmiChoices.removeAllViews();
+        for(int port=1;port<=4;port++){
+            final int p=port;
+            TextView tile=labChoice(labHdmiChoices,hdmiLabel(port),()->selectHdmi(p));
+            tile.setOnLongClickListener(v->{editHdmiLabel(p,tile);return true;});
+        }
+    }
+
+    private void renderLabAudioChoices(){
+        if(labAudioChoices==null)return;
+        labAudioChoices.removeAllViews();
+        DeviceState s=soundbarModel.getDevice().getValue();
+        if(s.getCanSelectInput()){
+            for(int id:new int[]{1,0})if(s.getSelectableInputs().contains(id)){
+                String name=id==1?"Bluetooth":"WLAN";
+                labChoice(labAudioChoices,name,()->{
+                    DeviceState latest=soundbarModel.getDevice().getValue();
+                    if(latest.getCanSelectInput()&&latest.getSelectableInputs().contains(id)){
+                        soundbarModel.chooseSource(id);labActivate(CockpitNavigation.SOUND,0,name);
+                    }
+                });
+            }
+        }
+        labChoice(labAudioChoices,"Soundbar",()->labActivate(CockpitNavigation.SOUND,0,"Musik hören"));
+    }
+
+    private void labChooseHdmiFavorites(){
+        int mask=connectionOptions.getInt("lab_hdmi_favorites",0);
+        String[] labels=new String[4];boolean[] checked=new boolean[4];
+        for(int i=0;i<4;i++){labels[i]=hdmiLabel(i+1);checked[i]=(mask&(1<<i))!=0;}
+        new AlertDialog.Builder(this).setTitle("HDMI-Favoriten")
+            .setMultiChoiceItems(labels,checked,(d,i,value)->checked[i]=value)
+            .setPositiveButton("Speichern",(d,w)->{
+                int next=0;for(int i=0;i<4;i++)if(checked[i])next|=1<<i;
+                connectionOptions.edit().putInt("lab_hdmi_favorites",next).apply();renderStreamingShortcuts();
+            }).setNegativeButton("Abbrechen",null).show();
     }
 
     /** Both screens use the same live model and TV-relative commands (CEC forwarding). */
@@ -659,6 +804,15 @@ public class MainActivity extends ComponentActivity {
             tile.setOnLongClickListener(v -> { shortcutOptions(entry); return true; });
             streamRow.addView(tile);
         }
+        int hdmiMask=connectionOptions.getInt("lab_hdmi_favorites",0);
+        for(int port=1;port<=4;port++)if((hdmiMask&(1<<(port-1)))!=0){
+            final int p=port;
+            TextView tile=actionButton(hdmiLabel(port),"");
+            tile.setTextSize(12*theme.theme.fontScale);
+            tile.setOnClickListener(v->selectHdmi(p));
+            tile.setOnLongClickListener(v->{editHdmiLabel(p,tile);return true;});
+            streamRow.addView(tile);
+        }
         if (streamRow.getChildCount() == 0) {
             TextView empty = actionButton(tvAppInventory.verified() ? "+" : "TV-App-Liste nicht aktuell", "");
             empty.setContentDescription("TV-App als Favorit auswählen");
@@ -667,6 +821,7 @@ public class MainActivity extends ComponentActivity {
         }
         sizeStreamingTiles();
         renderSourcesApps();
+        renderLabStreamChoices();
     }
     private void launchStreaming(StreamingShortcuts.Entry entry) {
         if (!tv.state().connected()) {
@@ -677,6 +832,7 @@ public class MainActivity extends ComponentActivity {
         if (!tv.canRequestTclApps()) {
             Toast.makeText(this, "TV muss verbunden und eingeschaltet sein.", Toast.LENGTH_LONG).show(); return;
         }
+        labActivate(CockpitNavigation.TV,0,entry.name);
         tv.launchTclApp(pkg, result -> {
             if (isFinishing() || isDestroyed()) return;
             switch (result.status) {
@@ -716,6 +872,7 @@ public class MainActivity extends ComponentActivity {
                 .show();
             return;
         }
+        labActivate(CockpitNavigation.TV,0,entry.name);
         tv.launchApp(entry.link, entry.name);
     }
     private void saveStreamingShortcuts() {
@@ -819,6 +976,7 @@ public class MainActivity extends ComponentActivity {
         appInventoryLoading = true;
         appInventoryError = "";
         renderSourcesApps();
+        renderLabStreamChoices();
         tv.requestTclApps(result -> {
             appInventoryLoading = false;
             if (isFinishing() || isDestroyed()) return;
@@ -969,11 +1127,12 @@ public class MainActivity extends ComponentActivity {
         LinearLayout.LayoutParams dialLp = new LinearLayout.LayoutParams(-1, -2);
         dialLp.bottomMargin = dp(2);
         body.addView(remoteDial, dialLp);
-        addTvKeyRow(body, new String[]{"Zurück", "Home"},
-            new int[]{KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_HOME}, 52);
+        addTvKeyRow(body, new String[]{"Zurück", "Home", "Stumm"},
+            new int[]{KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_HOME, KeyEvent.KEYCODE_VOLUME_MUTE}, 48);
         addTvKeyRow(body, new String[]{"⏪", "▶ / Ⅱ", "⏩"},
             new int[]{KeyEvent.KEYCODE_MEDIA_REWIND, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
                 KeyEvent.KEYCODE_MEDIA_FAST_FORWARD}, 48);
+        addLabToneRow(body,true);
         LinearLayout volume = new LinearLayout(this);
         volume.setOrientation(LinearLayout.VERTICAL);
         TextView title = label("LAUTSTÄRKE", 12, MUTED);
@@ -983,14 +1142,98 @@ public class MainActivity extends ComponentActivity {
         LinearLayout.LayoutParams volumeLp = new LinearLayout.LayoutParams(-1, -2);
         volumeLp.topMargin = dp(8);
         body.addView(volume, volumeLp);
-        TextView keyboard = actionButton("Tastatur – in Vorbereitung", "");
-        keyboard.setTextSize(13 * theme.theme.fontScale);
-        keyboard.setEnabled(false);
-        keyboard.setAlpha(.45f);
-        LinearLayout.LayoutParams keyboardLp = new LinearLayout.LayoutParams(-1, dp(48));
-        keyboardLp.topMargin = dp(6);
-        body.addView(keyboard, keyboardLp);
         return scrollPage(body);
+    }
+
+    private void addLabToneRow(LinearLayout body,boolean explore){
+        LinearLayout row=new LinearLayout(this);
+        TextView drc=actionButton("DRC · –","");
+        TextView night=actionButton("Night Time · –","");
+        drc.setOnClickListener(v->labToggleTone(false));
+        night.setOnClickListener(v->labToggleTone(true));
+        labDrcButtons.add(drc);labNightButtons.add(night);
+        row.addView(drc,new LinearLayout.LayoutParams(0,dp(48),1));
+        LinearLayout.LayoutParams n=new LinearLayout.LayoutParams(0,dp(48),1);n.leftMargin=dp(6);
+        row.addView(night,n);
+        if(explore){labHapticKeys.add(drc);labHapticKeys.add(night);}
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.topMargin=dp(6);
+        body.addView(row,lp);
+    }
+
+    private void labToggleTone(boolean night){
+        DeviceState state=soundbarModel.getDevice().getValue();
+        Boolean value=night?state.getNightTime():state.getDrc();
+        if(state.getConnection()==Connection.CONNECTED&&value!=null)
+            soundbarModel.setOption(night?"b_night_time":"b_drc",!value);
+    }
+
+    private void renderLabTone(TextView button,String label,Boolean value,boolean connected){
+        button.setText(label+" · "+(value==null?"–":value?"Ein":"Aus"));
+        button.setTextColor(Boolean.TRUE.equals(value)?ACCENT:TEXT);
+        button.setEnabled(connected&&value!=null);
+        button.setAlpha(button.isEnabled()?1f:.45f);
+        button.setContentDescription(label+(value==null?", nicht gemeldet":value?", ein":", aus"));
+    }
+
+    private View labGamingPage(){
+        LinearLayout body=fullPage();
+        labGameStatus=compactStatus(body,"Konsole spielen");
+        TextView picture=tvButton("TV-Bildeinstellungen öffnen",KeyEvent.KEYCODE_SETTINGS);
+        body.addView(picture,new LinearLayout.LayoutParams(-1,dp(52)));
+        body.addView(label("Direkte Bildmoduswahl noch nicht verfügbar.",12,MUTED));
+        labMode=actionButton("Klangmodus · –","");
+        labMode.setOnClickListener(v->labChooseMode());
+        labProfile=actionButton("Klangprofil · –","");
+        labProfile.setOnClickListener(v->labChooseProfile());
+        for(TextView tile:new TextView[]{labMode,labProfile}){
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(52));lp.topMargin=dp(8);
+            body.addView(tile,lp);
+        }
+        addLabToneRow(body,false);
+        addVolumeControl(body);
+        TextView sound=actionButton("Weitere Soundbar-Einstellungen","");
+        sound.setOnClickListener(v->selectScreen(CockpitNavigation.SOUND,0));
+        body.addView(sound,new LinearLayout.LayoutParams(-1,dp(52)));
+        TextView remote=actionButton("TV-Steuerung","");
+        remote.setOnClickListener(v->selectScreen(CockpitNavigation.TV,0));
+        body.addView(remote,new LinearLayout.LayoutParams(-1,dp(52)));
+        return scrollPage(body);
+    }
+
+    private void labChooseMode(){
+        DeviceState state=soundbarModel.getDevice().getValue();
+        if(state.getConnection()!=Connection.CONNECTED)return;
+        java.util.Map<String,Integer> modes=state.getSelectableModes();
+        String[] names=modes.keySet().toArray(new String[0]);
+        new AlertDialog.Builder(this).setTitle("Klangmodus").setItems(names,(d,i)->{
+            Integer id=modes.get(names[i]);if(id!=null)soundbarModel.chooseMode(id);
+        }).setNegativeButton("Schließen",null).show();
+    }
+
+    private void labChooseProfile(){
+        String[] names=soundbarModel.getProfiles().getValue().keySet().toArray(new String[0]);
+        if(names.length==0){selectScreen(CockpitNavigation.SOUND,1);return;}
+        new AlertDialog.Builder(this).setTitle("Klangprofil").setItems(names,(d,i)->soundbarModel.applyProfile(names[i]))
+            .setNegativeButton("Schließen",null).show();
+    }
+
+    private void renderLabSound(DeviceState state){
+        boolean connected=state.getConnection()==Connection.CONNECTED;
+        for(TextView button:labNightButtons)renderLabTone(button,"Night Time",state.getNightTime(),connected);
+        for(TextView button:labDrcButtons)renderLabTone(button,"DRC",state.getDrc(),connected);
+        if(labMode!=null){
+            String mode="–";
+            for(java.util.Map.Entry<String,Integer> e:state.getSelectableModes().entrySet())
+                if(e.getValue().equals(state.getCurrentMode()))mode=e.getKey();
+            labMode.setText("Klangmodus · "+mode);
+            labMode.setEnabled(connected);labMode.setAlpha(connected?1f:.45f);
+        }
+        if(labProfile!=null){
+            String profile=soundbarModel.getSelectedProfile().getValue();
+            labProfile.setText("Klangprofil · "+(profile==null?"–":profile));
+            labProfile.setEnabled(connected);labProfile.setAlpha(connected?1f:.45f);
+        }
+        renderLabAudioChoices();
     }
 
     private void addTvKeyRow(LinearLayout parent, String[] labels, int[] keys, int height) {
@@ -1003,9 +1246,10 @@ public class MainActivity extends ComponentActivity {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,dp(height),1f);
             if(i>0) lp.leftMargin=dp(8);
             row.addView(button,lp);
+            labHapticKeys.add(button);
         }
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1,-2);
-        lp.topMargin=dp(8);
+        lp.topMargin=dp(4);
         parent.addView(row,lp);
     }
 
@@ -1111,6 +1355,7 @@ public class MainActivity extends ComponentActivity {
     private void sendHdmi(int port, String device) {
         if (!tv.selectTclHdmiInput(port, device))
             Toast.makeText(this, "HDMI-Befehl nicht gesendet. TV-Verbindung prüfen.", Toast.LENGTH_LONG).show();
+        else labActivate(CockpitNavigation.TV,3,hdmiLabel(port));
     }
 
     private String hdmiLabel(int port) {
@@ -1129,6 +1374,7 @@ public class MainActivity extends ComponentActivity {
             connectionOptions.edit().putString("hdmi_name_" + port,value).apply();
             tile.setText(value);
             tile.setContentDescription("HDMI " + port + ": " + value + "; lange drücken zum Umbenennen");
+            renderLabHdmiChoices();renderStreamingShortcuts();
             dialog.dismiss();
         });
     }
@@ -1249,6 +1495,7 @@ public class MainActivity extends ComponentActivity {
         DeviceState state = soundbarModel.getDevice().getValue();
         paintConnection(soundConnectionButton, "Sound", state.getConnection() == Connection.CONNECTED,
             state.getConnection() == Connection.CONNECTING && state.getError() == null);
+        renderLabSound(state);
         if (tvDialog != null) tvDialog.renderSound();
         if (tv != null) renderVolumes(tv.state());
     }
@@ -1276,7 +1523,7 @@ public class MainActivity extends ComponentActivity {
             tvHomeDetail.setVisibility(showDetail ? View.VISIBLE : View.GONE);
         }
         String shortStatus = tv.wakeInProgress() ? "Aufwecken …" : indicator.label;
-        for (TextView status : new TextView[]{tvRemoteStatus, sourcesStatus, systemStatus}) {
+        for (TextView status : new TextView[]{tvRemoteStatus, sourcesStatus, systemStatus, labGameStatus}) {
             if (status == null) continue;
             status.setText(shortStatus);
             status.setTextColor(statusColor);
