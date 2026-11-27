@@ -85,12 +85,12 @@ jobs:
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist/Sofacockpit-Lab.apk > "$RUNNER_TEMP/lab-badging.txt"
-          grep -E "^package: name='de.sofacockpit.lab' versionCode='20' versionName='0.1.19' " "$RUNNER_TEMP/lab-badging.txt"
+          grep -E "^package: name='de.sofacockpit.lab' versionCode='21' versionName='0.1.20' " "$RUNNER_TEMP/lab-badging.txt"
           grep -F "application-label:'Sofacockpit Lab'" "$RUNNER_TEMP/lab-badging.txt"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Lab-Android-v0.1.19
+          name: Sofacockpit-Lab-Android-v0.1.20
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -105,10 +105,10 @@ jobs:
             echo "Skipping superseded Lab build."
             exit 0
           fi
-          if gh release view sofacockpit-lab-v0.1.19 >/dev/null 2>&1; then
+          if gh release view sofacockpit-lab-v0.1.20 >/dev/null 2>&1; then
             echo "Lab release already exists; never replace a published version."
             exit 0
           fi
-          gh release create sofacockpit-lab-v0.1.19 dist/Sofacockpit-Lab.apk \
-            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.19" \
-            --prerelease --latest=false --notes "Lab v0.1.19: Filmabend, Streaming-Favoriten und TV-Quellen zeigen den letzten lokalen TV-App-Bestand auch bei ausgeschaltetem TV und nach App-Neustart. Gerätebindung, Aktualisierung bei Verbindung/Aufwachen und Vordergrund, Fehler erhalten Bestand. Unvollständige ergänzende Abfragen behalten zuletzt bekannte Einträge ungeprüft. Bereits geladene Icons offline anzeigen; begrenzter privater Bildspeicher und Wiederverwendung bisheriger Cache-Dateien. Keine automatische Einschaltung, Live-Prüfung für Starts und Zuordnungen bleibt, Cache nicht in Konfigurationssicherung. Gerätetest offen."
+          gh release create sofacockpit-lab-v0.1.20 dist/Sofacockpit-Lab.apk \
+            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.20" \
+            --prerelease --latest=false --notes "Lab v0.1.20: Korrektur der teilweise erfolgreichen Soundbar-Wiederverbindung. Nach Hintergrundwechsel frische gewünschte Sitzung wie beim manuellen Neuverbinden; verlorene Verbindung auch bei reiner Fokus-Rückkehr und Pull-to-Refresh ersetzen, auf TV-Seite bei verlorenem Soundbar-Link ebenfalls. Alter Standby-Status blockiert verlorene Sitzung nicht mehr; bei zuletzt Standby nur ein Versuch bis neuer Power-On-Bestätigung. Bewusste Trennung, explizites Ausschalten und aktuell bestätigte Standby-Sitzung respektieren. Kein Power-Befehl; gewöhnlicher TCP-Zugriff kann Standby-Gerät aufwecken. TV, Haptik, Konfiguration unverändert. Gerätetest offen."

@@ -36,7 +36,7 @@ class ConnectionRefresh(
         if (closed || batch != null) return
         val targets = when (category) {
             CockpitNavigation.START -> setOf("TV", "Soundbar")
-            CockpitNavigation.TV -> setOf("TV")
+            CockpitNavigation.TV -> if (sound.needsConnectionRecovery()) setOf("TV", "Soundbar") else setOf("TV")
             CockpitNavigation.SOUND -> setOf("Soundbar")
             else -> return
         }

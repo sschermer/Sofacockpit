@@ -6,42 +6,32 @@ import org.junit.Assert.*
 class SoundbarResumeIntentTest {
     @Test fun restoresOnlyOnceForRequestedSessionEvenIfAlreadyLost() {
         val intent = SoundbarResumeIntent()
-        intent.background(5, "device", true, false)
-        assertTrue(intent.take(5, "device", true, false, true))
-        assertFalse(intent.take(5, "device", true, false, true))
+        intent.background(5, "device", true)
+        assertTrue(intent.take(5, "device", true, true))
+        assertFalse(intent.take(5, "device", true, true))
     }
-
-    @Test fun lostOrRetryingSessionCanRecoverAfterEveryForegroundReturn() {
+    @Test fun powerIsNotPartOfRememberedIntent() {
         val intent = SoundbarResumeIntent()
-        // Desired is independent of the last displayed connection state.
-        intent.background(5, "device", true, false)
-        assertTrue(intent.take(5, "device", true, false, true))
-        intent.background(6, "device", true, false)
-        assertTrue(intent.take(6, "device", true, false, true))
+        // A previous standby report must not erase the connection intention.
+        intent.background(5, "device", true)
+        assertTrue(intent.take(5, "device", true, true))
+        intent.background(6, "device", true)
+        assertTrue(intent.take(6, "device", true, true))
     }
-
-    @Test fun storedAddressOrStandbyDoNotPermitProbe() {
-        val intent = SoundbarResumeIntent()
-        intent.background(5, "device", false, false)
-        assertFalse(intent.take(5, "device", true, false, true))
-        intent.background(5, "device", true, true)
-        assertFalse(intent.take(5, "device", true, false, true))
-        intent.background(5, "device", true, false)
-        assertFalse(intent.take(5, "device", true, true, true))
-    }
-
     @Test fun disconnectChangedSessionOrDeniedPermissionInvalidateIntent() {
         val intent = SoundbarResumeIntent()
-        intent.background(5, "device", true, false)
-        assertFalse(intent.take(6, "device", true, false, true))
-        intent.background(5, "device", true, false)
-        assertFalse(intent.take(5, "other", true, false, true))
-        intent.background(5, "device", true, false)
-        assertFalse(intent.take(5, "device", false, false, true))
-        intent.background(5, "device", true, false)
-        assertFalse(intent.take(5, "device", true, false, false))
-        intent.background(5, "device", true, false)
+        intent.background(5, "device", false)
+        assertFalse(intent.take(5, "device", true, true))
+        intent.background(5, "device", true)
+        assertFalse(intent.take(6, "device", true, true))
+        intent.background(5, "device", true)
+        assertFalse(intent.take(5, "other", true, true))
+        intent.background(5, "device", true)
+        assertFalse(intent.take(5, "device", false, true))
+        intent.background(5, "device", true)
+        assertFalse(intent.take(5, "device", true, false))
+        intent.background(5, "device", true)
         intent.cancel()
-        assertFalse(intent.take(5, "device", true, false, true))
+        assertFalse(intent.take(5, "device", true, true))
     }
 }

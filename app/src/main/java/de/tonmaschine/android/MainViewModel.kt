@@ -42,6 +42,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var client: SoundbarClient? = null
     private var generation = 0
     private var lastConfirmedPower: Boolean? = null
+    private var explicitlyPoweredOff = false
     private var connectionRefreshJob: Job? = null
     private val resumeIntent = SoundbarResumeIntent()
     private var reportSequence = 0L
@@ -86,6 +87,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun disconnect() {
+        cancelConnectionRefresh()
+        explicitlyPoweredOff = false
         resumeIntent.cancel()
         generation++
         lastConfirmedPower = null
@@ -159,9 +162,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun connect() { startConnection() }
+    fun connect() {
+        cancelConnectionRefresh()
+        explicitlyPoweredOff = false
+        startConnection()
+    }
 
-    private fun startConnection(): Boolean {
+    private fun startConnection(limitRecoveryUntilAwake: Boolean = false): Boolean {
         if (!Catalog.validIp(ip.value)) {
             _message.value = "Bitte eine gültige IPv4-Adresse eingeben"
             return false
@@ -184,7 +191,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         if (next !== previous) {
                             reportSequence++
                             reportRevisions[packet.optString("msg")] = reportSequence
-                            next.powerOn?.let { lastConfirmedPower = it }
+                            (packet.optJSONObject("data")?.opt("b_powerstatus") as? Boolean)?.let { power ->
+                                if (power && lastConfirmedPower == false) explicitlyPoweredOff = false
+                                lastConfirmedPower = power
+                            }
                         }
                         _device.value = next
                         if (previous.connection != Connection.CONNECTED && next.connection == Connection.CONNECTED)
@@ -200,65 +210,88 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _message.value = if (online) "Warte auf Soundbar-Antwort …" else error?.let { "Wiederverbinden: $it" } ?: "Verbinde …"
                     }
                 }
-            }).also { it.start() }
+            }, limitRecoveryUntilAwake = limitRecoveryUntilAwake).also { it.start() }
         return true
     }
 
     fun refresh() { client?.refresh() }
 
-    private fun confirmedStandby() = lastConfirmedPower == false || _device.value.powerOn == false
+    private fun recoveryAction(trigger: SoundbarRecoveryPolicy.Trigger) =
+        SoundbarRecoveryPolicy.action(trigger, client != null,
+            _device.value.connection == Connection.CONNECTED,
+            _device.value.powerOn == false, explicitlyPoweredOff)
 
-    /** A requested session can already be lost or retrying when the app is left.
-     * Remember the intent, not its transient connection color. */
+    /** Remember the desired session even if its last status was standby. */
     fun onBackground() {
         cancelConnectionRefresh()
-        resumeIntent.background(generation, ip.value, client != null, confirmedStandby())
+        resumeIntent.background(generation, ip.value, client != null)
     }
 
     fun onForeground(networkAllowed: Boolean) {
-        if (!resumeIntent.take(generation, ip.value, client != null, confirmedStandby(), networkAllowed)) return
-        // Existing refresh probes real replies and reconnects once if necessary. No power command.
-        refreshConnection(java.util.function.Consumer { })
+        if (!resumeIntent.take(generation, ip.value, client != null, networkAllowed)) return
+        recoverConnection(SoundbarRecoveryPolicy.Trigger.FOREGROUND, java.util.function.Consumer { })
     }
 
-    /** Pull-to-refresh: only a previously requested client, never a new connection
-     * to a merely stored IP. Read real responses and expedite at most one retry.
-     */
+    /** Focus may return without an Activity pause/resume (e.g. another window).
+     * Never replace a healthy socket for an ordinary dialog dismissal. */
+    fun onWindowFocusReturned(networkAllowed: Boolean) {
+        if (!networkAllowed || connectionRefreshJob?.isActive == true) return
+        if (recoveryAction(SoundbarRecoveryPolicy.Trigger.FOCUS_RETURN) == SoundbarRecoveryPolicy.Action.REPLACE)
+            recoverConnection(SoundbarRecoveryPolicy.Trigger.FOCUS_RETURN, java.util.function.Consumer { })
+    }
+
+    /** TV-page refresh also repairs a lost, wanted soundbar connection. */
+    fun needsConnectionRecovery(): Boolean =
+        recoveryAction(SoundbarRecoveryPolicy.Trigger.FOCUS_RETURN) == SoundbarRecoveryPolicy.Action.REPLACE
+
     fun cancelConnectionRefresh() {
         connectionRefreshJob?.cancel()
         connectionRefreshJob = null
     }
 
-    fun refreshConnection(done: java.util.function.Consumer<String>) {
-        cancelConnectionRefresh()
-        if (client == null) { done.accept("Soundbar: keine gewünschte Verbindung"); return }
-        if (lastConfirmedPower == false || _device.value.powerOn == false) {
+    fun refreshConnection(done: java.util.function.Consumer<String>) =
+        recoverConnection(SoundbarRecoveryPolicy.Trigger.REFRESH, done)
+
+    private fun recoverConnection(trigger: SoundbarRecoveryPolicy.Trigger, done: java.util.function.Consumer<String>) {
+        val action = recoveryAction(trigger)
+        if (action == SoundbarRecoveryPolicy.Action.NONE) {
+            done.accept("Soundbar: keine gewünschte Verbindung"); return
+        }
+        if (action == SoundbarRecoveryPolicy.Action.STANDBY) {
             done.accept("Soundbar: Standby, nicht aufgeweckt"); return
         }
+        // A user refresh during an already running foreground replacement should
+        // wait for that very session, not tear it down a second time.
+        val joining = connectionRefreshJob?.isActive == true
+        cancelConnectionRefresh()
+        val baselineAtStart = reportSequence
         connectionRefreshJob = viewModelScope.launch {
             var expectedGeneration = generation
-            var baseline = reportSequence
-            var restarted = false
+            var baseline = baselineAtStart
+            var restarted = joining
             fun changedIntent() = expectedGeneration != generation || client == null
-            fun standby() = lastConfirmedPower == false || _device.value.powerOn == false
             fun receivedAll() = refreshReports.all { (reportRevisions[it] ?: 0L) > baseline }
             fun responding() = reportSequence > baseline && _device.value.connection == Connection.CONNECTED
 
-            if (_device.value.connection == Connection.CONNECTING && _device.value.error != null) {
-                // Existing retry backoff can reach 30 seconds. Pulling explicitly expedites it.
-                if (!startConnection()) { done.accept("Soundbar: Neuverbindung nicht möglich"); return@launch }
+            fun replace(): Boolean {
+                val limited = SoundbarRecoveryPolicy.limitUntilAwake(lastConfirmedPower)
+                if (!startConnection(limited)) return false
                 expectedGeneration = generation
                 restarted = true
+                return true
+            }
+
+            if (!joining && action == SoundbarRecoveryPolicy.Action.REPLACE) {
+                if (!replace()) { done.accept("Soundbar: Neuverbindung nicht möglich"); return@launch }
             } else if (_device.value.connection == Connection.CONNECTED) {
                 client?.refresh()
             }
-            // Give the existing connection a chance to answer before replacing it.
-            repeat(if (restarted) 40 else 24) {
+
+            repeat(if (restarted) 40 else 12) {
                 delay(250)
                 if (changedIntent()) { done.accept("Soundbar: Verbindung geändert oder getrennt"); return@launch }
-                if (standby()) { done.accept("Soundbar: Standby, nicht aufgeweckt"); return@launch }
-                if (receivedAll() && responding()) {
-                    done.accept(if (restarted) "Soundbar: wieder verbunden, Werte aktualisiert" else "Soundbar: Werte aktualisiert")
+                if (responding() && (receivedAll() || _device.value.powerOn == false)) {
+                    done.accept(if (restarted) "Soundbar: wieder verbunden" else "Soundbar: Werte aktualisiert")
                     return@launch
                 }
             }
@@ -266,15 +299,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 done.accept(if (restarted) "Soundbar: wieder verbunden" else "Soundbar: Antwort erhalten")
                 return@launch
             }
-            if (!restarted && !changedIntent() && !standby()) {
+            if (!restarted && !changedIntent() && !explicitlyPoweredOff) {
                 baseline = reportSequence
-                if (!startConnection()) { done.accept("Soundbar: Neuverbindung nicht möglich"); return@launch }
-                expectedGeneration = generation
+                if (!replace()) { done.accept("Soundbar: Neuverbindung nicht möglich"); return@launch }
                 repeat(40) {
                     delay(250)
                     if (changedIntent()) { done.accept("Soundbar: Verbindung geändert oder getrennt"); return@launch }
-                    if (standby()) { done.accept("Soundbar: Standby, nicht aufgeweckt"); return@launch }
-                    if (receivedAll() && responding()) { done.accept("Soundbar: wieder verbunden, Werte aktualisiert"); return@launch }
+                    if (responding() && (receivedAll() || _device.value.powerOn == false)) {
+                        done.accept("Soundbar: wieder verbunden"); return@launch
+                    }
                 }
                 if (responding()) { done.accept("Soundbar: wieder verbunden"); return@launch }
             }
@@ -308,6 +341,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _message.value = "Ein-/Ausschaltbefehl konnte nicht gesendet werden"
             return
         }
+        explicitlyPoweredOff = !turnOn
         _message.value = if (turnOn) "Einschaltbefehl gesendet – warte auf Bestätigung" else
             "Ausschaltbefehl gesendet – warte auf Bestätigung"
         val requestGeneration = generation

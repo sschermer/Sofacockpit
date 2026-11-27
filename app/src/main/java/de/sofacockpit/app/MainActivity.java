@@ -2029,6 +2029,13 @@ public class MainActivity extends ComponentActivity {
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus && updates != null) updates.onWindowFocus();
+        if (hasFocus && soundbarModel != null &&
+            getLifecycle().getCurrentState().isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+            boolean allowed = Build.VERSION.SDK_INT < 37 ||
+                checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED;
+            soundbarModel.onWindowFocusReturned(allowed);
+        }
     }
 
     @Override protected void onPause() {

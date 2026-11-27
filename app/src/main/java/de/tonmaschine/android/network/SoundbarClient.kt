@@ -30,7 +30,8 @@ class SoundbarClient(
     private val onPacket: (JSONObject) -> Unit,
     private val onConnection: (Boolean, String?) -> Unit,
     private val responseLimitMs: Long = 18000L,
-    private val writeLimitMs: Long = 5000L
+    private val writeLimitMs: Long = 5000L,
+    private val limitRecoveryUntilAwake: Boolean = false
 ) {
     private val queue = LinkedBlockingQueue<JSONObject>(128)
     private val lock = Any()
@@ -75,6 +76,7 @@ class SoundbarClient(
 
     private suspend fun runLoop() {
         var retryMs = 1000L
+        var awakeConfirmed = !limitRecoveryUntilAwake
         while (active && scope.isActive) {
             // A confirmed sleeping soundbar may be woken by TCP traffic. Leave
             // a lost standby session alone until the user explicitly reconnects.
@@ -143,7 +145,10 @@ class SoundbarClient(
                         if (data != null) {
                             live.receivedStatus(now())
                             retryMs = 1000L
-                            (data.opt("b_powerstatus") as? Boolean)?.let { powerOn = it }
+                            (data.opt("b_powerstatus") as? Boolean)?.let {
+                                powerOn = it
+                                if (it) awakeConfirmed = true
+                            }
                         }
                         if (active && currentSocket === session && !session.isClosed) onPacket(packet)
                     } catch (_: SocketTimeoutException) {
@@ -172,6 +177,7 @@ class SoundbarClient(
             if (!active || !scope.isActive) break
             val detail = health?.failure ?: failure ?: "Soundbar-Verbindung beendet"
             onConnection(false, if (powerOn == false) "Zuletzt Standby – bei Bedarf neu verbinden" else detail)
+            if (!awakeConfirmed) break // one bounded attempt from a previously sleeping session
             delay(retryMs)
             // Backoff grows until an actual valid status response, not TCP open.
             retryMs = (retryMs * 2).coerceAtMost(30000L)

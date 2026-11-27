@@ -16,6 +16,38 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 
 class SoundbarClientRecoveryTest {
+    @Test(timeout = 10000)
+    fun staleStandbyRecoveryMakesOneAttemptWithoutRepeatedWakeTraffic() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val failed = CountDownLatch(1)
+        val server = ServerSocket(0, 2, InetAddress.getLoopbackAddress())
+        val client = SoundbarClient(
+            ip = server.inetAddress.hostAddress!!, port = server.localPort, scope = scope,
+            onPacket = {},
+            onConnection = { _, error -> if (error != null) failed.countDown() },
+            responseLimitMs = 750, writeLimitMs = 1000,
+            limitRecoveryUntilAwake = true
+        )
+        try {
+            server.soTimeout = 3000
+            client.start()
+            server.accept().use { first ->
+                first.soTimeout = 3000
+                assertEquals("get", JSONObject(TemescalCodec.readJson(first.getInputStream())).getString("cmd"))
+                assertTrue("silent first session did not expire", failed.await(4, TimeUnit.SECONDS))
+            }
+            server.soTimeout = 1700
+            try {
+                server.accept().close()
+                fail("Standby recovery must not retry without new awake status")
+            } catch (_: java.net.SocketTimeoutException) { }
+        } finally {
+            client.stop()
+            scope.cancel()
+            server.close()
+        }
+    }
+
     @Test(timeout = 15000)
     fun silentTcpSocketIsReplacedAndFreshReplyConfirmsRecovery() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
