@@ -27,10 +27,13 @@ final class VoiceCommands {
         return s.replaceAll("(?<=\\p{L})(?=\\d)|(?<=\\d)(?=\\p{L})"," ")
             .replaceAll("\\s+"," ").trim();
     }
-    private static String phrase(String input) {
+    static String phrase(String input) {
         String s=normalize(input);
         // Only harmless whole-word politeness is ignored, never negative wording.
         return s.replaceAll("\\bbitte\\b"," ").replaceAll("\\s+"," ").trim();
+    }
+    static boolean negated(String normalized) {
+        return normalized.matches(".*\\b(nicht|kein|keine|keinen|keinem|keiner|keines|niemals|nie|ohne)\\b.*");
     }
     static final class Match {
         final Command command;
@@ -39,6 +42,32 @@ final class VoiceCommands {
     }
     static final class Library {
         private final Map<String,LinkedHashSet<Command>> phrases=new LinkedHashMap<>();
+        private final Map<Command,LinkedHashMap<String,String>> standards=new LinkedHashMap<>();
+        private String blocked;
+        List<Command> commands(){
+            return new ArrayList<>(standards.keySet());
+        }
+        Command find(Kind kind,String target){
+            for(Command c:standards.keySet())if(c.kind==kind&&c.target.equals(target))return c;
+            return null;
+        }
+        List<String> standardPhrases(Command command){
+            Map<String,String> aliases=standards.get(command);
+            return aliases==null?Collections.emptyList():new ArrayList<>(aliases.values());
+        }
+        boolean hasStandardPhrase(String text){
+            return phrases.containsKey(phrase(text));
+        }
+        void includeAliases(List<VoiceAliases.Entry> aliases){
+            for(VoiceAliases.Entry entry:aliases){
+                Command command=find(entry.kind,entry.target);
+                // Reserve inactive phrases too: a removed target must never silently
+                // turn an existing personal phrase into a different device action.
+                if(command==null)command=new Command(entry.kind,entry.target,entry.label);
+                phrases.computeIfAbsent(phrase(entry.text),k->new LinkedHashSet<>()).add(command);
+            }
+        }
+        void block(String reason){blocked=reason;}
         Library() {
             key("UP","TV lauter","lauter","mach lauter","mache lauter","lautstaerke erhoehen","ton lauter","tv lauter");
             key("DOWN","TV leiser","leiser","mach leiser","mache leiser","lautstaerke senken","ton leiser","tv leiser");
@@ -81,7 +110,10 @@ final class VoiceCommands {
         private void add(Command command,String... aliases){
             for(String alias:aliases){
                 String key=phrase(alias);
-                if(!key.isEmpty()) phrases.computeIfAbsent(key,k->new LinkedHashSet<>()).add(command);
+                if(!key.isEmpty()){
+                    phrases.computeIfAbsent(key,k->new LinkedHashSet<>()).add(command);
+                    standards.computeIfAbsent(command,k->new LinkedHashMap<>()).putIfAbsent(key,alias);
+                }
             }
         }
         private Set<String> names(String name){
@@ -119,16 +151,19 @@ final class VoiceCommands {
                 "waehle den klangmodus "+n,"klangmodus "+n+" auswaehlen");
         }
         Match resolve(String text){
+            if(blocked!=null)return new Match(null,blocked);
             String n=phrase(text);
             if(n.isEmpty())return new Match(null,"Befehl sprechen oder eingeben.");
-            if(n.matches(".*\\b(nicht|kein|keine|keinen|keinem|keiner|keines|niemals|nie|ohne)\\b.*"))
+            if(negated(n))
                 return new Match(null,"Verneinung erkannt. Keine Aktion.");
             Set<Command> candidates=phrases.get(n);
             if(candidates==null || candidates.isEmpty())
                 return new Match(null,"Kein eindeutiger Befehl. Bitte kurz und einzeln formulieren.");
             if(candidates.size()!=1)return new Match(null,"Mehrdeutiger Befehl. Quelle oder Funktion genauer benennen.");
             Command c=candidates.iterator().next();
-            return new Match(c,c.label);
+            Command live=find(c.kind,c.target);
+            if(live==null)return new Match(null,"Persönliches Ziel derzeit nicht verfügbar. Keine Aktion.");
+            return new Match(live,live.label);
         }
     }
 }
