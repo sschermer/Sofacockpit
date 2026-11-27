@@ -211,3 +211,5 @@ Keine Änderung an TV-Systemsoftware, keine erfundenen Parameter. Die technische
 - 27.11.2026: Lab L22.1 v0.1.22 (versionCode 23): Nutzerauftrag, Zwischenringe und äußere Kontur rein visuell entfernen, radialen Farbnebel und Vibrationslogik unverändert erhalten; kontrollierter Vergleich mit v0.1.21. CI/Gerätetest offen, Haupt-App unverändert.
 
 - 27.11.2026: Lab v0.1.22 CI und signiertes Pre-Release verifiziert, Gerätetest weiterhin nicht vollständig zufriedenstellend. L22.1 v0.1.23 (versionCode 24): horizontaler Vergleich linear/quadratisch mit 80-%-Plateau und 100-%-Rastimpuls im rechteckigen OK-Ziel; Kreis beibehalten. CI/Gerätetest offen; Haupt-App unverändert.
+
+- 27.11.2026: Lab v0.1.23 CI und signiertes Pre-Release verifiziert; Nutzer meldet weiterhin Neustart-/Grenzimpulse bei Intensitätsänderung. L22.1 bleibt In Entwicklung. Referenztest mit einer vorab definierten Hüllkurve und Prüfung audio-gekoppelter Echtzeithaptik als mögliche nächste Untersuchung; Unterstützung am Gerät offen. Nur Dokumentation, keine funktionale Änderung.
