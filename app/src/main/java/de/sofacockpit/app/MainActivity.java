@@ -646,7 +646,7 @@ public class MainActivity extends ComponentActivity {
         if (streamRow == null) return;
         streamRow.removeAllViews();
         // Saved mappings and their order survive absent apps. They are not a source of inventory.
-        if (tvAppInventory.verified()) for (StreamingShortcuts.Entry entry : shortcuts.entries) {
+        for (StreamingShortcuts.Entry entry : tvAppInventory.activeFavorites(shortcuts.entries)) {
             TclAppLauncher.App app = tvAppInventory.find(TclAppLauncher.packageForLink(entry.link));
             if (app == null) continue;
             TextView tile = actionButton(app.name, "");
