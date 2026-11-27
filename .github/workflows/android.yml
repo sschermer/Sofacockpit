@@ -85,12 +85,12 @@ jobs:
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist/Sofacockpit-Lab.apk > "$RUNNER_TEMP/lab-badging.txt"
-          grep -E "^package: name='de.sofacockpit.lab' versionCode='12' versionName='0.1.11' " "$RUNNER_TEMP/lab-badging.txt"
+          grep -E "^package: name='de.sofacockpit.lab' versionCode='13' versionName='0.1.12' " "$RUNNER_TEMP/lab-badging.txt"
           grep -F "application-label:'Sofacockpit Lab'" "$RUNNER_TEMP/lab-badging.txt"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Lab-Android-v0.1.11
+          name: Sofacockpit-Lab-Android-v0.1.12
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -105,10 +105,10 @@ jobs:
             echo "Skipping superseded Lab build."
             exit 0
           fi
-          if gh release view sofacockpit-lab-v0.1.11 >/dev/null 2>&1; then
+          if gh release view sofacockpit-lab-v0.1.12 >/dev/null 2>&1; then
             echo "Lab release already exists; never replace a published version."
             exit 0
           fi
-          gh release create sofacockpit-lab-v0.1.11 dist/Sofacockpit-Lab.apk \
-            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.11" \
-            --prerelease --latest=false --notes "Lab v0.1.11: Korrektur des Icon-Abrufs nach negativem Gerätetest v0.1.10. TCL stellt Icon-Dateien nur bei laufender T-Cast-Sitzung bereit; Icons werden nun während einer kurz geöffneten, serialisierten Sitzung nach erneuter Bestätigung von GET/PACKAGEINFO und passender URL geladen. Keine OPEN-Befehle bei Icon-Abruf. Lokale Caches, URL-/Bildgrößenprüfungen und Text-Fallback unverändert. Steuerbefehle können Icon-Sitzungen abbrechen. Gerätetest erforderlich: TV verbinden, globale Wahl Nur Icon, Favoriten/Filmabend/Quellen sowie App-Starts prüfen."
+          gh release create sofacockpit-lab-v0.1.12 dist/Sofacockpit-Lab.apk \
+            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.12" \
+            --prerelease --latest=false --notes "Lab v0.1.12: TCL-Dateiserver bindet laut Original-APK an Port 0 und meldet den dynamischen Port in GET/PACKAGEINFO. Statt festem Port 34831 wird der frisch gemeldete Port der aktuellen T-Cast-Sitzung verwendet. Cache unabhängig vom temporären Port. Weiter nur numerischer gekoppelter TV, bestätigter Bildpfad, keine Weiterleitungen. Neues Zahnrad-Menü Icon-Diagnose mit lokalem Abrufstatus je App und Kopierfunktion. Bestehende Darstellung und Konfiguration bleiben erhalten. Gerätetest erneut erforderlich."

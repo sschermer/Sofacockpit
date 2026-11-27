@@ -140,6 +140,7 @@ public class TclAppLauncherTest {
         String pkg = supplemental ? PRIME : "com.netflix.ninja";
         String url = "http://127.0.0.1:34831/data/user_de/0/com.tcl.ttvs/files/" +
             (supplemental ? "prime.jpg" : "screenShot/netflix.png");
+        String freshUrl=url.replace(":34831",":42719");
         byte[] expected = new byte[]{1,2,3};
         java.util.concurrent.atomic.AtomicBoolean iconRead = new java.util.concurrent.atomic.AtomicBoolean();
         ExecutorService server = Executors.newSingleThreadExecutor();
@@ -154,11 +155,11 @@ public class TclAppLauncherTest {
                     TclAppLauncher.writeFrame(out,"159>>1>>version>>software>>model>>mac>>1",0);
                     assertEquals("223>>GET",TclAppLauncher.readFrame(in,1));
                     String inventoryUrl=supplemental?"http://127.0.0.1:34831/data/user_de/0/com.tcl.ttvs/files/netflix.png":
-                        (matching?url:url.replace("netflix.png","changed.png"));
+                        (matching?freshUrl:freshUrl.replace("netflix.png","changed.png"));
                     TclAppLauncher.writeFrame(out,"223>>GET>>com.netflix.ninja::Netflix::"+inventoryUrl,1);
                     if(supplemental||!matching){
                         assertEquals("223>>PACKAGEINFO>>"+pkg,TclAppLauncher.readFrame(in,1));
-                        TclAppLauncher.writeFrame(out,supplemental?PRIME_RESPONSE.replace("http://tv.invalid:34831/icon.jpg",url):
+                        TclAppLauncher.writeFrame(out,supplemental?PRIME_RESPONSE.replace("http://tv.invalid:34831/icon.jpg",freshUrl):
                             "223>>PACKAGEINFO>>"+pkg+">>",1);
                     }
                     assertEquals(-1,in.read());
@@ -167,9 +168,10 @@ public class TclAppLauncherTest {
             });
             try {
                 byte[] data=client.executeIcon(InetAddress.getByName("127.0.0.1"),listener.getLocalPort(),pkg,url,()->true,
-                    (host,path)->{
+                    target->{
                         assertFalse(remote.isDone());
-                        assertTrue(path.endsWith(supplemental?"prime.jpg":"netflix.png"));
+                        assertEquals(42719,target.port);
+                        assertTrue(target.path.endsWith(supplemental?"prime.jpg":"netflix.png"));
                         iconRead.set(true);
                         return expected;
                     });
@@ -180,7 +182,7 @@ public class TclAppLauncherTest {
         }finally{server.shutdownNow();}
     }
 
-    @Test public void iconDownloadUsesLiveSessionAndFreshMatchingMetadata() throws Exception {
+    @Test public void iconDownloadUsesLiveSessionAndFreshDynamicPort() throws Exception {
         iconSession(false,true);
         iconSession(true,true);
         iconSession(false,false);

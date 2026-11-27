@@ -438,7 +438,7 @@ public class MainActivity extends ComponentActivity {
     private void showStartMenu(View anchor) {
         if (quickMenu != null) quickMenu.dismiss();
         PopupMenu popup = new PopupMenu(this, anchor, Gravity.CENTER);
-        String[] items={"Design auswählen","Software-Updates","Verbindungen","Über Sofacockpit Lab","Verbindungen aktualisieren","Streaming-Start testen","Haptische Orientierung","Darstellung der App-Schaltflächen"};
+        String[] items={"Design auswählen","Software-Updates","Verbindungen","Über Sofacockpit Lab","Verbindungen aktualisieren","Streaming-Start testen","Haptische Orientierung","Darstellung der App-Schaltflächen","Icon-Diagnose"};
         for (int i=0;i<items.length;i++) popup.getMenu().add(0,i+1,i,items[i]);
         popup.setOnMenuItemClickListener(item -> {
             switch(item.getItemId()) {
@@ -458,6 +458,7 @@ public class MainActivity extends ComponentActivity {
                             (d,i)->{connectionOptions.edit().putBoolean("lab_haptics",i==0).apply();d.dismiss();})
                         .setNegativeButton("Schließen",null).show();return true;
                 case 8: showAppPresentation(null,null); return true;
+                case 9: showIconDiagnosis(); return true;
                 default: return false;
             }
         });
@@ -801,6 +802,34 @@ public class MainActivity extends ComponentActivity {
                     renderStreamingShortcuts();
                 }catch(IllegalArgumentException e){favoriteError(e.getMessage());}
             }).setNegativeButton("Schließen",null).show();
+    }
+
+    private void showIconDiagnosis(){
+        currentFavoriteInventory();
+        StringBuilder report=new StringBuilder("Lab "+updates.versionName()+"\n");
+        report.append("Global: ").append(appPresentation.global.label)
+            .append("\nTV: ").append(tv.iconPeerAddress()!=null?"gekoppelt und verbunden":"kein aktiver gekoppelter TV")
+            .append("\nInventar: ").append(tvAppInventory.apps().size())
+            .append(tvAppInventory.verified()?" bestätigt":" nicht aktuell bestätigt").append("\n");
+        if(!appInventoryError.isEmpty())report.append(appInventoryError).append("\n");
+        for(TclAppLauncher.App app:tvAppInventory.visible(false)){
+            AppPresentation.Mode mode=appPresentation.effective(AppPresentation.key(app.packageName));
+            String status=mode==AppPresentation.Mode.TEXT?"Textdarstellung gewählt":
+                !tvAppInventory.verified()?"Inventar nicht bestätigt":appIcons.status(app.packageName);
+            report.append("\n").append(app.name).append(" [").append(mode.label).append("]: ").append(status);
+        }
+        for(TvAppInventory.FavoriteTile favorite:tvAppInventory.homeFavorites(shortcuts.savedFavorites())){
+            if(favorite.status!=TvAppInventory.FavoriteStatus.AVAILABLE)
+                report.append("\n").append(favorite.entry.name).append(": ").append(favorite.status.shortLabel);
+        }
+        String message=report.toString();
+        new AlertDialog.Builder(this).setTitle("Icon-Diagnose")
+            .setMessage(message).setPositiveButton("Schließen",null)
+            .setNeutralButton("Kopieren",(d,w)->{
+                ClipboardManager clipboard=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                if(clipboard!=null)clipboard.setPrimaryClip(ClipData.newPlainText("Icon-Diagnose",message));
+            })
+            .setNegativeButton("Neu prüfen",(d,w)->refreshTvAppInventory()).show();
     }
 
     /** Keep text until a valid local bitmap is available. Warning text is never hidden. */

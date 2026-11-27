@@ -13,8 +13,15 @@ public class TvIconHttpTest {
         InetAddress peer=InetAddress.getByAddress(new byte[]{(byte)192,0,2,5});
         assertNotNull(TvIconHttp.requestPath(BASE+"screenShot/_data_app_%7E%7Efoo%3D.png",peer));
         assertNotNull(TvIconHttp.requestPath(BASE+"_data_app_%7E%7Efoo.jpg",peer));
+        TvIconHttp.Target first=TvIconHttp.target(BASE+"netflix.png",peer);
+        TvIconHttp.Target second=TvIconHttp.target(BASE.replace("34831","42719")+"netflix.png",peer);
+        assertEquals(34831,first.port);
+        assertEquals(42719,second.port);
+        assertEquals(first.path,second.path);
         for(String url:new String[]{BASE.replace("192.0.2.5","192.0.2.6")+"a.png",
-                BASE.replace("34831","80")+"a.png",BASE.replace("http:","https:")+"a.png",
+                BASE.replace("34831","80")+"a.png",BASE.replace("34831","6553")+"a.png",
+                BASE.replace("34831","6466")+"a.png",BASE.replace("34831","6467")+"a.png",
+                BASE.replace("http:","https:")+"a.png",
                 BASE+"../a.png",BASE+"%2e%2e/a.png",BASE+"a%2fb.png",BASE+"a%252fb.png",
                 BASE+"a.png?q=x",BASE+"a.png#frag",BASE+"a.html",
                 BASE.replace("192.0.2.5","other.invalid")+"a.png",

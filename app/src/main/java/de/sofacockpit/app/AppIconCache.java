@@ -26,6 +26,7 @@ final class AppIconCache implements AutoCloseable {
     };
     private final Set<String> pending=new HashSet<>();
     private final Map<String,Long> failures=new HashMap<>();
+    private final Map<String,String> diagnostics=new HashMap<>();
     private final File dir;
     private final Runnable changed;
     private String device="";
@@ -35,36 +36,45 @@ final class AppIconCache implements AutoCloseable {
         dir=new File(context.getCacheDir(),"tv-app-icons");this.changed=changed;
     }
     void device(String key){
-        if(!device.equals(key)){device=key;cancelPending();failures.clear();}
+        if(!device.equals(key)){device=key;cancelPending();failures.clear();diagnostics.clear();}
     }
     void resume(){if(!closed)enabled=true;}
     void pause(){enabled=false;cancelPending();}
-    void retryFailures(){failures.clear();}
+    void retryFailures(){failures.clear();diagnostics.clear();}
+    String status(String pkg){return diagnostics.getOrDefault(pkg,"Noch kein Abruf");}
     private void cancelPending(){
         generation++;
         worker.getQueue().clear();pending.clear();refreshPosted=false;
     }
     @Override public void close(){closed=true;pause();worker.shutdownNow();memory.evictAll();}
     Bitmap get(String pkg,String url,InetAddress peer,TvRemoteClient.IconLoader loader){
-        if(closed||device.isEmpty()||pkg==null||url==null||url.isEmpty())return null;
-        String key=hash(device+"\n"+pkg+"\n"+url);
+        if(closed||pkg==null)return null;
+        if(device.isEmpty()||!enabled||peer==null||loader==null){
+            diagnostics.put(pkg,"Kein aktiver gekoppelter TV / App im Hintergrund");
+            return null;
+        }
+        final TvIconHttp.Target target;
+        try{target=TvIconHttp.target(url,peer);}
+        catch(TvIconHttp.IconFailure e){diagnostics.put(pkg,e.getMessage());return null;}
+        // The temporary server port changes with each TCL session; cache identity
+        // is the device, package and exact icon file path, never the port.
+        String key=hash(device+"\n"+pkg+"\n"+target.path);
         Bitmap bitmap=memory.get(key);
-        if(bitmap!=null)return bitmap;
-        if(!enabled||peer==null||loader==null||pending.contains(key))return null;
-        String path=TvIconHttp.requestPath(url,peer);
-        if(path==null)return null;
+        if(bitmap!=null){diagnostics.put(pkg,"Icon verfügbar ("+bitmap.getWidth()+" × "+bitmap.getHeight()+")");return bitmap;}
+        if(pending.contains(key))return null;
         Long failed=failures.get(key);
         if(failed!=null&&SystemClock.elapsedRealtime()-failed<60000)return null;
         int token=generation;
-        pending.add(key);
+        pending.add(key);diagnostics.put(pkg,"Abruf eingeplant (vorheriger Port "+target.port+")");
         try{worker.execute(()->load(key,pkg,url,loader,token));}
-        catch(RejectedExecutionException e){pending.remove(key);}
+        catch(RejectedExecutionException e){pending.remove(key);diagnostics.put(pkg,"Warteschlange voll");}
         return null;
     }
     private void load(String key,String pkg,String url,TvRemoteClient.IconLoader loader,int token){
         if(token!=generation)return;
         Bitmap bitmap=null;
         boolean cancelled=false;
+        String error="Bildformat oder Bildgröße nicht dekodierbar";
         File file=new File(dir,key+".img");
         try{
             byte[] data=read(file);
@@ -78,22 +88,26 @@ final class AppIconCache implements AutoCloseable {
                 if(bitmap!=null&&token==generation)save(file,data);
             }
         }catch(CancellationException ignored){cancelled=true;}
-        catch(IOException|RuntimeException ignored){}
+        catch(IOException|RuntimeException e){error=TvIconHttp.diagnostic(e);}
         Bitmap result=bitmap;
         boolean preempted=cancelled;
+        String failure=error;
         main.post(()->{
             if(token!=generation||closed)return;
             pending.remove(key);
             if(preempted){
+                diagnostics.put(pkg,"Abruf durch Steuerung abgebrochen; erneute Aktualisierung möglich");
                 // User action wins. Permit another foreground lookup, no failure cooldown.
                 return;
             }
             if(result==null){
                 if(failures.size()>512)failures.clear();
                 failures.put(key,SystemClock.elapsedRealtime());
+                diagnostics.put(pkg,failure);
                 return;
             }
             failures.remove(key);memory.put(key,result);
+            diagnostics.put(pkg,"Icon verfügbar ("+result.getWidth()+" × "+result.getHeight()+")");
             if(!refreshPosted){
                 refreshPosted=true;
                 main.postDelayed(()->{

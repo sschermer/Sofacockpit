@@ -193,17 +193,17 @@ public final class TclAppLauncher implements AutoCloseable {
     }
 
     @FunctionalInterface interface IconReader {
-        byte[] read(InetAddress peer, String path) throws IOException;
+        byte[] read(TvIconHttp.Target target) throws IOException;
     }
 
     byte[] executeIcon(InetAddress host, String pkg, String url, BooleanSupplier active) throws IOException {
-        return executeIcon(host, PORT, pkg, url, active, (peer, path) -> {
+        return executeIcon(host, PORT, pkg, url, active, target -> {
             try (Socket http = new Socket(Proxy.NO_PROXY)) {
                 synchronized (this) {
                     if (socket.isClosed() || !active.getAsBoolean()) throw new InterruptedIOException();
                     iconSocket = http;
                 }
-                try { return TvIconHttp.fetch(http, peer, path); }
+                try { return TvIconHttp.fetch(http, target); }
                 finally { synchronized (this) { if (iconSocket == http) iconSocket = null; } }
             }
         });
@@ -214,9 +214,10 @@ public final class TclAppLauncher implements AutoCloseable {
      * No OPEN or other control command, and never use an unconfirmed URL. */
     byte[] executeIcon(InetAddress host, int port, String pkg, String url, BooleanSupplier active,
                        IconReader reader) throws IOException {
+        String stage="T-Cast-Verbindung";
         try {
-            String path = TvIconHttp.requestPath(url, host);
-            if (!validPackage(pkg) || path == null) throw new IOException("Ungültiges Icon-Ziel");
+            String path = TvIconHttp.target(url, host).path;
+            if (!validPackage(pkg)) throw new TvIconHttp.IconFailure("Ungültiges App-Paket");
             if (!active.getAsBoolean()) throw new InterruptedIOException();
             socket.connect(new InetSocketAddress(host, port), 1800);
             socket.setSoTimeout(3000);
@@ -225,6 +226,7 @@ public final class TclAppLauncher implements AutoCloseable {
             writeFrame(out, "159>>Sofacockpit>>1>>" + UUID.randomUUID() + ">>1", 0);
             int mode = algorithm(receive(in, 0, "159>>"));
             if (!active.getAsBoolean()) throw new InterruptedIOException();
+            stage="GET-Inventar";
             writeFrame(out, "223>>GET", mode);
             App match = null;
             for (App app : parseApps(receive(in, mode, "223>>GET>>")))
@@ -232,14 +234,22 @@ public final class TclAppLauncher implements AutoCloseable {
             if (!active.getAsBoolean()) throw new InterruptedIOException();
             // PACKAGEINFO generates its own image (including Prime Video).
             // If the cached URL was obtained by that route, revalidate it likewise.
-            if (match == null || !path.equals(TvIconHttp.requestPath(match.iconUrl, host)))
+            if (match == null || !path.equals(TvIconHttp.requestPath(match.iconUrl, host))) {
+                stage="PACKAGEINFO";
                 match = queryPackage(in, out, mode, pkg);
-            if (match == null || !path.equals(TvIconHttp.requestPath(match.iconUrl, host)))
-                throw new IOException("Icon-Adresse nicht erneut bestätigt");
+            }
+            if (match == null) throw new TvIconHttp.IconFailure("App-Icon nicht erneut bestätigt");
+            TvIconHttp.Target fresh=TvIconHttp.target(match.iconUrl,host);
+            if (!path.equals(fresh.path))
+                throw new TvIconHttp.IconFailure("Icon-Dateipfad hat sich geändert; App-Liste aktualisieren");
             if (!active.getAsBoolean() || socket.isClosed()) throw new InterruptedIOException();
-            return reader.read(host, path);
+            // Use the fresh session's port, not the port from the old inventory.
+            stage="HTTP (Port "+fresh.port+")";
+            return reader.read(fresh);
         } catch (GeneralSecurityException e) {
-            throw new IOException("T-Cast-Icon-Protokoll", e);
+            throw new TvIconHttp.IconFailure(stage+": T-Cast-Icon-Protokoll");
+        } catch (IOException e) {
+            throw new TvIconHttp.IconFailure(stage+": "+TvIconHttp.diagnostic(e));
         } finally { close(); }
     }
 
