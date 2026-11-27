@@ -78,6 +78,11 @@ public class MainActivity extends ComponentActivity {
     private LinearLayout sourcesAppList;
     private TextView sourcesStatus, systemStatus;
     private StreamingShortcuts shortcuts;
+    private final TvAppInventory tvAppInventory = new TvAppInventory();
+    private boolean includeSystemApps;
+    private boolean appInventoryLoading;
+    private String appInventoryError = "";
+    private TextView appsInventoryStatus;
     private final List<TextView> tvKeys = new ArrayList<>();
 
     @Override
@@ -152,6 +157,7 @@ public class MainActivity extends ComponentActivity {
         tvConnectionButton=soundConnectionButton=tvHomeStatus=tvHomeDetail=tvRemoteStatus=sourcesStatus=systemStatus=null;
         tvDeviceHeader=null; tvPower=tvMute=null; remoteDial=null;
         streamRow=sourcesAppList=null; streamScroll=null;
+        appsInventoryStatus=null;
         java.util.Arrays.fill(categoryViews,null);
         java.util.Arrays.fill(categoryPagers,null);
         shell = new LinearLayout(this);
@@ -428,12 +434,14 @@ public class MainActivity extends ComponentActivity {
         }
         if (categoryPagers[category] != null) categoryPagers[category].select(page);
         renderNavigation();
+        if (category == CockpitNavigation.TV && page == 1) refreshTvAppInventory();
     }
 
     private void onPageChanged(int category, int page) {
         if (navigation.category() != category) return;
         navigation.select(category, page);
         renderNavigation();
+        if (category == CockpitNavigation.TV && page == 1) refreshTvAppInventory();
     }
 
     private void renderNavigation() {
@@ -634,19 +642,23 @@ public class MainActivity extends ComponentActivity {
         }
     }
     private void renderStreamingShortcuts() {
+        if (streamRow == null) return;
         streamRow.removeAllViews();
+        // Saved mappings and their order survive absent apps. They are not a source of inventory.
         for (StreamingShortcuts.Entry entry : shortcuts.entries) {
-            TextView tile = actionButton(entry.name, "");
+            TclAppLauncher.App app = tvAppInventory.find(TclAppLauncher.packageForLink(entry.link));
+            if (app == null) continue;
+            TextView tile = actionButton(app.name, "");
             tile.setTextSize(12 * theme.theme.fontScale);
             tile.setPadding(dp(3), 0, dp(3), 0);
-            tile.setContentDescription(entry.name + " starten; lange drücken zum Bearbeiten");
+            tile.setContentDescription(app.name + " starten; lange drücken zum Bearbeiten");
             tile.setOnClickListener(v -> launchStreaming(entry));
             tile.setOnLongClickListener(v -> { shortcutOptions(entry); return true; });
             streamRow.addView(tile);
         }
-        if (shortcuts.entries.isEmpty()) {
+        if (streamRow.getChildCount() == 0) {
             TextView empty = actionButton("+", "");
-            empty.setContentDescription("Ersten Dienst hinzufügen");
+            empty.setContentDescription("TV-App als Favorit auswählen");
             empty.setOnClickListener(v -> addStreamingShortcut());
             streamRow.addView(empty);
         }
@@ -735,57 +747,46 @@ public class MainActivity extends ComponentActivity {
         if (shortcuts.entries.size() >= 50) {
             Toast.makeText(this, "Maximal 50 Schnellwahltasten.", Toast.LENGTH_SHORT).show(); return;
         }
-        if (tv.canRequestTclApps()) { loadInstalledApps(null); return; }
-        showStreamingCatalog();
+        loadInstalledApps(null);
     }
     private void loadInstalledApps(StreamingShortcuts.Entry old) {
-        if (!tv.canRequestTclApps()) {
-            if (old == null) showStreamingCatalog();
-            else Toast.makeText(this, "Zuerst TV verbinden und einschalten.", Toast.LENGTH_LONG).show();
+        tvAppInventory.device(tv.inventoryDeviceKey());
+        if (!tvAppInventory.verified()) {
+            if (tv.canRequestTclApps()) {
+                refreshTvAppInventory();
+                Toast.makeText(this, "TV-App-Liste wird geladen. Danach erneut auswählen.", Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(this, "Keine aktuelle TV-App-Liste. Fernseher verbinden und Quellen aktualisieren.", Toast.LENGTH_LONG).show();
+            }
             return;
         }
-        AlertDialog waiting = new AlertDialog.Builder(this).setTitle("Installierte TV-Apps")
-            .setMessage("App-Liste wird vom Fernseher geladen …")
-            .setNegativeButton("Abbrechen", (d, i) -> tv.cancelTclRequest()).create();
-        waiting.setOnCancelListener(d -> tv.cancelTclRequest());
-        waiting.show();
-        tv.requestTclApps(result -> {
-            if (!waiting.isShowing() || isFinishing() || isDestroyed()) return;
-            waiting.dismiss();
-            if (result.status == TclAppLauncher.Status.APPS) {
-                showInstalledApps(old, result.apps, false);
-            } else if (result.status != TclAppLauncher.Status.CANCELLED) {
-                Toast.makeText(this, result.status == TclAppLauncher.Status.BUSY ? "App-Aufruf läuft bereits." :
-                    "TV-App-Liste nicht verfügbar. App-Link-Katalog bleibt nutzbar.", Toast.LENGTH_LONG).show();
-                if (old == null && result.status != TclAppLauncher.Status.BUSY) showStreamingCatalog();
-            }
-        });
+        showInstalledApps(old, false);
     }
 
-    private void showInstalledApps(StreamingShortcuts.Entry old, List<TclAppLauncher.App> apps, boolean all) {
+    private void showInstalledApps(StreamingShortcuts.Entry old, boolean all) {
         List<StreamingShortcuts.Entry> choices = new ArrayList<>();
         List<String> names = new ArrayList<>();
-        for (TclAppLauncher.App app : apps) {
-            if (!all && app.systemLike()) continue;
-            StreamingShortcuts.Entry entry = new StreamingShortcuts.Entry(old == null ? app.name : old.name, app.packageName);
+        for (TclAppLauncher.App app : tvAppInventory.visible(all)) {
+            StreamingShortcuts.Entry entry = new StreamingShortcuts.Entry(app.name, app.packageName);
             boolean duplicate = false;
             for (StreamingShortcuts.Entry other : shortcuts.entries) {
-                if (other != old && StreamingShortcuts.sameTarget(other, entry)) { duplicate = true; break; }
+                if (other != old && app.packageName.equals(TclAppLauncher.packageForLink(other.link))) {
+                    duplicate = true; break;
+                }
             }
             if (duplicate) continue;
             choices.add(entry);
-            names.add(app.name + "\n" + app.packageName);
+            names.add(app.name + "\\n" + app.packageName);
         }
         int count = choices.size();
-        names.add(all ? "Nur normale Apps anzeigen" : "Auch System-Apps anzeigen");
+        names.add(all ? "System-Apps ausblenden" : "Auch System-Apps anzeigen");
         names.add("App-Liste aktualisieren");
-        names.add(old == null ? "Katalog / App-Link …" : "App-Link bearbeiten …");
         new AlertDialog.Builder(this).setTitle(old == null ? "Installierte TV-Apps" : "TV-App für " + old.name)
             .setItems(names.toArray(new String[0]), (d, i) -> {
-                if (i == count) showInstalledApps(old, apps, !all);
-                else if (i == count + 1) loadInstalledApps(old);
-                else if (i == count + 2) {
-                    if (old == null) showStreamingCatalog(); else editStreamingShortcut(old);
+                if (i == count) showInstalledApps(old, !all);
+                else if (i == count + 1) {
+                    refreshTvAppInventory();
+                    Toast.makeText(this, "App-Liste wird aktualisiert. Auswahl danach erneut öffnen.", Toast.LENGTH_LONG).show();
                 } else {
                     StreamingShortcuts.Entry entry = choices.get(i);
                     if (old == null) {
@@ -794,30 +795,43 @@ public class MainActivity extends ComponentActivity {
                     } else {
                         int index = shortcuts.entries.indexOf(old);
                         if (index < 0) return;
-                        shortcuts.entries.set(index, entry);
+                        shortcuts.entries.set(index, new StreamingShortcuts.Entry(old.name, entry.link));
                     }
                     saveStreamingShortcuts();
                 }
-            })
-            .setNegativeButton("Schließen", null).show();
+            }).setNegativeButton("Schließen", null).show();
     }
 
-    private void showStreamingCatalog() {
-        if (shortcuts.entries.size() >= 50) return;
-        List<StreamingShortcuts.Entry> choices = new ArrayList<>();
-        List<String> names = new ArrayList<>();
-        for (StreamingShortcuts.Entry entry : StreamingShortcuts.CATALOG) {
-            if (!shortcuts.contains(entry)) { choices.add(entry); names.add(entry.name); }
+    private void refreshTvAppInventory() {
+        tvAppInventory.device(tv.inventoryDeviceKey());
+        if (appInventoryLoading) return;
+        if (!tv.canRequestTclApps()) {
+            appInventoryError = "TV nicht verbunden oder ausgeschaltet.";
+            tvAppInventory.stale();
+            renderSourcesApps();
+            renderStreamingShortcuts();
+            return;
         }
-        names.add("Eigene TV-App / App-Link hinzufügen …");
-        if (tv.canRequestTclApps()) names.add("Installierte TV-Apps laden …");
-        new AlertDialog.Builder(this).setTitle("Dienst hinzufügen")
-            .setItems(names.toArray(new String[0]), (d, i) -> {
-                if (i == choices.size()) editStreamingShortcut(null);
-                else if (i > choices.size()) loadInstalledApps(null);
-                else { shortcuts.entries.add(choices.get(i)); saveStreamingShortcuts(); }
-            })
-            .setNegativeButton("Schließen", null).show();
+        final String identity = tvAppInventory.device();
+        appInventoryLoading = true;
+        appInventoryError = "";
+        renderSourcesApps();
+        tv.requestTclApps(result -> {
+            appInventoryLoading = false;
+            if (isFinishing() || isDestroyed()) return;
+            tvAppInventory.device(tv.inventoryDeviceKey());
+            if (!identity.equals(tvAppInventory.device())) return;
+            if (result.status == TclAppLauncher.Status.APPS) {
+                tvAppInventory.received(result.apps);
+                appInventoryError = "";
+            } else {
+                tvAppInventory.stale();
+                appInventoryError = result.status == TclAppLauncher.Status.BUSY ?
+                    "T-Cast beschäftigt. Bitte erneut aktualisieren." :
+                    "TV-App-Liste konnte nicht geladen werden.";
+            }
+            renderStreamingShortcuts();
+        });
     }
     private void editStreamingShortcut(StreamingShortcuts.Entry old) {
         LinearLayout form = new LinearLayout(this);
@@ -1024,7 +1038,19 @@ public class MainActivity extends ComponentActivity {
         TextView add = actionButton("+ TV-App / Favorit","");
         add.setOnClickListener(v -> addStreamingShortcut());
         apps.addView(add,new LinearLayout.LayoutParams(-1,dp(48)));
-        apps.addView(label("+ lädt bei kompatiblen TCL-TVs die installierten Apps. ★ = Startscreen-Favorit. Lange drücken zum Verwalten.",12,MUTED));
+        apps.addView(label("Nur vom verbundenen TV gemeldete Apps. ★ = Favorit. Lange drücken zum Verwalten.",12,MUTED));
+        LinearLayout inventoryActions = new LinearLayout(this);
+        TextView refresh = actionButton("Aktualisieren", "");
+        refresh.setOnClickListener(v -> refreshTvAppInventory());
+        inventoryActions.addView(refresh, new LinearLayout.LayoutParams(0, dp(48), 1f));
+        TextView systemToggle = actionButton("System-Apps ein/aus", "");
+        systemToggle.setOnClickListener(v -> { includeSystemApps = !includeSystemApps; renderSourcesApps(); });
+        LinearLayout.LayoutParams toggleLp = new LinearLayout.LayoutParams(0, dp(48), 1f);
+        toggleLp.leftMargin = dp(8);
+        inventoryActions.addView(systemToggle, toggleLp);
+        apps.addView(inventoryActions);
+        appsInventoryStatus = label("", 12, MUTED);
+        apps.addView(appsInventoryStatus);
         sourcesAppList = new LinearLayout(this);
         sourcesAppList.setOrientation(LinearLayout.VERTICAL);
         apps.addView(sourcesAppList,new LinearLayout.LayoutParams(-1,-2));
@@ -1061,39 +1087,57 @@ public class MainActivity extends ComponentActivity {
     }
     private void renderSourcesApps() {
         if (sourcesAppList == null) return;
+        tvAppInventory.device(tv.inventoryDeviceKey());
         sourcesAppList.removeAllViews();
-        List<StreamingShortcuts.Entry> entries = new ArrayList<>(shortcuts.entries);
-        for (StreamingShortcuts.Entry entry : StreamingShortcuts.CATALOG)
-            if (!shortcuts.contains(entry)) entries.add(entry);
-        for (int i=0;i<entries.size();i+=2) {
+        if (appsInventoryStatus != null) {
+            String status = appInventoryLoading ? "TV-App-Liste wird abgefragt …" :
+                tvAppInventory.verified() ? tvAppInventory.apps().size() + " TV-Apps gemeldet" :
+                tvAppInventory.hasSnapshot() ? "Zuletzt bekannter Bestand – nicht aktuell bestätigt" :
+                "Noch kein TV-App-Bestand abgefragt";
+            if (!appInventoryError.isEmpty()) status += " · " + appInventoryError;
+            appsInventoryStatus.setText(status);
+        }
+        List<TclAppLauncher.App> entries = tvAppInventory.visible(includeSystemApps);
+        for (int i = 0; i < entries.size(); i += 2) {
             LinearLayout row = new LinearLayout(this);
-            for (int j=0;j<2;j++) {
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,dp(56),1f);
-                if(j>0) lp.leftMargin=dp(8);
-                if(i+j>=entries.size()) { row.addView(new View(this),lp); continue; }
-                StreamingShortcuts.Entry entry = entries.get(i+j);
-                boolean favorite = shortcuts.entries.contains(entry);
-                TextView tile = actionButton((favorite?"★  ":"") + entry.name,"");
+            for (int j = 0; j < 2; j++) {
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(56), 1f);
+                if (j > 0) lp.leftMargin = dp(8);
+                if (i + j >= entries.size()) { row.addView(new View(this), lp); continue; }
+                TclAppLauncher.App app = entries.get(i + j);
+                StreamingShortcuts.Entry favoriteEntry = null;
+                for (StreamingShortcuts.Entry saved : shortcuts.entries)
+                    if (app.packageName.equals(TclAppLauncher.packageForLink(saved.link))) {
+                        favoriteEntry = saved; break;
+                    }
+                final StreamingShortcuts.Entry favorite = favoriteEntry;
+                TextView tile = actionButton((favorite != null ? "★  " : "") + app.name, "");
                 tile.setTextSize(13 * theme.theme.fontScale);
-                tile.setContentDescription(entry.name + (favorite?", Favorit":"") + "; lange drücken zum Verwalten");
-                tile.setOnClickListener(v -> launchStreaming(entry));
+                tile.setContentDescription(app.name + (favorite != null ? ", Favorit" : "") +
+                    "; lange drücken zum Verwalten");
+                tile.setOnClickListener(v -> launchStreaming(
+                    favorite == null ? new StreamingShortcuts.Entry(app.name, app.packageName) : favorite));
                 tile.setOnLongClickListener(v -> {
-                    if(favorite) shortcutOptions(entry);
-                    else new AlertDialog.Builder(this).setTitle(entry.name)
-                        .setItems(new String[]{"Zum Startscreen hinzufügen"},(d,which) -> {
-                            if (shortcuts.entries.size()>=50) {
-                                Toast.makeText(this,"Maximal 50 Schnellwahltasten.",Toast.LENGTH_SHORT).show();
-                            } else if (!shortcuts.contains(entry)) {
-                                shortcuts.entries.add(entry); saveStreamingShortcuts();
+                    if (favorite != null) shortcutOptions(favorite);
+                    else new AlertDialog.Builder(this).setTitle(app.name)
+                        .setItems(new String[]{"Zum Startscreen hinzufügen"}, (d, which) -> {
+                            if (shortcuts.entries.size() >= 50)
+                                Toast.makeText(this, "Maximal 50 Schnellwahltasten.", Toast.LENGTH_SHORT).show();
+                            else {
+                                StreamingShortcuts.Entry entry = new StreamingShortcuts.Entry(app.name, app.packageName);
+                                if (!shortcuts.contains(entry)) {
+                                    shortcuts.entries.add(entry);
+                                    saveStreamingShortcuts();
+                                }
                             }
-                        }).setNegativeButton("Schließen",null).show();
+                        }).setNegativeButton("Schließen", null).show();
                     return true;
                 });
-                row.addView(tile,lp);
+                row.addView(tile, lp);
             }
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1,-2);
-            lp.topMargin=dp(8);
-            sourcesAppList.addView(row,lp);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.topMargin = dp(8);
+            sourcesAppList.addView(row, lp);
         }
     }
     private View systemPage() {
@@ -1215,6 +1259,9 @@ public class MainActivity extends ComponentActivity {
                 (state.muted ? "Stummschaltung aufheben" : "Stummschaltung einschalten"));
             tvMute.invalidate();
         }
+        tvAppInventory.device(tv.inventoryDeviceKey());
+        if (!state.connected()) tvAppInventory.stale();
+        renderStreamingShortcuts();
         renderVolumes(state);
         if (tvDialog != null) tvDialog.render(state);
     }
