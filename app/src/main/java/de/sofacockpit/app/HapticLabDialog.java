@@ -36,7 +36,7 @@ final class HapticLabDialog implements AutoCloseable {
     private TextView status,levelLabel,description;
     private SeekBar level;
     private int strength=90,sharpness=85;
-    private HapticLabPatterns.Surface surface=HapticLabPatterns.Surface.MAGNET;
+    private HapticLabPatterns.Surface surface=HapticLabPatterns.Surface.TRACK_LINEAR;
     private long lastStart=-1000;
     private long busyUntil=0;
     // One bounded vibration for a stationary finger; no periodic restart.
@@ -108,13 +108,19 @@ final class HapticLabDialog implements AutoCloseable {
         heading(body,"Oberflächen");
         LinearLayout modes=row();
         for(HapticLabPatterns.Surface option:HapticLabPatterns.Surface.values()){
-            if(option==HapticLabPatterns.Surface.MAGNET)continue;
+            if(option.isMagnet())continue;
             Button b=button(option.label,()->chooseSurface(option));
             modes.addView(b,new LinearLayout.LayoutParams(0,dp(48),1));
         }
         body.addView(modes);
-        body.addView(button("Magnetismus · Annäherung und Einrasten",()->chooseSurface(HapticLabPatterns.Surface.MAGNET)),
+        body.addView(button("Magnetismus · Kreis",()->chooseSurface(HapticLabPatterns.Surface.MAGNET)),
             new LinearLayout.LayoutParams(-1,dp(48)));
+        LinearLayout tracks=row();
+        for(HapticLabPatterns.Surface option:new HapticLabPatterns.Surface[]{
+                HapticLabPatterns.Surface.TRACK_LINEAR,HapticLabPatterns.Surface.TRACK_QUADRATIC}){
+            tracks.addView(button(option.label,()->chooseSurface(option)),new LinearLayout.LayoutParams(0,dp(48),1));
+        }
+        body.addView(tracks);
         description=label(surfaceDescription(),13,muted);body.addView(description);
         pad=new Pad(activity);
         body.addView(pad,new LinearLayout.LayoutParams(-1,dp(224)));
@@ -171,7 +177,7 @@ final class HapticLabDialog implements AutoCloseable {
     }
 
     private String surfaceDescription(){
-        return surface.description+(surface==HapticLabPatterns.Surface.MAGNET&&!amplitude?
+        return surface.description+(surface.isMagnet()&&!amplitude?
             "\nOhne Amplitudenregelung: gleichmäßige Vibration mit System-Standardstärke; Abstandsregelung nicht verfügbar.":"");
     }
     private void chooseSurface(HapticLabPatterns.Surface option){
@@ -334,6 +340,7 @@ final class HapticLabDialog implements AutoCloseable {
         private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
         private final HapticLabPatterns.Gesture gesture=new HapticLabPatterns.Gesture();
         private final MagnetField magnet=new MagnetField();
+        private final MagnetTrack track=new MagnetTrack();
         private final Runnable magnetTick=this::tickMagnet;
         private final float density=getResources().getDisplayMetrics().density;
         private boolean down;
@@ -345,18 +352,20 @@ final class HapticLabDialog implements AutoCloseable {
         }
         private void signal(HapticLabPatterns.Signal s){if(s!=null)play(s.cue,s.scale,true);}
         private void updateMagnet(){
-            if(!down||surface!=HapticLabPatterns.Surface.MAGNET)return;
+            if(!down||!surface.isMagnet())return;
             long now=android.os.SystemClock.uptimeMillis();
             if(!isShown()||!hasWindowFocus()){stop();return;}
-            long remaining=magnet.remaining(now);
+            long remaining=surface.isTrack()?track.remaining(now):magnet.remaining(now);
             if(remaining<=0){stop();report("5 Sekunden erreicht – Finger neu ansetzen");return;}
-            magnetReading=magnet.sample(x/density,y/density,getWidth()/density,getHeight()/density,now);
+            magnetReading=surface.isTrack()?
+                track.sample(x/density,y/density,getWidth()/density,getHeight()/density,now,surface.trackCurve()):
+                magnet.sample(x/density,y/density,getWidth()/density,getHeight()/density,now);
             playMagnet(magnetReading,now,remaining);
             invalidate();
         }
         private void tickMagnet(){
             updateMagnet();
-            if(down&&surface==HapticLabPatterns.Surface.MAGNET)postDelayed(magnetTick,MagnetOutput.TICK_MS);
+            if(down&&surface.isMagnet())postDelayed(magnetTick,MagnetOutput.TICK_MS);
         }
         @Override public boolean onTouchEvent(MotionEvent event){
             int action=event.getActionMasked();
@@ -364,15 +373,16 @@ final class HapticLabDialog implements AutoCloseable {
                 case MotionEvent.ACTION_DOWN:
                     stop();down=true;x=event.getX();y=event.getY();
                     getParent().requestDisallowInterceptTouchEvent(true);
-                    if(surface==HapticLabPatterns.Surface.MAGNET){
-                        magnet.begin(android.os.SystemClock.uptimeMillis());
+                    if(surface.isMagnet()){
+                        long now=android.os.SystemClock.uptimeMillis();
+                        if(surface.isTrack())track.begin(now);else magnet.begin(now);
                         tickMagnet();
                     }else signal(gesture.begin(surface,x/density,y/density,getWidth()/density,getHeight()/density,event.getEventTime()));
                     invalidate();return true;
                 case MotionEvent.ACTION_MOVE:
                     if(down&&event.getPointerCount()==1){
                         x=event.getX();y=event.getY();
-                        if(surface==HapticLabPatterns.Surface.MAGNET)updateMagnet();
+                        if(surface.isMagnet())updateMagnet();
                         else signal(gesture.move(x/density,y/density,getWidth()/density,getHeight()/density,event.getEventTime()));
                         invalidate();
                     }
@@ -388,7 +398,7 @@ final class HapticLabDialog implements AutoCloseable {
         }
         @Override public boolean performClick(){super.performClick();return true;}
         void reset(){
-            down=false;gesture.stop();magnet.stop();magnetReading=null;
+            down=false;gesture.stop();magnet.stop();track.stop();magnetReading=null;
             removeCallbacks(magnetTick);invalidate();
         }
         @Override protected void onDetachedFromWindow(){
@@ -399,7 +409,32 @@ final class HapticLabDialog implements AutoCloseable {
             super.onDraw(c);float w=getWidth(),h=getHeight();
             paint.setStyle(Paint.Style.FILL);paint.setColor(panel);
             c.drawRoundRect(0,0,w,h,dp(10),dp(10),paint);
-            if(surface==HapticLabPatterns.Surface.MAGNET){
+            if(surface.isTrack()){
+                // Continuous, line-free mist. The sampled gradient approximates
+                // the chosen curve; only the actual snap target has an outline.
+                if(w>0&&h>0){
+                    float target=(float)(w*MagnetTrack.TARGET);
+                    int[] colors=new int[35];float[] stops=new float[35];
+                    for(int i=0;i<colors.length;i++){
+                        double position=i==0?0:i==34?1:
+                            MagnetTrack.START+(MagnetTrack.PLATEAU-MagnetTrack.START)*(i-1)/32.0;
+                        stops[i]=(float)position;
+                        int alpha=(int)Math.round(100*MagnetTrack.intensity(position,surface.trackCurve())/MagnetTrack.PLATEAU_PERCENT);
+                        colors[i]=(accent&0x00ffffff)|(alpha<<24);
+                    }
+                    paint.setColor(accent);paint.setAlpha(255);
+                    paint.setShader(new android.graphics.LinearGradient(0,0,w,0,colors,stops,android.graphics.Shader.TileMode.CLAMP));
+                    c.drawRect(0,0,target,h,paint);paint.setShader(null);
+                    boolean latched=magnetReading!=null&&magnetReading.latched;
+                    paint.setColor(latched?accent:panel);c.drawRect(target,0,w,h,paint);
+                    paint.setStyle(Paint.Style.STROKE);paint.setColor(accent);paint.setStrokeWidth(dp(2));
+                    float inset=Math.min(dp(1),Math.min((w-target)/4f,h/4f));
+                    c.drawRect(target+inset,inset,w-inset,h-inset,paint);
+                    paint.setStyle(Paint.Style.FILL);paint.setColor(latched?bg:text);
+                    paint.setTextAlign(Paint.Align.CENTER);paint.setTextSize(Math.min(dp(18),(w-target)*.55f));
+                    c.drawText("OK",(target+w)/2f,h/2f-(paint.ascent()+paint.descent())/2f,paint);
+                }
+            }else if(surface==HapticLabPatterns.Surface.MAGNET){
                 float cx=w/2f,cy=h/2f;
                 float inner=MagnetField.targetRadius(w/density,h/density)*density;
                 float outer=MagnetField.haloRadius(w/density,h/density)*density;

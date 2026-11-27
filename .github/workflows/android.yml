@@ -85,12 +85,12 @@ jobs:
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist/Sofacockpit-Lab.apk > "$RUNNER_TEMP/lab-badging.txt"
-          grep -E "^package: name='de.sofacockpit.lab' versionCode='23' versionName='0.1.22' " "$RUNNER_TEMP/lab-badging.txt"
+          grep -E "^package: name='de.sofacockpit.lab' versionCode='24' versionName='0.1.23' " "$RUNNER_TEMP/lab-badging.txt"
           grep -F "application-label:'Sofacockpit Lab'" "$RUNNER_TEMP/lab-badging.txt"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Lab-Android-v0.1.22
+          name: Sofacockpit-Lab-Android-v0.1.23
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -105,10 +105,10 @@ jobs:
             echo "Skipping superseded Lab build."
             exit 0
           fi
-          if gh release view sofacockpit-lab-v0.1.22 >/dev/null 2>&1; then
+          if gh release view sofacockpit-lab-v0.1.23 >/dev/null 2>&1; then
             echo "Lab release already exists; never replace a published version."
             exit 0
           fi
-          gh release create sofacockpit-lab-v0.1.22 dist/Sofacockpit-Lab.apk \
-            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.22" \
-            --prerelease --latest=false --notes "Lab v0.1.22: rein visueller Magnetismus-Vergleich. Zwischenringe und äußere Konturlinie aus der Testfläche entfernt; radialer nach innen dichter werdender Nebel, OK-Tastenrand und Einrastanzeige unverändert. MagnetField, MagnetOutput, Amplitudenverlauf, Rastimpuls, Abbruch, sonstige Haptik und Gerätesteuerung unverändert. Prüfen, ob wahrgenommene Zwischenklicks ohne sichtbare Unterteilungen fortbestehen. Gerätetest offen."
+          gh release create sofacockpit-lab-v0.1.23 dist/Sofacockpit-Lab.apk \
+            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.23" \
+            --prerelease --latest=false --notes "Lab v0.1.23: Haptik-Labor mit zwei horizontalen Magnetismus-Testbahnen (linear und quadratisch). Links 0–20 % Ruhe, 20–75 % Anstieg auf 80 % der gewählten Stärke, 75–90 % konstantes Plateau, rechts rechteckiges OK-Feld: sprunghafter 100-%-Rastimpuls bis 42 ms, dann Ruhe. Horizontaler weicher Farbnebel ohne Unterteilungslinien, Kreis als Vergleich erhalten; lineare Bahn Startauswahl. Vorhandene Vibrationsausgabe und Abbruchgrenze unverändert, keine Gerätebefehle. JVM-Tests für Geometrie, Kurven, Plateau, Einrasten und Abbruch; Gerätetest offen."

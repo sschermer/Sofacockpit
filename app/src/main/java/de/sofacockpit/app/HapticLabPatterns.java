@@ -37,9 +37,14 @@ final class HapticLabPatterns {
         TEXTURES("Texturen","Links glatt, Mitte fein geriffelt, rechts grob geriffelt. Langsam und schnell streichen."),
         DETENTS("Rastleiste","Von links nach rechts: einzelne mechanisch wirkende Rastpunkte."),
         RAMP("Stärkerampe","Von links nach rechts: zehn ansteigende Stärkestufen bis zur gewählten Maximalstärke."),
-        MAGNET("Magnetismus","Von außen zur OK-Taste streichen: bei ruhendem Finger gleichmäßige Dauervibration, beim Annähern zunehmend stärker. Beim Einrasten kurzer kräftiger Impuls, danach Ruhe. Zum erneuten Einrasten deutlich aus der Taste herausstreichen.");
+        MAGNET("Magnetismus","Von außen zur OK-Taste streichen: bei ruhendem Finger gleichmäßige Dauervibration, beim Annähern zunehmend stärker. Beim Einrasten kurzer kräftiger Impuls, danach Ruhe. Zum erneuten Einrasten deutlich aus der Taste herausstreichen."),
+        TRACK_LINEAR("Testbahn linear","Von links nach rechts: zunächst Ruhe, linearer Anstieg bis 80 % der gewählten Stärke, kurzer Bereich mit konstant 80 %, dann Sprung auf 100 % beim Einrasten in OK und Ruhe."),
+        TRACK_QUADRATIC("Testbahn quadratisch","Von links nach rechts: zunächst Ruhe, erst langsamer und dann zunehmend steiler Anstieg bis 80 % der gewählten Stärke, konstantes 80-%-Plateau, Sprung auf 100 % beim Einrasten in OK und Ruhe.");
         final String label,description;
         Surface(String label,String description){this.label=label;this.description=description;}
+        boolean isTrack(){return this==TRACK_LINEAR||this==TRACK_QUADRATIC;}
+        boolean isMagnet(){return this==MAGNET||isTrack();}
+        MagnetTrack.Curve trackCurve(){return this==TRACK_QUADRATIC?MagnetTrack.Curve.QUADRATIC:MagnetTrack.Curve.LINEAR;}
     }
     static final long MIN_INTERVAL=60,MAX_GESTURE_MS=5000;
     static final class Signal {
