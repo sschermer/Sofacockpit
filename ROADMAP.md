@@ -20,11 +20,28 @@ Nur nach belegtem Fortschritt hochstufen. Ein Code-Commit ohne erfolgreichen Bui
 
 | ID | Aufgabe | Zielversion | Status | Nachweis / tatsächliche Version |
 | --- | --- | --- | --- | --- |
-| 0.1 | Nativer TCL-App-Start und Auswahl installierter Apps; stabile Freigabe | 1.1.7 | Getestet | v1.1.6: CI erfolgreich (Tests, Build, feste Signatur); Nutzer bestätigte Dyn nach Neuzuordnung, Netflix, YouTube, Abruf der App-Liste und Hinzufügen eines Favoriten. Stabile v1.1.7 mit unveränderter Funktionslogik vorgesehen; Veröffentlichung noch zu verifizieren. |
+| 0.1 | Nativer TCL-App-Start und Auswahl installierter Apps; stabile Freigabe | 1.1.7 | Abgeschlossen | v1.1.6: CI erfolgreich (Tests, Build, feste Signatur); Nutzer bestätigte Dyn nach Neuzuordnung, Netflix, YouTube, Abruf der App-Liste und Hinzufügen eines Favoriten. Funktionsgleiche v1.1.7: CI einschließlich Signaturprüfung erfolgreich, stabiles Release mit vollständiger APK verifiziert. Die davon unabhängige unvollständige App-Übersicht unter TV → Quellen wird in Aufgabe 0.2 korrigiert. |
 
-[Bestandener CI-Lauf v1.1.6](https://github.com/sschermer/Sofacockpit/actions/runs/45924999804) · [Pre-Release v1.1.6](https://github.com/sschermer/Sofacockpit/releases/tag/sofacockpit-v1.1.6)
+[Bestandener CI-Lauf v1.1.6](https://github.com/sschermer/Sofacockpit/actions/runs/45924999804) · [Pre-Release v1.1.6](https://github.com/sschermer/Sofacockpit/releases/tag/sofacockpit-v1.1.6) · [Bestandener CI-Lauf v1.1.7](https://github.com/sschermer/Sofacockpit/actions/runs/45927566041) · [Stabiles Release v1.1.7](https://github.com/sschermer/Sofacockpit/releases/tag/sofacockpit-v1.1.7)
 
 Einzelne Detailtests (System-Apps ein-/ausblenden, App-Liste manuell aktualisieren und vollständige Regression aller Bedienelemente) wurden nicht gesondert bestätigt. Das Kernziel der Phase ist am Gerät nachgewiesen.
+
+## Vorrangige Korrektur vor Phase 1
+
+| ID | Aufgabe | Zielversion | Priorität | Status | Nachweis / tatsächliche Version |
+| --- | --- | --- | --- | --- | --- |
+| 0.2 | TV → Quellen: tatsächlichen TV-App-Bestand anzeigen | 1.1.8 (Vorschlag) | Hoch – vor Tastatur | In Entwicklung | Nutzer meldet am 27.11.2026 nicht installierte und fehlende installierte Apps. Ursache im Code nachgewiesen; noch keine funktionale Änderung oder neuer Build. |
+
+**Ursache:** `MainActivity.renderSourcesApps()` verwendet gespeicherte Favoriten und den statischen 15-Dienste-Katalog aus `StreamingShortcuts.CATALOG`, nicht den per T-Cast abgerufenen App-Bestand. Der bereits funktionierende Live-Abruf (`223>>GET`) wird bisher für den Plus-/Zuordnungsdialog und die Paketprüfung beim Start eingesetzt. Der Plus-Dialog blendet vorhandene Favoriten und standardmäßig wahrscheinliche System-Apps aus.
+
+**Ziel / Abnahmekriterien:**
+
+- Bei einem kompatiblen verbundenen TCL die Übersicht unter TV → Quellen aus dem tatsächlich gelieferten App-Bestand aufbauen; den alten Dienstekatalog nicht mit installierten Apps vermischen.
+- Installierte startfähige Apps unabhängig von der Favoritenauswahl anzeigen, anhand des Paketnamens eindeutig zuordnen und den tatsächlichen Namen verwenden. System-Apps sinnvoll filtern und bei Bedarf einblendbar lassen; nicht jede installierte Android-Komponente ist startfähig.
+- Aktualisierung bei Bedarf; prüfen, ob ein einmaliger Abruf beim Öffnen der Quellen-Seite und bei TV-Wechsel sinnvoll ist. Kein Hintergrund-Polling, keine zusätzliche TV-App, kein ADB.
+- Favoriten, Reihenfolge und gespeicherte Deep Links erhalten; nicht installierte oder nicht überprüfbare Favoriten nicht als tatsächlich installierte Apps darstellen oder stillschweigend löschen.
+- Bei fehlender Verbindung, fehlender T-Cast-Unterstützung oder Abruffehler Status transparent anzeigen; bisheriger manueller App-Link-Weg kann separat gekennzeichnet verfügbar bleiben.
+- Tests: App-Übersicht mit TV-App-Liste vergleichen, neue App installieren bzw. deinstallieren und aktualisieren, Favoriten markieren/zuordnen, App-Start und Verbindungswechsel prüfen. Rückmeldungen bei leerer Liste, Fehlern und nicht kompatiblen TVs testen.
 
 ## Phase 1 – TV-Fernbedienung vervollständigen (1.2.x)
 
@@ -70,8 +87,10 @@ Keine Änderung an TV-Systemsoftware, keine erfundenen Parameter. Die technische
 
 ## Nächste Aufgabe
 
-**1 – Tastatur.** Erst T-Cast-Texteingabe bzw. vorhandene Android-TV-Schnittstelle am Gerät prüfen, danach minimal integrieren. Kein dauerhaftes Debugging und keine zusätzliche TV-App als Standardlösung.
+**0.2 – TV-App-Übersicht korrigieren (hohe Priorität).** Die Ursache ist lokalisiert. Nächster Schritt ist die gezielte Integration des bereits vorhandenen T-Cast-App-Inventars in TV → Quellen. Danach Aufgabe 1 – Tastatur wie geplant.
 
 ## Änderungsverlauf
 
 - 27.11.2026: Roadmap angelegt. Alle 15 identifizierten Funktionslücken in elf Entwicklungsaufgaben zusammengefasst; Reihenfolge vom Nutzer bestätigt. Nativer TCL-App-Start, App-Liste, Neuzuordnung und neuer Favorit in v1.1.6 am Gerät bestätigt. Stabile Veröffentlichung als v1.1.7 vorgesehen.
+
+- 27.11.2026: Stabile v1.1.7 (versionCode 26) und erfolgreicher CI-Lauf verifiziert. Aufgabe 0.1 abgeschlossen. Neue Nutzeranforderung mit hoher Priorität als 0.2 vor Phase 1 aufgenommen; Ursache für die falsche App-Übersicht im Quellcode bestätigt. Alle bestehenden Aufgaben und IDs bleiben erhalten.
