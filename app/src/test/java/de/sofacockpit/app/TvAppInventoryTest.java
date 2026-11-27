@@ -80,4 +80,43 @@ public class TvAppInventoryTest {
         assertEquals("com.netflix.ninja", TclAppLauncher.packageForLink("netflix://"));
         assertNull(TclAppLauncher.packageForLink("https://example.com/movie/123"));
     }
+
+    @Test public void homeFavoritesStayVisibleInSavedOrderAcrossInventoryChanges() {
+        TvAppInventory inventory = new TvAppInventory();
+        inventory.device("tv");
+        StreamingShortcuts.Entry netflix = new StreamingShortcuts.Entry("Netflix", "netflix://");
+        StreamingShortcuts.Entry prime = new StreamingShortcuts.Entry("Prime Video", "https://app.primevideo.com");
+        StreamingShortcuts.Entry custom = new StreamingShortcuts.Entry("Serie", "https://www.netflix.com/title/80057281");
+        java.util.List<StreamingShortcuts.Entry> saved = Arrays.asList(prime, netflix, custom);
+        java.util.List<TvAppInventory.FavoriteTile> tiles = inventory.homeFavorites(saved);
+        assertEquals(3, tiles.size());
+        assertSame(prime, tiles.get(0).entry);
+        assertSame(netflix, tiles.get(1).entry);
+        assertSame(custom, tiles.get(2).entry);
+        assertEquals(TvAppInventory.FavoriteStatus.UNCONFIRMED, tiles.get(0).status);
+        assertTrue(tiles.get(0).canTryStart());
+        assertEquals(TvAppInventory.FavoriteStatus.UNMAPPED, tiles.get(2).status);
+        assertFalse(tiles.get(2).canTryStart());
+        inventory.received(Collections.singletonList(app("Netflix", "com.netflix.ninja")));
+        tiles = inventory.homeFavorites(saved);
+        assertEquals(3, tiles.size());
+        assertSame(prime, tiles.get(0).entry);
+        assertEquals(TvAppInventory.FavoriteStatus.NOT_REPORTED, tiles.get(0).status);
+        assertEquals(TvAppInventory.FavoriteStatus.AVAILABLE, tiles.get(1).status);
+        assertEquals(Collections.singletonList(netflix), inventory.activeFavorites(saved));
+        assertEquals(1, inventory.visible(false).size());
+        inventory.received(Arrays.asList(app("Prime Video", "com.amazon.amazonvideo.livingroom"),
+            app("Netflix", "com.netflix.ninja")));
+        tiles = inventory.homeFavorites(saved);
+        assertEquals(TvAppInventory.FavoriteStatus.AVAILABLE, tiles.get(0).status);
+        assertEquals(Arrays.asList(prime, netflix), inventory.activeFavorites(saved));
+        inventory.stale();
+        assertEquals(3, inventory.homeFavorites(saved).size());
+        assertEquals(TvAppInventory.FavoriteStatus.UNCONFIRMED, inventory.homeFavorites(saved).get(0).status);
+        assertTrue(inventory.activeFavorites(saved).isEmpty());
+        inventory.device("tv-other");
+        assertEquals(3, inventory.homeFavorites(saved).size());
+        assertTrue(inventory.visible(false).isEmpty());
+        assertEquals(3, saved.size());
+    }
 }

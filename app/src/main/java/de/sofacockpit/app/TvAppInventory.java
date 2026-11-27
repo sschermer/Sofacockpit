@@ -35,12 +35,27 @@ final class TvAppInventory {
         return result;
     }
     enum FavoriteStatus {
-        AVAILABLE("Installierte TV-App zugeordnet"),
-        UNCONFIRMED("TV-App-Bestand nicht aktuell bestätigt"),
-        NOT_REPORTED("Zugeordnete App aktuell nicht gemeldet"),
-        UNMAPPED("Individueller App-/Inhaltslink · keine eindeutige TV-App-Zuordnung");
-        final String label;
-        FavoriteStatus(String label) { this.label = label; }
+        AVAILABLE("Installierte TV-App zugeordnet", ""),
+        UNCONFIRMED("TV-App-Liste noch nicht aktuell bestätigt", "Ungeprüft"),
+        NOT_REPORTED("Das zugeordnete Paket fehlt in der vom TV gemeldeten App-Liste. Die App kann dennoch installiert sein.", "Nicht gemeldet"),
+        UNMAPPED("Individueller App-/Inhaltslink · keine eindeutige TV-App-Zuordnung", "Nicht zugeordnet");
+        final String label, shortLabel;
+        FavoriteStatus(String label, String shortLabel) { this.label = label; this.shortLabel = shortLabel; }
+    }
+    /** Home presentation contains every stored favorite, independently of the live inventory. */
+    static final class FavoriteTile {
+        final StreamingShortcuts.Entry entry;
+        final FavoriteStatus status;
+        FavoriteTile(StreamingShortcuts.Entry entry, FavoriteStatus status) {
+            this.entry = entry; this.status = status;
+        }
+        boolean canTryStart() { return status != FavoriteStatus.UNMAPPED; }
+    }
+    List<FavoriteTile> homeFavorites(List<StreamingShortcuts.Entry> saved) {
+        List<FavoriteTile> result = new ArrayList<>();
+        for (StreamingShortcuts.Entry entry : saved)
+            result.add(new FavoriteTile(entry, favoriteStatus(entry)));
+        return result;
     }
     FavoriteStatus favoriteStatus(StreamingShortcuts.Entry entry) {
         String pkg = TclAppLauncher.packageForLink(entry.link);

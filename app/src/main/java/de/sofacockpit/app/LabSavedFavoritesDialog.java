@@ -59,8 +59,8 @@ final class LabSavedFavoritesDialog implements AutoCloseable {
         int available=0;
         for(StreamingShortcuts.Entry e:saved)
             if(tv.favoriteStatus(e)==TvAppInventory.FavoriteStatus.AVAILABLE)available++;
-        summary.setText(saved.size()+" gespeichert · "+available+" aktuell in der Leiste\n"+
-            "Auch nicht zuordenbare und derzeit fehlende Apps bleiben hier bearbeitbar.");
+        summary.setText(saved.size()+" gespeichert · "+available+" vom TV bestätigt\n"+
+            "Alle gespeicherten Favoriten bleiben auf Start sichtbar und hier bearbeitbar.");
         content.removeAllViews();
         if(saved.isEmpty()){
             LinearLayout card=ui.panel();
@@ -72,6 +72,8 @@ final class LabSavedFavoritesDialog implements AutoCloseable {
             LinearLayout card=ui.panel();
             ui.add(card,ui.text(entry.name,16,ui.t.text,true),0);
             ui.add(card,ui.text(state.label,13,state==TvAppInventory.FavoriteStatus.AVAILABLE?ui.t.accent:ui.t.muted,false),5);
+            String pkg=de.sofacockpit.app.tv.TclAppLauncher.packageForLink(entry.link);
+            if(pkg!=null)ui.add(card,ui.text("Paket: "+pkg,12,ui.t.muted,false),5);
             TextView link=ui.text(entry.link,12,ui.t.muted,false);
             link.setMaxLines(3);link.setEllipsize(android.text.TextUtils.TruncateAt.END);
             ui.add(card,link,5);

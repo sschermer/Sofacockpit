@@ -935,15 +935,30 @@ public class MainActivity extends ComponentActivity {
         if (streamRow == null) return;
         currentFavoriteInventory();
         streamRow.removeAllViews();
-        // Saved mappings and their order survive absent apps. They are not a source of inventory.
-        for (StreamingShortcuts.Entry entry : tvAppInventory.activeFavorites(shortcuts.entries)) {
-            TclAppLauncher.App app = tvAppInventory.find(TclAppLauncher.packageForLink(entry.link));
-            if (app == null) continue;
+        // Favorites are saved user choices, not the device inventory.
+        // Keep their positions and show uncertainty as a status rather than hiding them.
+        for (TvAppInventory.FavoriteTile favorite : tvAppInventory.homeFavorites(shortcuts.savedFavorites())) {
+            StreamingShortcuts.Entry entry = favorite.entry;
             TextView tile = actionButton(entry.name, "");
             tile.setTextSize(12 * theme.theme.fontScale);
             tile.setPadding(dp(3), 0, dp(3), 0);
-            tile.setContentDescription(entry.name + " starten; lange drücken zum Bearbeiten");
-            tile.setOnClickListener(v -> launchStreaming(entry));
+            tile.setMaxLines(3);
+            tile.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            if (favorite.status != TvAppInventory.FavoriteStatus.AVAILABLE) {
+                android.text.SpannableString marked = new android.text.SpannableString(entry.name + "\n" + favorite.status.shortLabel);
+                int start = entry.name.length() + 1;
+                marked.setSpan(new android.text.style.RelativeSizeSpan(.78f), start, marked.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                marked.setSpan(new android.text.style.ForegroundColorSpan(MUTED), start, marked.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                tile.setText(marked);
+            }
+            tile.setContentDescription(entry.name + "; " + favorite.status.label +
+                (favorite.canTryStart() ? "; antippen zum Starten" : "; antippen zum Verwalten") +
+                "; lange drücken zum Bearbeiten");
+            tile.setOnClickListener(v -> {
+                if (!shortcuts.entries.contains(entry)) return;
+                if (favorite.canTryStart()) launchStreaming(entry);
+                else shortcutOptions(entry, true);
+            });
             tile.setOnLongClickListener(v -> { shortcutOptions(entry); return true; });
             streamRow.addView(tile);
         }
@@ -976,9 +991,19 @@ public class MainActivity extends ComponentActivity {
         if (!tv.canRequestTclApps()) {
             Toast.makeText(this, "TV muss verbunden und eingeschaltet sein.", Toast.LENGTH_LONG).show(); return;
         }
+        final String requestedDevice = tv.inventoryDeviceKey();
         labActivate(CockpitNavigation.TV,0,entry.name);
         tv.launchTclApp(pkg, result -> {
             if (isFinishing() || isDestroyed()) return;
+            // The native launch already queried the real inventory before sending OPEN.
+            // Reuse that response, only for the still-current paired session.
+            if ((result.status == TclAppLauncher.Status.SENT || result.status == TclAppLauncher.Status.NOT_INSTALLED) &&
+                requestedDevice.equals(tv.inventoryDeviceKey()) && tv.canRequestTclApps()) {
+                tvAppInventory.device(requestedDevice);
+                tvAppInventory.received(result.apps);
+                appInventoryError = "";
+                renderStreamingShortcuts();
+            }
             switch (result.status) {
                 case SENT:
                     Toast.makeText(this, entry.name + " – TCL-Startbefehl gesendet.", Toast.LENGTH_SHORT).show(); break;
@@ -989,7 +1014,7 @@ public class MainActivity extends ComponentActivity {
                     // The inventory can be incomplete. Only a previously configured URL
                     // may be used as an alternative; don't retry the old market route.
                     if (!entry.link.startsWith("market://launch?id=")) launchStreamingLink(entry);
-                    else Toast.makeText(this, entry.name + " nicht in der TV-App-Liste gefunden.", Toast.LENGTH_LONG).show();
+                    else Toast.makeText(this, entry.name + ": Paket nicht vom TV gemeldet. Favorit bleibt gespeichert; bei Bedarf TV-App neu zuordnen.", Toast.LENGTH_LONG).show();
                     break;
                 case FAILED:
                     Toast.makeText(this, "TCL-App-Start nicht bestätigt. Kein automatischer weiterer Startversuch.", Toast.LENGTH_LONG).show(); break;

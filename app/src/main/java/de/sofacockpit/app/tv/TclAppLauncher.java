@@ -165,7 +165,7 @@ public final class TclAppLauncher implements AutoCloseable {
             // Once any launch bytes may have been written, never retry or fall back.
             attempted = true;
             writeFrame(out, "223>>OPEN>>" + packageName, mode);
-            return new Result(Status.SENT);
+            return new Result(Status.SENT, apps);
         } catch (IOException | GeneralSecurityException | RuntimeException ex) {
             if (!active.getAsBoolean()) return new Result(Status.CANCELLED);
             return new Result(negotiated || attempted || ex instanceof SecurityException ? Status.FAILED : Status.UNAVAILABLE);
