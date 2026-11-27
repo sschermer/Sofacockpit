@@ -85,12 +85,12 @@ jobs:
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist/Sofacockpit-Lab.apk > "$RUNNER_TEMP/lab-badging.txt"
-          grep -E "^package: name='de.sofacockpit.lab' versionCode='15' versionName='0.1.14' " "$RUNNER_TEMP/lab-badging.txt"
+          grep -E "^package: name='de.sofacockpit.lab' versionCode='16' versionName='0.1.15' " "$RUNNER_TEMP/lab-badging.txt"
           grep -F "application-label:'Sofacockpit Lab'" "$RUNNER_TEMP/lab-badging.txt"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Lab-Android-v0.1.14
+          name: Sofacockpit-Lab-Android-v0.1.15
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -105,10 +105,10 @@ jobs:
             echo "Skipping superseded Lab build."
             exit 0
           fi
-          if gh release view sofacockpit-lab-v0.1.14 >/dev/null 2>&1; then
+          if gh release view sofacockpit-lab-v0.1.15 >/dev/null 2>&1; then
             echo "Lab release already exists; never replace a published version."
             exit 0
           fi
-          gh release create sofacockpit-lab-v0.1.14 dist/Sofacockpit-Lab.apk \
-            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.14" \
-            --prerelease --latest=false --notes "Lab v0.1.14: Eigene HDMI-Bilder über System-Dateiauswahl importieren, ersetzen, entfernen; lokale verkleinerte PNGs ohne externe URI. Langdruck auf HDMI in Favoriten, Konsole spielen und Quellen: Name, Bild, Darstellung; globale Vorgabe oder individuelle Abweichung. Verschlüsselte sofacfg enthält zusätzlich NAS-Pfad/Zugangsdaten/Profilspeicherort, HDMI-Namen/Favoriten/Darstellung; HDMI-Bilder beim Export und Import optional. Alte Dateien ohne optionale Felder erhalten vorhandene Werte. Keine Profildateien oder Bildsammlungen mitgeliefert oder NAS-Profile überschrieben. Geräteabnahme offen."
+          gh release create sofacockpit-lab-v0.1.15 dist/Sofacockpit-Lab.apk \
+            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.15" \
+            --prerelease --latest=false --notes "Lab v0.1.15: Zahnrad → Haptik-Labor, separater lokaler Test ohne Gerätebefehle. Stärke 0–100 %, Standard 90 %, Vergleichstasten 25/60/80/90/100 %, finite Impulsmuster, bewegungsabhängiges Relief, glatte/feine/grobe Textur, Rastleiste, Stärkerampe. Native Motorimpulse bei gemeldeter Unterstützung; Android-16-Hüllkurven mit Intensität und Schärfe, nur bei kompatiblem Motor. Systemhaptik respektiert, keine Dauerwiederholung; Abbruch bei Loslassen, Fokusverlust oder Schließen, höchstens 5 s Erkundung pro Berührung. Normale Fernbedienung unverändert; Gerätetest offen."

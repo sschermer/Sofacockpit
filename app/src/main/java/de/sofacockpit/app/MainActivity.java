@@ -74,6 +74,7 @@ public class MainActivity extends ComponentActivity {
     private final List<View> labHapticKeys=new ArrayList<>();
     private TextView labMode, labProfile;
     private final LabHapticTracker labHaptics=new LabHapticTracker();
+    private HapticLabDialog hapticLab;
     private boolean labTracking,labMoved,labMulti;
     private int labDownZone=-1;
     private float labDownX,labDownY;
@@ -456,7 +457,7 @@ public class MainActivity extends ComponentActivity {
     private void showStartMenu(View anchor) {
         if (quickMenu != null) quickMenu.dismiss();
         PopupMenu popup = new PopupMenu(this, anchor, Gravity.CENTER);
-        String[] items={"Design auswählen","Software-Updates","Verbindungen","Über Sofacockpit Lab","Verbindungen aktualisieren","Streaming-Start testen","Haptische Orientierung","Darstellung der App-Schaltflächen","Icon-Diagnose"};
+        String[] items={"Design auswählen","Software-Updates","Verbindungen","Über Sofacockpit Lab","Verbindungen aktualisieren","Streaming-Start testen","Haptische Orientierung","Darstellung der App-Schaltflächen","Icon-Diagnose","Haptik-Labor"};
         for (int i=0;i<items.length;i++) popup.getMenu().add(0,i+1,i,items[i]);
         popup.setOnMenuItemClickListener(item -> {
             switch(item.getItemId()) {
@@ -477,6 +478,10 @@ public class MainActivity extends ComponentActivity {
                         .setNegativeButton("Schließen",null).show();return true;
                 case 8: showAppPresentation(null,null); return true;
                 case 9: showIconDiagnosis(); return true;
+                case 10:
+                    if(hapticLab!=null)hapticLab.close();
+                    hapticLab=new HapticLabDialog(this,BG,SURFACE_ALT,TEXT,MUTED,ACCENT);
+                    hapticLab.show();return true;
                 default: return false;
             }
         });
@@ -1995,6 +2000,7 @@ public class MainActivity extends ComponentActivity {
     }
 
     @Override protected void onPause() {
+        if(hapticLab!=null)hapticLab.close();
         if (appIcons != null) appIcons.pause();
         if (voice != null) voice.pause();
         if (updates != null) updates.onPause();
@@ -2016,6 +2022,7 @@ public class MainActivity extends ComponentActivity {
     }
 
     @Override protected void onDestroy() {
+        if(hapticLab!=null)hapticLab.close();
         hdmiWorker.shutdownNow();
         if (appIcons != null) appIcons.close();
         if (voice != null) voice.close();
