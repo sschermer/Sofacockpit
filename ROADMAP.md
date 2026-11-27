@@ -56,6 +56,19 @@ Einzelne Detailtests (System-Apps ein-/ausblenden, App-Liste manuell aktualisier
 - Gerätetest: Alle vier HDMI-Eingänge am Referenz-TCL erfolgreich bestätigt. Gesonderte Tests aus verschiedenen Ausgangszuständen sowie HDMI-CEC/eARC-Regression wurden nicht ausdrücklich berichtet. Keine Erfolgsmeldung allein aufgrund des Befehlsversands.
 - Reihenfolge am 27.11.2026 vom Nutzer bestätigt: HDMI-Direktwahl vor Neugestaltung und Tastatur. Aufgabe 0.2 bleibt bis zur separaten Geräteabnahme offen. Native TCL-Eingangslinks über die bestehende Remote-v2-Sitzung sind am Referenzgerät ohne ADB bestätigt. v1.1.10 übernimmt vorhandene lokale Portbestätigungen und ermöglicht einmalige Auswahl des bestätigten Referenzmodellprofils für eine unbekannte Kopplung. Quellen: https://community.home-assistant.io/t/android-tv-hdmi/234411/107 und https://github.com/Linkestis/tcl-google-tv-adb-hdmi-ha .
 
+## Experimentelle Neugestaltung vor Phase 1
+
+| ID | Aufgabe | Zielversion | Priorität | Status | Nachweis / tatsächliche Version |
+| --- | --- | --- | --- | --- | --- |
+| 0.4 | Intuitives Bedienkonzept, Screens und Layout neu entwickeln | Pre-Releases, Versionsnummer offen | Hoch – vor Phase 1 | In Entwicklung | Nutzer hat am 27.11.2026 weitreichende Gestaltungsfreiheit für Oberfläche und Bedienlogik erteilt. Rückkehrpunkt v1.1.10 gesichert; zunächst Nutzungsszenarien und Interaktionskonzept klären. Noch kein UI-Code geändert und kein experimentelles Release veröffentlicht. |
+
+- Rückkehrpunkt: [stabiles Release v1.1.10](https://github.com/sschermer/Sofacockpit/releases/tag/sofacockpit-v1.1.10), versionCode 29, Commit `553472b4d01c0bf04540eef8d8cd4faec49c000f`, zusätzlich [rollback/v1.1.10](https://github.com/sschermer/Sofacockpit/tree/rollback/v1.1.10). Release, Tag und Rückkehrzweig nicht verändern.
+- Experimente ausschließlich im separaten Zweig [experiment/intuitive-ui](https://github.com/sschermer/Sofacockpit/tree/experiment/intuitive-ui). Keine Übernahme in main oder stabile Veröffentlichung ohne Nutzerfreigabe. Der bisherige Workflow baut nur main; vor einem experimentellen APK-Build ist ein branchbezogener Pre-Release-Pfad mit unveränderter Signatur einzurichten.
+- Schwerpunkt: häufige Aktionen leicht auffindbar, wenige Schritte, einhändige Bedienung, gute Lesbarkeit und Touchziele; Navigation, Screens, Layout, Gesten und Interaktionsformen dürfen im Experiment neu gedacht werden. Die bisher vorgeschriebene Screen-Struktur ist hierfür ausdrücklich nicht bindend; sonstige Sicherheits-, Datenschutz-, Protokoll-, Daten- und Release-Regeln gelten unverändert.
+- Stimme, Touchpad/Maus und weitere Eingabeformen sind mögliche Ansätze, aber keine Zusage der technischen Machbarkeit. Nur nachgewiesene Funktionen als verfügbar darstellen; keine ungeprüfte Geräteaktion, unnötige Cloud-Abhängigkeit oder Berechtigung. Vor größeren Änderungen Entwurf abstimmen.
+- Funktionierende Gerätesteuerung, Konfiguration, Themes, Favoriten, Profile und sichere Kopplung möglichst unverändert wiederverwenden; keine destruktiven Datenmigrationen. Bei Rückkehr auf dem Smartphone den unveränderten funktionalen Stand von v1.1.10 mit höherem versionCode und neuer Versionsnummer, gleicher Paketkennung und Signatur erneut bauen und veröffentlichen. Datenkompatibilität separat prüfen.
+- Die separate Geräteabnahme von Aufgabe 0.2 bleibt offen; deren Status wird nicht ohne Nachweis geändert. Phase 1 und weitere Aufgaben bleiben in der Roadmap erhalten.
+
 ## Phase 1 – TV-Fernbedienung vervollständigen (1.2.x)
 
 | ID | Aufgabe | Ziel / Abnahmekriterien | Aufwand | Status | Tatsächliche Version / Nachweis |
@@ -100,7 +113,7 @@ Keine Änderung an TV-Systemsoftware, keine erfundenen Parameter. Die technische
 
 ## Nächste Aufgabe
 
-**0.2 – TV-App-Übersicht:** Die separate Geräteabnahme (insbesondere Bestandswechsel und Favoriten) bleibt offen. **0.3 – HDMI-Direktwahl:** Abgeschlossen; v1.1.9 am Referenz-TCL für alle vier Eingänge bestätigt, reguläre v1.1.10 stabil veröffentlicht. Kurzer UI-Regressionstest nach Update empfohlen. Danach das vom Nutzer angesprochene Bedienkonzept abstimmen, anschließend Tastatur gemäß bestätigter Reihenfolge. Keine ungeprüfte Hochstufung von Aufgabe 0.2.
+**0.2 – TV-App-Übersicht:** Die separate Geräteabnahme (insbesondere Bestandswechsel und Favoriten) bleibt offen. **0.3 – HDMI-Direktwahl:** Abgeschlossen; v1.1.9 am Referenz-TCL für alle vier Eingänge bestätigt, reguläre v1.1.10 stabil veröffentlicht. Kurzer UI-Regressionstest nach Update empfohlen. **0.4 – Intuitives Bedienkonzept:** Rückkehrpunkt v1.1.10 eingerichtet; experimentelle Entwicklung vor Phase 1, zunächst Nutzungsszenarien und Entwurf. Tastatur und weitere Funktionen anschließend gemäß Roadmap bzw. ausdrücklich abgestimmten technischen Abhängigkeiten. Keine ungeprüfte Hochstufung von Aufgabe 0.2.
 
 ## Änderungsverlauf
 
@@ -123,3 +136,5 @@ Keine Änderung an TV-Systemsoftware, keine erfundenen Parameter. Die technische
 - 27.11.2026: Nutzer gibt die reguläre Implementierung und stabile Veröffentlichung der am Gerät getesteten HDMI-Direktwahl frei. v1.1.10 (versionCode 29) übernimmt den bestätigten nativen Befehl, entfernt Testdialoge für bereits bestätigte Eingänge und stellt langes Drücken zum Umbenennen wieder her. Neue Kopplungen können das bestätigte Referenzmodellprofil einmalig auswählen. Regressionstests für gerätebezogene Übernahme und Profilwahl ergänzt. CI und Veröffentlichung noch nicht verifiziert; 0.2 bleibt separat offen.
 
 - 27.11.2026: Aufgabe 0.3 **Abgeschlossen**. Alle vier HDMI-Direktwahlbefehle mit v1.1.9 am Gerät bestätigt; reguläre Bedienung mit unveränderter nativer Zuordnung auf Nutzerfreigabe als [stabiles Release v1.1.10](https://github.com/sschermer/Sofacockpit/releases/tag/sofacockpit-v1.1.10) (versionCode 29) veröffentlicht. [CI-Lauf](https://github.com/sschermer/Sofacockpit/actions/runs/45931281811): JVM-Tests, APK-Build, feste Signatur und Veröffentlichung erfolgreich; vollständige APK (14.744.512 Bytes) verifiziert. UI-Regression nach Update und separate Geräteabnahme von Aufgabe 0.2 stehen noch aus.
+
+- 27.11.2026: Aufgabe 0.4 aufgenommen. Auf Nutzerwunsch v1.1.10 als festen Rückkehrpunkt definiert, exakten Release-Commit zusätzlich als Zweig rollback/v1.1.10 gesichert. Separater Experimentzweig experiment/intuitive-ui für die Neugestaltung vorgesehen; main bleibt funktional unverändert. Keine experimentelle APK und keine Änderung der Gerätesteuerung in dieser Iteration.
