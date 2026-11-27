@@ -27,7 +27,7 @@ public final class TclAppLauncher implements AutoCloseable {
     public enum Status { APPS, SENT, UNAVAILABLE, NOT_INSTALLED, FAILED, BUSY, CANCELLED }
     public static final class App {
         public final String name, packageName;
-        App(String name, String packageName) { this.name = name; this.packageName = packageName; }
+        public App(String name, String packageName) { this.name = name; this.packageName = packageName; }
         public boolean systemLike() {
             return packageName.startsWith("com.tcl.") || packageName.startsWith("com.android.") ||
                 packageName.equals("com.google.android.play.games");
