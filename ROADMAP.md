@@ -30,7 +30,7 @@ Einzelne Detailtests (System-Apps ein-/ausblenden, App-Liste manuell aktualisier
 
 | ID | Aufgabe | Zielversion | Priorität | Status | Nachweis / tatsächliche Version |
 | --- | --- | --- | --- | --- | --- |
-| 0.2 | TV → Quellen: tatsächlichen TV-App-Bestand anzeigen | 1.1.8 (Vorschlag) | Hoch – vor Tastatur | In Entwicklung | Nutzer meldet am 27.11.2026 nicht installierte und fehlende installierte Apps. Ursache im Code nachgewiesen; noch keine funktionale Änderung oder neuer Build. |
+| 0.2 | TV → Quellen: tatsächlichen TV-App-Bestand anzeigen | 1.1.8 (Pre-Release) | Hoch – vor Tastatur | In Entwicklung | Code für gemeinsames, TV-bezogenes T-Cast-Inventar, Quellen-/Favoritenansicht und Regressionstests eingecheckt; CI- und Geräteprüfung noch ausstehend. Finale Einstufung nach verifiziertem Build. |
 
 **Ursache:** `MainActivity.renderSourcesApps()` verwendet gespeicherte Favoriten und den statischen 15-Dienste-Katalog aus `StreamingShortcuts.CATALOG`, nicht den per T-Cast abgerufenen App-Bestand. Der bereits funktionierende Live-Abruf (`223>>GET`) wird bisher für den Plus-/Zuordnungsdialog und die Paketprüfung beim Start eingesetzt. Der Plus-Dialog blendet vorhandene Favoriten und standardmäßig wahrscheinliche System-Apps aus.
 
@@ -89,7 +89,7 @@ Keine Änderung an TV-Systemsoftware, keine erfundenen Parameter. Die technische
 
 ## Nächste Aufgabe
 
-**0.2 – TV-App-Übersicht korrigieren (hohe Priorität).** Die Ursache ist lokalisiert. Nächster Schritt ist die gezielte Integration des bereits vorhandenen T-Cast-App-Inventars in TV → Quellen. Danach Aufgabe 1 – Tastatur wie geplant.
+**0.2 – TV-App-Übersicht korrigieren (hohe Priorität).** Umsetzung v1.1.8 im Repository; CI, Signatur, APK-Veröffentlichung sowie Gerätetest prüfen. Erst danach Aufgabe 1 – Tastatur.
 
 ## Änderungsverlauf
 
@@ -98,3 +98,5 @@ Keine Änderung an TV-Systemsoftware, keine erfundenen Parameter. Die technische
 - 27.11.2026: Stabile v1.1.7 (versionCode 26) und erfolgreicher CI-Lauf verifiziert. Aufgabe 0.1 abgeschlossen. Neue Nutzeranforderung mit hoher Priorität als 0.2 vor Phase 1 aufgenommen; Ursache für die falsche App-Übersicht im Quellcode bestätigt. Alle bestehenden Aufgaben und IDs bleiben erhalten.
 
 - 27.11.2026: Aufgabe 0.2 präzisiert: Der abgefragte TV-App-Bestand ist die einzige Datenquelle für die App-Übersicht und die daraus ausgewählten Start-Favoriten. Kein statischer Katalog oder manuell ergänzter Dienst als angeblich installierte App. Keine funktionale Codeänderung; Priorität und Status unverändert.
+
+- 27.11.2026: Aufgabe 0.2 umgesetzt (Code): gemeinsames gerätebezogenes T-Cast-Inventar ohne Persistenz, Quellen und aktive Favoriten daraus abgeleitet, System-App-Filter, Aktualisierung beim Öffnen und manuell; gespeicherte Zuordnungen bleiben erhalten. Unit-Tests ergänzt; v1.1.8 Pre-Release/CI zur Prüfung vorbereitet. **Keine Gerätetestbestätigung; Status bis zum CI-Nachweis In Entwicklung.**
