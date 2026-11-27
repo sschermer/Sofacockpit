@@ -85,12 +85,12 @@ jobs:
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist/Sofacockpit-Lab.apk > "$RUNNER_TEMP/lab-badging.txt"
-          grep -E "^package: name='de.sofacockpit.lab' versionCode='14' versionName='0.1.13' " "$RUNNER_TEMP/lab-badging.txt"
+          grep -E "^package: name='de.sofacockpit.lab' versionCode='15' versionName='0.1.14' " "$RUNNER_TEMP/lab-badging.txt"
           grep -F "application-label:'Sofacockpit Lab'" "$RUNNER_TEMP/lab-badging.txt"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Lab-Android-v0.1.13
+          name: Sofacockpit-Lab-Android-v0.1.14
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -105,10 +105,10 @@ jobs:
             echo "Skipping superseded Lab build."
             exit 0
           fi
-          if gh release view sofacockpit-lab-v0.1.13 >/dev/null 2>&1; then
+          if gh release view sofacockpit-lab-v0.1.14 >/dev/null 2>&1; then
             echo "Lab release already exists; never replace a published version."
             exit 0
           fi
-          gh release create sofacockpit-lab-v0.1.13 dist/Sofacockpit-Lab.apk \
-            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.13" \
-            --prerelease --latest=false --notes "Lab v0.1.13: Gemeinsamer App-Kacheltyp mit 72 dp Höhe, getrennten und zentrierten Icon-/Textbereichen, proportionaler Bilddarstellung und mittigem Text-Fallback. Favoriten, Filmabend und TV-Quellen verwenden dieselbe Höhe; Grundlinienausrichtung deaktiviert. Horizontale App-Leisten passen ganze Kacheln in die verfügbare Breite und rasten nach dem Scrollen ein. Power-Menü mit Vektor statt Schriftzeichen. Icon-Abruf und gespeicherte Darstellung unverändert; Prime-Icon-Diagnose sowie Layout-/Start-Gerätetest offen."
+          gh release create sofacockpit-lab-v0.1.14 dist/Sofacockpit-Lab.apk \
+            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.14" \
+            --prerelease --latest=false --notes "Lab v0.1.14: Eigene HDMI-Bilder über System-Dateiauswahl importieren, ersetzen, entfernen; lokale verkleinerte PNGs ohne externe URI. Langdruck auf HDMI in Favoriten, Konsole spielen und Quellen: Name, Bild, Darstellung; globale Vorgabe oder individuelle Abweichung. Verschlüsselte sofacfg enthält zusätzlich NAS-Pfad/Zugangsdaten/Profilspeicherort, HDMI-Namen/Favoriten/Darstellung; HDMI-Bilder beim Export und Import optional. Alte Dateien ohne optionale Felder erhalten vorhandene Werte. Keine Profildateien oder Bildsammlungen mitgeliefert oder NAS-Profile überschrieben. Geräteabnahme offen."

@@ -99,7 +99,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     /** Restore portable settings; shared NAS profiles are retrieved from the NAS afterwards. */
-    fun restoreConfiguration(backup: ConfigurationBackup): Boolean {
+    @JvmOverloads
+    fun restoreConfiguration(backup: ConfigurationBackup, refreshNas: Boolean = true): Boolean {
         if (_profileBusy.value) {
             _message.value = "NAS arbeitet noch – Import später wiederholen"
             return false
@@ -119,8 +120,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _nasOnline.value = false
             _selectedProfile.value = null
             if (backup.source == ProfileSource.NAS) {
-                _profiles.value = emptyMap()
-                if (backup.nas.folder.isNotBlank()) refreshProfiles()
+                _profiles.value = if (previousNas == backup.nas) nasSettings.loadCache() else emptyMap()
+                _nasStatus.value = "NAS-Konfiguration geladen – Profile aktualisieren"
+                if (refreshNas && backup.nas.folder.isNotBlank()) refreshProfiles()
             } else {
                 _profiles.value = store.load()
                 _nasStatus.value = "Lokale Profile ausgewählt"

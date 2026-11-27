@@ -20,6 +20,10 @@ import de.sofacockpit.app.theme.CockpitTheme;
 import de.tonmaschine.android.MainViewModel;
 import de.tonmaschine.android.model.Catalog;
 import de.tonmaschine.android.model.Connection;
+import de.tonmaschine.android.storage.ConfigurationBackup;
+import de.tonmaschine.android.storage.ConfigurationBackupCodec;
+import de.tonmaschine.android.storage.BackupFormat;
+import de.tonmaschine.android.storage.ProfileSource;
 import org.json.JSONObject;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -89,6 +93,15 @@ final class ConnectionBackupManager implements AutoCloseable {
         fields.addView(first);
         EditText second = exporting ? passwordField("Passwort wiederholen") : null;
         if (second != null) fields.addView(second);
+        CheckBox includeHdmiImages=new CheckBox(activity);
+        if(exporting){
+            includeHdmiImages.setText("HDMI-Bilder mitsichern (optional)");
+            includeHdmiImages.setChecked(false);
+            fields.addView(includeHdmiImages);
+            TextView details=new TextView(activity);
+            details.setText("Enthält auch Profilspeicherort und NAS-Zugangsdaten; die gesamte Datei ist verschlüsselt. NAS-Profildateien selbst werden nicht kopiert.");
+            fields.addView(details);
+        }
         AlertDialog dialog = new AlertDialog.Builder(activity).setTitle(exporting ? "Sicherung verschlüsseln" : "Sicherung entschlüsseln")
             .setView(fields).setNegativeButton("Abbrechen", null)
             .setPositiveButton(exporting ? "Exportieren" : "Prüfen", null).create();
@@ -106,7 +119,7 @@ final class ConnectionBackupManager implements AutoCloseable {
             first.setText("");
             if (second != null) second.setText("");
             dialog.dismiss();
-            if (exporting) exportFile(uri, pass); else importFile(uri, pass);
+            if (exporting) exportFile(uri, pass,includeHdmiImages.isChecked()); else importFile(uri, pass);
         });
     }
     private EditText passwordField(String hint) {
@@ -117,7 +130,7 @@ final class ConnectionBackupManager implements AutoCloseable {
         field.setSaveEnabled(false);
         return field;
     }
-    private void exportFile(Uri uri, char[] password) {
+    private void exportFile(Uri uri, char[] password, boolean includeImages) {
         if (closed || busy) { Arrays.fill(password, '\0'); return; }
         busy = true;
         final String soundIp = soundbar.getIp().getValue();
@@ -125,13 +138,19 @@ final class ConnectionBackupManager implements AutoCloseable {
         final String themeId = themes.selectedId();
         final String streams = shortcuts.exportEntries().toString();
         final String appPresentation = AppPresentation.load(options.getString(AppPresentation.PREF,null)).toJson().toString();
+        final ConfigurationBackup profileConnection=soundbar.configurationBackup();
+        final HdmiSettings.Snapshot hdmi;
+        try{hdmi=HdmiSettings.capture(options,includeImages);}
+        catch(IllegalArgumentException e){Arrays.fill(password,'\0');busy=false;toast("HDMI-Konfiguration ungültig. Bitte prüfen.");return;}
         worker.execute(() -> {
             byte[] plain = null;
             try {
                 JSONObject root = new JSONObject().put("version",1).put("tv",tv.exportConfiguration())
                     .put("soundbarIp",soundIp).put("autoConnect",auto).put("themeId",themeId)
                     .put("streaming",new org.json.JSONArray(streams))
-                    .put("appPresentation",new JSONObject(appPresentation));
+                    .put("appPresentation",new JSONObject(appPresentation))
+                    .put("profileConnection",new JSONObject(ConfigurationBackupCodec.INSTANCE.encode(profileConnection,BackupFormat.JSON,true)))
+                    .put("hdmi",hdmi.toJson());
                 plain = root.toString().getBytes(StandardCharsets.UTF_8);
                 byte[] encrypted = BackupCrypto.encrypt(plain,password);
                 try (OutputStream out = activity.getContentResolver().openOutputStream(uri, "wt")) {
@@ -172,6 +191,15 @@ final class ConnectionBackupManager implements AutoCloseable {
                 boolean auto = root.getBoolean("autoConnect");
                 AppPresentation presentation = root.has("appPresentation") ?
                     AppPresentation.parse(root.getJSONObject("appPresentation")) : null;
+                ConfigurationBackup profileConnection=root.has("profileConnection")?
+                    ConfigurationBackupCodec.INSTANCE.decode(root.getJSONObject("profileConnection").toString()):null;
+                if(profileConnection!=null&&!soundIp.equals(profileConnection.getSoundbarIp()))
+                    throw new IOException("Abweichende Soundbar-Adressen");
+                HdmiSettings.Snapshot hdmi=root.has("hdmi")?HdmiSettings.Snapshot.parse(root.getJSONObject("hdmi")):null;
+                if(hdmi!=null&&hdmi.images!=null)for(String image:hdmi.images)if(image!=null){
+                    android.graphics.Bitmap decoded=HdmiImages.decode(image);
+                    decoded.recycle();
+                }
                 String themeId = root.has("themeId") ? root.getString("themeId") : null;
                 if (themeId != null && !CockpitTheme.validId(themeId)) throw new IOException("Ungültige Theme-ID");
                 TvRemoteClient.PreparedConfiguration tvConfig = tv.prepareConfiguration(root.getJSONObject("tv"));
@@ -185,6 +213,12 @@ final class ConnectionBackupManager implements AutoCloseable {
                     connectNow.setText("TV und Soundbar nach dem Import automatisch verbinden");
                     connectNow.setChecked(true);
                     fields.addView(connectNow);
+                    CheckBox restoreImages=new CheckBox(activity);
+                    if(hdmi!=null&&hdmi.images!=null){
+                        restoreImages.setText("HDMI-Bilder aus Sicherung übernehmen (ersetzt alle vier Bildzuordnungen)");
+                        restoreImages.setChecked(true);
+                        fields.addView(restoreImages);
+                    }
                     TextView connectionNote = new TextView(activity);
                     connectionNote.setText("Nur vorhandene Geräteadressen und TV-Kopplung verwenden. Keine automatische Neukopplung oder Einschaltbefehle; ein Netzwerkzugriff kann je nach Gerät aufwecken.");
                     fields.addView(connectionNote);
@@ -196,18 +230,27 @@ final class ConnectionBackupManager implements AutoCloseable {
                                 " Das gesicherte Design wird übernommen." :
                                 " Eigenes Design fehlt: Minimal Premium wird verwendet. Theme-Datei separat importieren.") +
                             (presentation==null?"":" Die App-Darstellung wird übernommen.")+
+                            (profileConnection==null?"":" Profilspeicherort und NAS-Zugangsdaten werden ersetzt; lokale und gemeinsame NAS-Profildateien bleiben unverändert.")+
+                            (hdmi==null?"":" HDMI-Namen, Favoriten und Darstellung werden übernommen.")+
                             " Es werden keine Steuerbefehle gesendet.")
                         .setView(fields)
                         .setNegativeButton("Abbrechen", null)
                         .setPositiveButton("Übernehmen", (d,w) -> {
                             try {
+                                if(profileConnection!=null&&Boolean.TRUE.equals(soundbar.getProfileBusy().getValue())){
+                                    toast("NAS arbeitet noch. Import später wiederholen.");return;
+                                }
                                 tv.applyConfiguration(tvConfig);
                                 soundbar.disconnect();
-                                if (!soundbar.saveConnectionAddress(soundIp)) throw new IOException("Soundbar-IP");
+                                if(profileConnection!=null){
+                                    if(!soundbar.restoreConfiguration(profileConnection,false))
+                                        throw new IOException("Profilspeicher");
+                                }else if (!soundbar.saveConnectionAddress(soundIp)) throw new IOException("Soundbar-IP");
                                 shortcuts.replaceEntries(streams);
                                 SharedPreferences.Editor edit=options.edit().putBoolean("auto_connect",auto);
                                 if(presentation!=null)edit.putString(AppPresentation.PREF,presentation.toJson().toString());
-                                edit.apply();
+                                if(hdmi!=null)HdmiSettings.restore(edit,hdmi,restoreImages.isChecked());
+                                if(!edit.commit())throw new IOException("Konfiguration nicht gespeichert");
                                 if (themeId != null) themes.select(themeId);
                                 changed.run();
                             } catch (Exception ex) {
@@ -217,6 +260,10 @@ final class ConnectionBackupManager implements AutoCloseable {
                             // Independent of the persistent auto-connect-on-start preference.
                             ImportConnectionPlan plan = ImportConnectionPlan.create(connectNow.isChecked(),
                                 tv.paired(), tv.lastAddress(), soundbar.getIp().getValue());
+                            if(profileConnection!=null&&profileConnection.getSource()==ProfileSource.NAS&&
+                                connectNow.isChecked()&&(Build.VERSION.SDK_INT<37||
+                                activity.checkSelfPermission(LOCAL_NETWORK)==PackageManager.PERMISSION_GRANTED))
+                                soundbar.refreshProfiles();
                             connectAfterImport(plan);
                         }).create();
                     confirmation.setOnDismissListener(d -> busy = false);

@@ -90,7 +90,13 @@ public class MainActivity extends ComponentActivity {
     private TvIconButton tvPower, tvMute;
     private final List<VolumeControl> volumeControls = new ArrayList<>();
     private LinearLayout streamRow;
-    private LabAppStrip streamScroll, labStreamScroll;
+    private LabAppStrip streamScroll, labStreamScroll, labHdmiScroll;
+    private LinearLayout hdmiGrid;
+    private HdmiImages hdmiImages;
+    private androidx.activity.result.ActivityResultLauncher<String[]> hdmiPicker;
+    private int pendingHdmiPort;
+    private boolean hdmiImportBusy;
+    private final java.util.concurrent.ExecutorService hdmiWorker=java.util.concurrent.Executors.newSingleThreadExecutor();
     private LinearLayout sourcesAppList;
     private TextView sourcesStatus, systemStatus;
     private StreamingShortcuts shortcuts;
@@ -104,7 +110,7 @@ public class MainActivity extends ComponentActivity {
     private String appInventoryError = "";
     private TextView appsInventoryStatus;
     private final List<TextView> tvKeys = new ArrayList<>();
-    private final List<TextView> hdmiButtons = new ArrayList<>();
+    private final List<View> hdmiButtons = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -113,6 +119,9 @@ public class MainActivity extends ComponentActivity {
         tv = new TvRemoteClient(this, this::renderTvState);
         shortcuts = new StreamingShortcuts(this);
         connectionOptions = getSharedPreferences("connection_options", MODE_PRIVATE);
+        hdmiImages=new HdmiImages(connectionOptions);
+        pendingHdmiPort=savedInstanceState==null?0:savedInstanceState.getInt("pending_hdmi_port",0);
+        hdmiPicker=registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),this::importHdmiImage);
         appPresentation = AppPresentation.load(connectionOptions.getString(AppPresentation.PREF,null));
         appIcons = new AppIconCache(this,()->{
             if(!isFinishing()&&!isDestroyed())renderStreamingShortcuts();
@@ -125,7 +134,7 @@ public class MainActivity extends ComponentActivity {
         backups = new ConnectionBackupManager(this, tv, soundbarModel, shortcuts, connectionOptions, themes, () -> {
             appPresentation = AppPresentation.load(connectionOptions.getString(AppPresentation.PREF,null));
             applySelectedTheme();
-            renderStreamingShortcuts();
+            renderHdmiPresentation();
             if (tvDialog != null) tvDialog.reloadAddresses();
         });
         tvDialog = new TvConnectionDialog(this, tv, soundbarModel, connectionOptions, backups::requestExport, backups::requestImport, () -> theme);
@@ -199,7 +208,7 @@ public class MainActivity extends ComponentActivity {
         java.util.Arrays.fill(labActivityPanels,null);
         tvConnectionButton=soundConnectionButton=tvHomeStatus=tvHomeDetail=tvRemoteStatus=sourcesStatus=systemStatus=null;
         tvDeviceHeader=null; tvPower=tvMute=null; remoteDial=null;
-        streamRow=sourcesAppList=null; streamScroll=labStreamScroll=null;
+        streamRow=sourcesAppList=hdmiGrid=null; streamScroll=labStreamScroll=labHdmiScroll=null;
         appsInventoryStatus=null;
         java.util.Arrays.fill(categoryViews,null);
         java.util.Arrays.fill(categoryPagers,null);
@@ -681,6 +690,7 @@ public class MainActivity extends ComponentActivity {
         state.putInt("lab_active_category",labActiveCategory);
         state.putInt("lab_active_page",labActivePage);
         state.putString("lab_active_name",labActiveName);
+        state.putInt("pending_hdmi_port",pendingHdmiPort);
         super.onSaveInstanceState(state);
     }
 
@@ -741,8 +751,8 @@ public class MainActivity extends ComponentActivity {
         TextView back=actionButton("‹","");
         back.setContentDescription("Quellenauswahl schließen");
         back.setOnClickListener(v->labExpand(-1));
-        LinearLayout.LayoutParams backLp=new LinearLayout.LayoutParams(dp(48),dp(index==0?AppTileLayout.HEIGHT_DP:60));
-        if(index==0)backLp.rightMargin=dp(6);
+        LinearLayout.LayoutParams backLp=new LinearLayout.LayoutParams(dp(48),dp(index<=1?AppTileLayout.HEIGHT_DP:60));
+        if(index<=1)backLp.rightMargin=dp(6);
         panel.addView(back,backLp);
         LinearLayout choices=new LinearLayout(this);
         choices.setBaselineAligned(false);
@@ -752,6 +762,10 @@ public class MainActivity extends ComponentActivity {
             labStreamScroll=new LabAppStrip(this,3,82,6);
             labStreamScroll.bind(choices);
             scroll=labStreamScroll;
+        }else if(index==1){
+            labHdmiScroll=new LabAppStrip(this,3,82,6);
+            labHdmiScroll.bind(choices);
+            scroll=labHdmiScroll;
         }else{
             scroll=new HorizontalScrollView(this);
             scroll.setHorizontalScrollBarEnabled(false);
@@ -818,7 +832,7 @@ public class MainActivity extends ComponentActivity {
                     connectionOptions.edit().putString(AppPresentation.PREF,appPresentation.toJson().toString()).apply();
                     appIcons.retryFailures();
                     dialog.dismiss();
-                    renderStreamingShortcuts();
+                    renderHdmiPresentation();
                 }catch(IllegalArgumentException e){favoriteError(e.getMessage());}
             }).setNegativeButton("Schließen",null).show();
     }
@@ -884,14 +898,28 @@ public class MainActivity extends ComponentActivity {
         labStreamScroll.resizeTiles();
     }
 
+    private LabAppTile hdmiTile(int port,int textSize){
+        AppPresentation.Mode mode=HdmiSettings.effective(appPresentation.global,HdmiSettings.override(connectionOptions,port));
+        LabAppTile tile=new LabAppTile(this,hdmiLabel(port),mode,
+            mode==AppPresentation.Mode.TEXT?null:hdmiImages.get(port),TEXT,
+            ThemeArt.typeface(theme.theme,Typeface.BOLD),textSize*theme.theme.fontScale,shape(SURFACE_ALT,14));
+        tile.setContentDescription("HDMI "+port+": "+hdmiLabel(port)+"; lange drücken zum Bearbeiten");
+        tile.setOnClickListener(v->selectHdmi(port));
+        tile.setOnLongClickListener(v->{showHdmiOptions(port);return true;});
+        return tile;
+    }
+
     private void renderLabHdmiChoices(){
-        if(labHdmiChoices==null)return;
+        if(labHdmiChoices==null||labHdmiScroll==null)return;
         labHdmiChoices.removeAllViews();
-        for(int port=1;port<=4;port++){
-            final int p=port;
-            TextView tile=labChoice(labHdmiChoices,hdmiLabel(port),()->selectHdmi(p));
-            tile.setOnLongClickListener(v->{editHdmiLabel(p,tile);return true;});
-        }
+        for(int port=1;port<=4;port++)labHdmiChoices.addView(hdmiTile(port,13));
+        labHdmiScroll.resizeTiles();
+    }
+
+    private void renderHdmiPresentation(){
+        renderLabHdmiChoices();
+        renderHdmiGrid();
+        renderStreamingShortcuts();
     }
 
     private void renderLabAudioChoices(){
@@ -1053,14 +1081,7 @@ public class MainActivity extends ComponentActivity {
         }
         int hdmiMask=connectionOptions.getInt("lab_hdmi_favorites",0);
         for(int port=1;port<=4;port++)if((hdmiMask&(1<<(port-1)))!=0){
-            final int p=port;
-            TextView tile=actionButton(hdmiLabel(port),"");
-            tile.setTextSize(12*theme.theme.fontScale);
-            tile.setMaxLines(3);
-            tile.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            tile.setOnClickListener(v->selectHdmi(p));
-            tile.setOnLongClickListener(v->{editHdmiLabel(p,tile);return true;});
-            streamRow.addView(tile);
+            streamRow.addView(hdmiTile(port,12));
         }
         if (streamRow.getChildCount() == 0) {
             TextView empty = actionButton(tvAppInventory.verified() ? "+" : "TV-App-Liste nicht aktuell", "");
@@ -1539,33 +1560,14 @@ public class MainActivity extends ComponentActivity {
         LinearLayout body = fullPage();
         sourcesStatus = compactStatus(body, "Quellen");
         LinearLayout inputs = section(body, "HDMI-EINGÄNGE");
-        for (int rowIndex=0; rowIndex<2; rowIndex++) {
-            LinearLayout row = new LinearLayout(this);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            for (int col=0; col<2; col++) {
-                final int port = rowIndex*2+col+1;
-                TextView tile = actionButton(hdmiLabel(port), "");
-                hdmiButtons.add(tile);
-                tile.setOnClickListener(v -> {
-                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
-                    selectHdmi(port);
-                });
-                tile.setTextSize(15 * theme.theme.fontScale);
-                compactInputButton(tile);
-                tile.setContentDescription("HDMI " + port + ": " + hdmiLabel(port) + "; lange drücken zum Umbenennen");
-                tile.setOnLongClickListener(v -> { editHdmiLabel(port, tile); return true; });
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f);
-                if (col>0) lp.leftMargin=dp(8);
-                row.addView(tile,lp);
-            }
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1,-2);
-            lp.bottomMargin=dp(6);
-            inputs.addView(row,lp);
-        }
+        hdmiGrid=new LinearLayout(this);
+        hdmiGrid.setOrientation(LinearLayout.VERTICAL);
+        inputs.addView(hdmiGrid,new LinearLayout.LayoutParams(-1,-2));
+        renderHdmiGrid();
         TextView chooser = tvButton("TV-Eingangsauswahl",KeyEvent.KEYCODE_TV_INPUT);
         compactInputButton(chooser);
         inputs.addView(chooser,new LinearLayout.LayoutParams(-1,ViewGroup.LayoutParams.WRAP_CONTENT));
-        inputs.addView(label("Antippen: HDMI direkt wählen. Lange drücken: Eingang benennen.",12,MUTED));
+        inputs.addView(label("Antippen: HDMI direkt wählen. Lange drücken: Name, Bild und Darstellung bearbeiten.",12,MUTED));
         LinearLayout apps = section(body,"APPS");
         TextView add = actionButton("+ TV-App / Favorit","");
         add.setOnClickListener(v -> addStreamingShortcut());
@@ -1598,9 +1600,32 @@ public class MainActivity extends ComponentActivity {
         button.setPadding(dp(6),dp(4),dp(6),dp(4));
     }
 
+    private void renderHdmiGrid(){
+        if(hdmiGrid==null)return;
+        hdmiGrid.removeAllViews();hdmiButtons.clear();
+        for(int rowIndex=0;rowIndex<2;rowIndex++){
+            LinearLayout row=new LinearLayout(this);
+            row.setBaselineAligned(false);row.setGravity(Gravity.CENTER_VERTICAL);
+            for(int col=0;col<2;col++){
+                int port=rowIndex*2+col+1;
+                LabAppTile tile=hdmiTile(port,15);
+                hdmiButtons.add(tile);
+                tile.setOnClickListener(v->{
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
+                    selectHdmi(port);
+                });
+                LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(AppTileLayout.HEIGHT_DP),1f);
+                if(col>0)lp.leftMargin=dp(8);
+                row.addView(tile,lp);
+            }
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(6);
+            hdmiGrid.addView(row,lp);
+        }
+        renderHdmiButtons();
+    }
     private void renderHdmiButtons() {
         boolean ready = tv.hdmiDeviceKey() != null;
-        for (TextView tile : hdmiButtons) {
+        for (View tile : hdmiButtons) {
             // Keep rename accessible even if not connected; clicks explain the reason.
             tile.setAlpha(ready ? 1f : .55f);
         }
@@ -1641,9 +1666,66 @@ public class MainActivity extends ComponentActivity {
     }
 
     private String hdmiLabel(int port) {
-        return connectionOptions.getString("hdmi_name_" + port, "HDMI " + port);
+        return connectionOptions.getString(HdmiSettings.nameKey(port),HdmiSettings.defaultName(port));
     }
-    private void editHdmiLabel(int port, TextView tile) {
+    private void showHdmiOptions(int port){
+        List<String> labels=new ArrayList<>();
+        List<Runnable> actions=new ArrayList<>();
+        labels.add("Name bearbeiten");actions.add(()->editHdmiLabel(port));
+        labels.add("Darstellung");actions.add(()->showHdmiMode(port));
+        boolean hasImage=connectionOptions.contains(HdmiSettings.imageKey(port));
+        labels.add(hasImage?"Bild ersetzen":"Bild auswählen");actions.add(()->chooseHdmiImage(port));
+        if(hasImage){
+            labels.add("Bild entfernen");actions.add(()->new AlertDialog.Builder(this)
+                .setTitle("Bild entfernen?").setMessage("Das lokale Bild für "+hdmiLabel(port)+" wird entfernt. Der Name bleibt erhalten.")
+                .setNegativeButton("Abbrechen",null).setPositiveButton("Entfernen",(d,w)->{
+                    connectionOptions.edit().remove(HdmiSettings.imageKey(port)).apply();
+                    renderHdmiPresentation();
+                }).show());
+        }
+        new AlertDialog.Builder(this).setTitle(hdmiLabel(port)+" (HDMI "+port+")")
+            .setItems(labels.toArray(new String[0]),(d,i)->actions.get(i).run())
+            .setNegativeButton("Schließen",null).show();
+    }
+    private void showHdmiMode(int port){
+        AppPresentation.Mode[] modes=AppPresentation.Mode.values();
+        AppPresentation.Mode selected=HdmiSettings.override(connectionOptions,port);
+        String[] choices={"Globale Einstellung übernehmen ("+appPresentation.global.label+")",
+            "Nur Bild","Nur Text","Bild und Text"};
+        new AlertDialog.Builder(this).setTitle(hdmiLabel(port)+" – Darstellung")
+            .setSingleChoiceItems(choices,selected==null?0:selected.ordinal()+1,(d,i)->{
+                SharedPreferences.Editor edit=connectionOptions.edit();
+                if(i==0)edit.remove(HdmiSettings.modeKey(port));
+                else edit.putString(HdmiSettings.modeKey(port),modes[i-1].name());
+                edit.apply();d.dismiss();renderHdmiPresentation();
+            }).setNegativeButton("Schließen",null).show();
+    }
+    private void chooseHdmiImage(int port){
+        if(hdmiImportBusy||pendingHdmiPort!=0){favoriteError("Bildimport läuft bereits.");return;}
+        pendingHdmiPort=port;
+        try{hdmiPicker.launch(new String[]{"image/*"});}
+        catch(RuntimeException e){pendingHdmiPort=0;favoriteError("Bildauswahl nicht verfügbar.");}
+    }
+    private void importHdmiImage(android.net.Uri uri){
+        int port=pendingHdmiPort;pendingHdmiPort=0;
+        if(uri==null||port<1||port>4||isDestroyed()||isFinishing())return;
+        hdmiImportBusy=true;
+        hdmiWorker.execute(()->{
+            String image=null;
+            try(java.io.InputStream in=getContentResolver().openInputStream(uri)){
+                image=HdmiImages.importImage(in);
+            }catch(java.io.IOException|RuntimeException ignored){}
+            final String result=image;
+            runOnUiThread(()->{
+                hdmiImportBusy=false;
+                if(isDestroyed()||isFinishing())return;
+                if(result==null){favoriteError("Bild konnte nicht importiert werden. Unterstütztes Bild bis 8 MB wählen.");return;}
+                connectionOptions.edit().putString(HdmiSettings.imageKey(port),result).apply();
+                renderHdmiPresentation();
+            });
+        });
+    }
+    private void editHdmiLabel(int port) {
         EditText name = new EditText(this);
         name.setSingleLine(true);
         name.setText(hdmiLabel(port));
@@ -1653,10 +1735,8 @@ public class MainActivity extends ComponentActivity {
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             String value = name.getText().toString().trim();
             if (value.isEmpty() || value.length()>40) { name.setError("1–40 Zeichen"); return; }
-            connectionOptions.edit().putString("hdmi_name_" + port,value).apply();
-            tile.setText(value);
-            tile.setContentDescription("HDMI " + port + ": " + value + "; lange drücken zum Umbenennen");
-            renderLabHdmiChoices();renderStreamingShortcuts();
+            connectionOptions.edit().putString(HdmiSettings.nameKey(port),value).apply();
+            renderHdmiPresentation();
             dialog.dismiss();
         });
     }
@@ -1936,6 +2016,7 @@ public class MainActivity extends ComponentActivity {
     }
 
     @Override protected void onDestroy() {
+        hdmiWorker.shutdownNow();
         if (appIcons != null) appIcons.close();
         if (voice != null) voice.close();
         if (voiceEditor != null) voiceEditor.close();
