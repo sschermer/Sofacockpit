@@ -36,9 +36,14 @@ final class HapticLabDialog implements AutoCloseable {
     private TextView status,levelLabel,description;
     private SeekBar level;
     private int strength=90,sharpness=85;
-    private HapticLabPatterns.Surface surface=HapticLabPatterns.Surface.RELIEF;
+    private HapticLabPatterns.Surface surface=HapticLabPatterns.Surface.MAGNET;
     private long lastStart=-1000;
     private long busyUntil=0;
+    // Finite segments rather than an unbounded repeating vibration. Update
+    // amplitude at most every 45 ms; refresh unchanged segments before expiry.
+    private static final long MAGNET_TICK=45,MAGNET_SEGMENT=180,MAGNET_REFRESH=120;
+    private long magnetLast=-1000,magnetUntil=0,magnetSnapUntil=0;
+    private int magnetAmplitude=0;
 
     HapticLabDialog(Activity activity,int bg,int panel,int text,int muted,int accent){
         this.activity=activity;this.bg=bg;this.panel=panel;this.text=text;this.muted=muted;this.accent=accent;
@@ -106,14 +111,14 @@ final class HapticLabDialog implements AutoCloseable {
         heading(body,"Oberflächen");
         LinearLayout modes=row();
         for(HapticLabPatterns.Surface option:HapticLabPatterns.Surface.values()){
-            Button b=button(option.label,()->{
-                stop();surface=option;description.setText(option.description);
-                pad.invalidate();
-            });
+            if(option==HapticLabPatterns.Surface.MAGNET)continue;
+            Button b=button(option.label,()->chooseSurface(option));
             modes.addView(b,new LinearLayout.LayoutParams(0,dp(48),1));
         }
         body.addView(modes);
-        description=label(surface.description,13,muted);body.addView(description);
+        body.addView(button("Magnetismus · Annäherung und Einrasten",()->chooseSurface(HapticLabPatterns.Surface.MAGNET)),
+            new LinearLayout.LayoutParams(-1,dp(48)));
+        description=label(surfaceDescription(),13,muted);body.addView(description);
         pad=new Pad(activity);
         body.addView(pad,new LinearLayout.LayoutParams(-1,dp(224)));
         heading(body,"Einzelimpulse");
@@ -155,7 +160,7 @@ final class HapticLabDialog implements AutoCloseable {
             r.addView(button("Verlauf",()->playEnvelope(0,100)),new LinearLayout.LayoutParams(0,dp(48),1));
             body.addView(r);
         }else body.addView(label("Android meldet keine Hüllkurvenunterstützung. Die Amplitudenmuster oben bleiben verfügbar.",13,muted));
-        body.addView(label("100 % = maximaler angeforderter API-Wert; Android-Einstellungen und Motor begrenzen die reale Stärke. Bei ausgeschalteter Systemhaptik bleibt der Test stumm. Die Testfläche gibt nur bei Bewegung kurze Impulse ab; nach 5 Sekunden erneut ansetzen.",12,muted));
+        body.addView(label("100 % = maximaler angeforderter API-Wert; Android-Einstellungen und Motor begrenzen die reale Stärke. Bei ausgeschalteter Systemhaptik bleibt der Test stumm. Relief, Texturen und Rastleiste geben Bewegungsimpulse ab; Magnetismus bleibt im Annäherungsring auch bei ruhendem Finger spürbar. Alle Testflächen enden nach 5 Sekunden pro Berührung; danach erneut ansetzen.",12,muted));
         Button stop=button("Vibration stoppen",this::stop);
         outer.addView(stop,new LinearLayout.LayoutParams(-1,dp(48)));
         d.setContentView(outer);
@@ -168,6 +173,14 @@ final class HapticLabDialog implements AutoCloseable {
         report(hasMotor?"Bereit – Testfläche oder Impuls antippen":"Kein Vibrationsmotor gemeldet");
     }
 
+    private String surfaceDescription(){
+        return surface.description+(surface==HapticLabPatterns.Surface.MAGNET&&!amplitude?
+            "\nOhne Amplitudenregelung: dichter werdende Einzelpulse statt veränderlicher Dauerstärke.":"");
+    }
+    private void chooseSurface(HapticLabPatterns.Surface option){
+        stop();surface=option;description.setText(surfaceDescription());pad.invalidate();
+        report("Testfläche: "+option.label);
+    }
     private void heading(LinearLayout body,String text){
         TextView title=label(text,16,this.text);title.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
         title.setPadding(dp(4),dp(12),0,dp(3));body.addView(title);
@@ -206,17 +219,75 @@ final class HapticLabDialog implements AutoCloseable {
         if(now-lastStart<45||(motion&&now<busyUntil))return false;
         try{
             motor.cancel();
-            if(Build.VERSION.SDK_INT>=33){
-                motor.vibrate(effect,new android.os.VibrationAttributes.Builder()
-                    .setUsage(android.os.VibrationAttributes.USAGE_TOUCH).build());
-            }else{
-                motor.vibrate(effect,new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).build());
-            }
+            vibrate(effect);
             lastStart=now;busyUntil=now+duration;
             report(label+" · angefordert "+strength+" %");
             return true;
         }catch(RuntimeException e){report("Effekt konnte nicht gestartet werden");return false;}
+    }
+    private void vibrate(VibrationEffect effect){
+        if(Build.VERSION.SDK_INT>=33){
+            motor.vibrate(effect,new android.os.VibrationAttributes.Builder()
+                .setUsage(android.os.VibrationAttributes.USAGE_TOUCH).build());
+        }else{
+            motor.vibrate(effect,new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).build());
+        }
+    }
+    private void clearMagnetOutput(){
+        magnetAmplitude=0;magnetLast=-1000;magnetUntil=0;magnetSnapUntil=0;
+    }
+    /** Snap bypasses ordinary cue debounce. It replaces the hum rather than
+     * waiting behind a still running vibration. No output can outlive the
+     * touch budget by more than OS scheduling/cancellation latency. */
+    private void playMagnet(MagnetField.Reading reading,long now,long remaining){
+        if(remaining<=0||!available()){stop();return;}
+        try{
+            if(reading.kind==MagnetField.Kind.SNAP){
+                motor.cancel();
+                clearMagnetOutput();
+                long duration=Math.min(42,remaining);
+                int value=amplitude?Math.max(1,Math.round(255f*strength/100f)):VibrationEffect.DEFAULT_AMPLITUDE;
+                vibrate(VibrationEffect.createOneShot(duration,value));
+                magnetSnapUntil=now+duration;
+                magnetUntil=magnetSnapUntil;
+                magnetLast=now;
+                report("Eingerastet · "+strength+" % · danach Ruhe");
+                return;
+            }
+            // Allow the snap to finish even when the next sample is silent.
+            if(now<magnetSnapUntil)return;
+            if(reading.kind==MagnetField.Kind.QUIET){
+                if(magnetAmplitude!=0||magnetUntil>now){
+                    motor.cancel();clearMagnetOutput();
+                }
+                return;
+            }
+            int percent=Math.max(1,Math.round(strength*reading.percent/100f));
+            if(amplitude){
+                int value=Math.max(1,Math.round(255f*percent/100f));
+                if(now-magnetLast<MAGNET_TICK)return;
+                if(magnetAmplitude!=0&&Math.abs(value-magnetAmplitude)<5&&
+                    now-magnetLast<MAGNET_REFRESH&&now<magnetUntil)return;
+                long duration=Math.min(MAGNET_SEGMENT,remaining);
+                // A new finite one-shot replaces the preceding segment; do not
+                // explicitly cancel between hum segments, to minimize gaps.
+                vibrate(VibrationEffect.createOneShot(duration,value));
+                magnetAmplitude=value;magnetUntil=now+duration;magnetLast=now;
+                report("Annäherung · "+percent+" %");
+            }else{
+                // A motor without amplitude control cannot produce a graded
+                // sustained hum. Vary pulse density instead.
+                long interval=240-Math.round(1.85f*reading.percent);
+                if(now-magnetLast<interval)return;
+                long duration=Math.min(32,remaining);
+                vibrate(VibrationEffect.createOneShot(duration,VibrationEffect.DEFAULT_AMPLITUDE));
+                magnetAmplitude=-1;magnetUntil=now+duration;magnetLast=now;
+                report("Annäherung · Pulsabstand "+interval+" ms");
+            }
+        }catch(RuntimeException e){
+            stop();report("Magneteffekt konnte nicht gestartet werden");
+        }
     }
     private void play(HapticLabPatterns.Cue cue,int scale,boolean motion){
         if(!available())return;
@@ -283,7 +354,7 @@ final class HapticLabDialog implements AutoCloseable {
     private void stop(){
         if(pad!=null)pad.reset();
         if(hasMotor)try{motor.cancel();}catch(RuntimeException ignored){}
-        busyUntil=0;
+        busyUntil=0;clearMagnetOutput();
     }
     @Override public void close(){
         stop();Dialog d=dialog;if(d!=null)d.dismiss();
@@ -293,26 +364,47 @@ final class HapticLabDialog implements AutoCloseable {
     private final class Pad extends View {
         private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
         private final HapticLabPatterns.Gesture gesture=new HapticLabPatterns.Gesture();
+        private final MagnetField magnet=new MagnetField();
+        private final Runnable magnetTick=this::tickMagnet;
         private final float density=getResources().getDisplayMetrics().density;
         private boolean down;
         private float x,y;
+        private MagnetField.Reading magnetReading;
         Pad(Context context){
             super(context);setFocusable(true);setHapticFeedbackEnabled(false);
             setContentDescription("Haptische Testfläche. Mit einem Finger streichen. Einzelimpulse sind darunter als Tasten verfügbar.");
         }
         private void signal(HapticLabPatterns.Signal s){if(s!=null)play(s.cue,s.scale,true);}
+        private void updateMagnet(){
+            if(!down||surface!=HapticLabPatterns.Surface.MAGNET)return;
+            long now=android.os.SystemClock.uptimeMillis();
+            if(!isShown()||!hasWindowFocus()){stop();return;}
+            long remaining=magnet.remaining(now);
+            if(remaining<=0){stop();report("5 Sekunden erreicht – Finger neu ansetzen");return;}
+            magnetReading=magnet.sample(x/density,y/density,getWidth()/density,getHeight()/density,now);
+            playMagnet(magnetReading,now,remaining);
+            invalidate();
+        }
+        private void tickMagnet(){
+            updateMagnet();
+            if(down&&surface==HapticLabPatterns.Surface.MAGNET)postDelayed(magnetTick,MAGNET_TICK);
+        }
         @Override public boolean onTouchEvent(MotionEvent event){
             int action=event.getActionMasked();
             switch(action){
                 case MotionEvent.ACTION_DOWN:
                     stop();down=true;x=event.getX();y=event.getY();
                     getParent().requestDisallowInterceptTouchEvent(true);
-                    signal(gesture.begin(surface,x/density,y/density,getWidth()/density,getHeight()/density,event.getEventTime()));
+                    if(surface==HapticLabPatterns.Surface.MAGNET){
+                        magnet.begin(android.os.SystemClock.uptimeMillis());
+                        tickMagnet();
+                    }else signal(gesture.begin(surface,x/density,y/density,getWidth()/density,getHeight()/density,event.getEventTime()));
                     invalidate();return true;
                 case MotionEvent.ACTION_MOVE:
                     if(down&&event.getPointerCount()==1){
                         x=event.getX();y=event.getY();
-                        signal(gesture.move(x/density,y/density,getWidth()/density,getHeight()/density,event.getEventTime()));
+                        if(surface==HapticLabPatterns.Surface.MAGNET)updateMagnet();
+                        else signal(gesture.move(x/density,y/density,getWidth()/density,getHeight()/density,event.getEventTime()));
                         invalidate();
                     }
                     return true;
@@ -326,13 +418,38 @@ final class HapticLabDialog implements AutoCloseable {
             }
         }
         @Override public boolean performClick(){super.performClick();return true;}
-        void reset(){down=false;gesture.stop();invalidate();}
-        @Override protected void onDetachedFromWindow(){reset();super.onDetachedFromWindow();}
+        void reset(){
+            down=false;gesture.stop();magnet.stop();magnetReading=null;
+            removeCallbacks(magnetTick);invalidate();
+        }
+        @Override protected void onDetachedFromWindow(){
+            if(pad==this)stop();else reset();
+            super.onDetachedFromWindow();
+        }
         @Override protected void onDraw(Canvas c){
             super.onDraw(c);float w=getWidth(),h=getHeight();
             paint.setStyle(Paint.Style.FILL);paint.setColor(panel);
             c.drawRoundRect(0,0,w,h,dp(10),dp(10),paint);
-            if(surface==HapticLabPatterns.Surface.RELIEF){
+            if(surface==HapticLabPatterns.Surface.MAGNET){
+                float cx=w/2f,cy=h/2f;
+                float inner=MagnetField.targetRadius(w/density,h/density)*density;
+                float outer=MagnetField.haloRadius(w/density,h/density)*density;
+                paint.setColor(accent);
+                paint.setShader(new android.graphics.RadialGradient(cx,cy,outer,
+                    new int[]{accent,accent,android.graphics.Color.TRANSPARENT},
+                    new float[]{0f,inner/outer,1f},android.graphics.Shader.TileMode.CLAMP));
+                paint.setAlpha(100);c.drawCircle(cx,cy,outer,paint);paint.setShader(null);paint.setAlpha(255);
+                paint.setStyle(Paint.Style.STROKE);paint.setColor(accent);paint.setAlpha(85);paint.setStrokeWidth(dp(1));
+                c.drawCircle(cx,cy,outer,paint);
+                for(int i=1;i<4;i++)c.drawCircle(cx,cy,inner+(outer-inner)*i/4f,paint);
+                paint.setStyle(Paint.Style.FILL);paint.setAlpha(255);
+                paint.setColor(magnetReading!=null&&magnetReading.latched?accent:panel);
+                c.drawCircle(cx,cy,inner,paint);
+                paint.setStyle(Paint.Style.STROKE);paint.setColor(accent);paint.setStrokeWidth(dp(2));
+                c.drawCircle(cx,cy,inner,paint);paint.setStyle(Paint.Style.FILL);
+                paint.setColor(magnetReading!=null&&magnetReading.latched?bg:text);
+                paint.setTextAlign(Paint.Align.CENTER);paint.setTextSize(dp(19));c.drawText("OK",cx,cy+dp(6),paint);
+            }else if(surface==HapticLabPatterns.Surface.RELIEF){
                 float cx=w/2f,cy=h/2f,r=Math.min(w,h)*.43f;
                 int[] alphas={65,105,150,225};float[] rings={1f,.78f,.43f,.29f};
                 for(int i=0;i<rings.length;i++){

@@ -85,12 +85,12 @@ jobs:
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist/Sofacockpit-Lab.apk > "$RUNNER_TEMP/lab-badging.txt"
-          grep -E "^package: name='de.sofacockpit.lab' versionCode='17' versionName='0.1.16' " "$RUNNER_TEMP/lab-badging.txt"
+          grep -E "^package: name='de.sofacockpit.lab' versionCode='18' versionName='0.1.17' " "$RUNNER_TEMP/lab-badging.txt"
           grep -F "application-label:'Sofacockpit Lab'" "$RUNNER_TEMP/lab-badging.txt"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Lab-Android-v0.1.16
+          name: Sofacockpit-Lab-Android-v0.1.17
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -105,10 +105,10 @@ jobs:
             echo "Skipping superseded Lab build."
             exit 0
           fi
-          if gh release view sofacockpit-lab-v0.1.16 >/dev/null 2>&1; then
+          if gh release view sofacockpit-lab-v0.1.17 >/dev/null 2>&1; then
             echo "Lab release already exists; never replace a published version."
             exit 0
           fi
-          gh release create sofacockpit-lab-v0.1.16 dist/Sofacockpit-Lab.apk \
-            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.16" \
-            --prerelease --latest=false --notes "Lab v0.1.16: vollständige persönliche verschlüsselte Konfiguration: zusätzlich Wake-on-LAN-MAC und HDMI-Direktwahl nur bei passender TV-Gerätebindung, eigene Sprachsynonyme, Haptik-Schalter und automatische Updateprüfung/übersprungene Lab-Version. HDMI-Bilder, eigene Designs und lokale Klangprofile optional exportierbar und beim Import abwählbar. Designs gleicher ID werden bei Zustimmung ersetzt; andere Designs bleiben. Lokale Profile bei Zustimmung ersetzt, NAS-Profile nie geschrieben. Alte Backups ohne Zusatzfelder erhalten bestehende Werte; 20 MiB Größenlimit, gleiches AES-GCM-Format. Keine Caches, Live-Gerätezustände oder Experimentparameter. Gerätetest offen."
+          gh release create sofacockpit-lab-v0.1.17 dist/Sofacockpit-Lab.apk \
+            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.17" \
+            --prerelease --latest=false --notes "Lab v0.1.17: fünfte Haptik-Testfläche Magnetismus (Startauswahl im Haptik-Labor). Abstand zur OK-Testtaste steuert an-/abschwellende Vibration im Annäherungsring auch bei ruhendem Finger, einmaliger kräftiger Rastimpuls bei Eintritt, Ruhe innerhalb der Taste, Hysterese gegen wiederholtes Einrasten. Stärke bis zum eingestellten API-Maximum; kurze endliche Segmente, ohne Amplitudenregelung dichter werdende Pulse. Stopp bei Loslassen, Mehrfinger, Fokusverlust, Schließen und spätestens 5 s pro Berührung. Normale Fernbedienung und Sicherungsumfang unverändert. Gerätetest offen."
