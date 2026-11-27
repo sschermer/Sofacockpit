@@ -103,7 +103,7 @@ Maximal 1 MiB Archivgröße, 1,5 MiB entpackte Daten, 16 KiB pro JSON. Nur erlau
 
 ## Software-Updates (ab v0.9.0)
 
-**Start lange drücken → Software-Updates** öffnet die Update-Einstellungen. Das App-Menü enthält außerdem Design auswählen, Verbindungen und Über Sofacockpit. Kurzes Antippen von Start bleibt unverändert.
+**Start lange drücken → Software-Updates** öffnet die Update-Einstellungen. Das App-Menü enthält außerdem Design auswählen, Verbindungen und Über Sofacockpit sowie ab v1.1.5 **Streaming-Start testen**. Kurzes Antippen von Start bleibt unverändert.
 
 - Automatische Prüfung beim Kaltstart der App und per Pull-to-Refresh (standardmäßig an), keine Hintergrunddienste und keine regelmäßigen Netzwerkabfragen im Hintergrund.
 - Kanal **Releases und Pre-Releases** (Standard für die Entwicklungsphase) oder **Nur stabile Releases**. Die reguläre GitHub-Releases-Liste wird seitenweise geprüft; Entwürfe sowie Releases ohne vollständig hochgeladene Sofacockpit.apk werden ignoriert. Gültige Tags sind sofacockpit-vMAJOR.MINOR.PATCH oder vMAJOR.MINOR.PATCH mit drei numerischen Komponenten. Die höchste passende Versionsnummer gewinnt, nicht das Veröffentlichungsdatum oder die Reihenfolge. GitHubs Boolean prerelease entscheidet über den Typ.
@@ -118,6 +118,28 @@ Es wird ohne Token ausschließlich das öffentliche Repository sschermer/Sofacoc
 Die geprüfte APK liegt im privaten Cache, wird nur über einen eng begrenzten FileProvider mit Leseberechtigung an den Android-Installer übergeben und kann dort zusätzlich geprüft werden. Kein Umgehen der Installationsbestätigung, Play Protect oder Android-Richtlinien. Die Installation erfolgt als normales Paketupdate ohne Deinstallation; TV-Kopplung, Themes, NAS-Einstellungen und andere gespeicherte Einstellungen bleiben erhalten. Wenn Android ablehnt oder der Benutzer abbricht, bleibt die alte Version installiert. Bei einer Activity-Neuerstellung während Download oder Berechtigungsdialog kann ein erneutes Anstoßen erforderlich sein. Alte Update-Cache-Dateien werden bei weiteren Downloads nach zwei Tagen entfernt.
 
 Die Release-Workflows müssen weiterhin monoton steigende versionCode-Werte, zur Tag-Version passende versionName und die feste Signatur verwenden. Pre-Releases werden wie bisher mit --prerelease veröffentlicht; für eine reguläre Freigabe dieses Flag entfernen. Die Update-Funktion wurde beim Wechsel von v0.9.0 auf v0.9.1 auf dem realen Gerät erfolgreich getestet. Das erste reguläre Release ist v1.0.0; die neue Pull-to-Refresh-Geste steht noch zum Gerätetest an.
+
+## Streaming-Start testen (v1.1.5, Pre-Release)
+
+Diese Version ergänzt einen ausdrücklich gestarteten Versuch für den App-Start über den Play Store. **Ein funktionierender Dyn-Direktstart am TCL ist damit noch nicht nachgewiesen.**
+
+**Bedienung:** TV wie gewohnt verbinden, **Start lange drücken → Streaming-Start testen** öffnen und anschließend **YouTube testen** oder **Dyn testen** antippen. Erst der jeweilige Testknopf sendet einen Befehl. Das Öffnen des Dialogs startet keine App. Die Diagnose unterscheidet Versand, eine dem Request zuordenbare empfangene Ablehnung mit numerischem Fehlercode und einen Verbindungsabbruch. Beide Knöpfe sind während der fünf Sekunden Beobachtung gesperrt; die Ergebnisse bleiben im Dialog sichtbar und lassen sich gemeinsam kopieren. Schließen oder Wechsel in den Hintergrund beendet einen noch nicht begonnenen Test beziehungsweise die weitere Beobachtung. Der App-Start selbst bleibt unbestätigt: Ein erfolgreicher Versand oder eine weiterhin bedienbare Verbindung beweist nicht, dass die gewünschte App geöffnet wurde.
+
+Der Test verwendet die vorhandene gekoppelte Remote-v2-Verbindung: `APP_LINK_LAUNCH_REQUEST` (Feld 90) enthält in Feld 1 `https://play.google.com/apps/launch?id=<Paketname>`, in Feld 2 `com.android.vending` und in Feld 3 `true`. Zielpakete sind `com.google.android.youtube.tv` und `sport.dyn.app.android.prod`. Grundlage sind die [Protokollbeschreibung von Libremote](https://github.com/sonalder-darlene/libremote-android-tv/blob/main/PROTOCOL.md) und dessen [AppLauncher-Quellcode](https://github.com/sonalder-darlene/libremote-android-tv/blob/main/app/src/main/java/app/libremotetvservice/net/AppLauncher.kt). Der Autor berichtet über funktionierende Emulatorversuche; das ist kein unabhängiger Nachweis für den TCL oder seine installierten Service-/Play-Store-Versionen. Der Aufruf kann auch eine Store-Seite öffnen. Gespeicherte Favoriten, Reihenfolge und Standardlinks werden nicht geändert. Keine ADB-Verbindung, zusätzliche TV-App oder neue Kopplung.
+
+Ablehnungen werden nur bei einem bereits begonnenen Test, passender Sitzung und inhaltlich passendem zurückgegebenen Request zugeordnet. Das Protokoll enthält hier keine eindeutige Versuchs-ID: Eine stark verspätete Antwort auf einen identischen älteren Aufruf in derselben Sitzung bleibt grundsätzlich mehrdeutig. Die getrennten Ergebnisse werden weder durch gewöhnliche Statusmeldungen noch durch eine Wiederverbindung überschrieben. Ein Test wird niemals automatisch erneut gesendet; die bestehende begrenzte Wiederverbindung stellt gegebenenfalls nur die Steuerverbindung wieder her.
+
+### Bisherige Nutzerbeobachtungen am TCL
+
+Diese Tests betrafen die einzelnen URLs ohne die zusätzlichen Paket-/Optionsfelder des neuen Diagnoseaufrufs:
+
+| Getesteter Aufruf | Sichtbares Ergebnis | Anschließende TV-Steuerung |
+| --- | --- | --- |
+| `https://www.dyn.sport/` | Browser geöffnet, Dyn-App nicht gestartet | Vom Nutzer als weiterhin bedienbar bestätigt |
+| `https://www.dyn.sport/event/Dyn_Champions_Konferenz_106277` | Browser geöffnet, Dyn-App nicht gestartet | Für diesen einzelnen Versuch nicht gesondert bestätigt |
+| `https://play.google.com/apps/launch?id=sport.dyn.app.android.prod` ohne Feld 2/3 | Keine sichtbare Reaktion | Vom Nutzer als weiterhin bedienbar bestätigt |
+
+Die letzte Beobachtung belegt keine bestimmte Ursache und keine nachgewiesene Nichtverarbeitung im TV. Auch die Browseröffnung beweist nicht, dass die installierte Dyn-TV-App keinerlei Deep Links unterstützt: Manifest-Filter und die geräteseitige Linkzuordnung bleiben zu prüfen (siehe [Android App-Link-Verifikation](https://developer.android.com/training/app-links/verify-applinks)). Für v1.1.5 steht der bewusste Gerätetest beider Knöpfe noch aus: jeweils sichtbares Ziel (App, Browser, Store oder keine sichtbare Reaktion), Diagnosetext und anschließende Bedienbarkeit der TV-Steuerung festhalten. Build-/Protokolltests ersetzen diesen Gerätetest nicht.
 
 ## Fehlgeschlagene Streaming-App-Starts (v1.1.4)
 

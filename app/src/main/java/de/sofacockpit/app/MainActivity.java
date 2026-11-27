@@ -4,6 +4,8 @@ import androidx.activity.ComponentActivity;
 import androidx.lifecycle.ViewModelProvider;
 import de.tonmaschine.android.MainViewModel;
 import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.SharedPreferences;
 import android.os.Build;
 import de.tonmaschine.android.model.Connection;
@@ -23,12 +25,14 @@ import android.view.KeyEvent;
 import de.sofacockpit.app.tv.TvRemoteClient;
 import de.sofacockpit.app.tv.TvConnectionIndicator;
 import de.sofacockpit.app.tv.TvConnectionDialog;
+import de.sofacockpit.app.tv.AppLaunchTest;
 import java.util.ArrayList;
 import java.util.List;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.Button;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -57,6 +61,7 @@ public class MainActivity extends ComponentActivity {
     private LinearLayout footer;
     private TextView footerPageName;
     private PopupMenu quickMenu;
+    private AlertDialog appLaunchTestDialog;
     private MainViewModel soundbarModel;
     private TvRemoteClient tv;
     private TvConnectionDialog tvDialog;
@@ -237,7 +242,7 @@ public class MainActivity extends ComponentActivity {
     private void showStartMenu(View anchor) {
         if (quickMenu != null) quickMenu.dismiss();
         PopupMenu popup = new PopupMenu(this, anchor, Gravity.CENTER);
-        String[] items={"Design auswählen","Software-Updates","Verbindungen","Über Sofacockpit","Verbindungen aktualisieren"};
+        String[] items={"Design auswählen","Software-Updates","Verbindungen","Über Sofacockpit","Verbindungen aktualisieren","Streaming-Start testen"};
         for (int i=0;i<items.length;i++) popup.getMenu().add(0,i+1,i,items[i]);
         popup.setOnMenuItemClickListener(item -> {
             switch(item.getItemId()) {
@@ -250,11 +255,153 @@ public class MainActivity extends ComponentActivity {
                         .setPositiveButton("Schließen",null).show();
                     return true;
                 case 5: connectionRefresh.request(navigation.category()); return true;
+                case 6: showAppLaunchTestDialog(); return true;
                 default: return false;
             }
         });
         popup.setOnDismissListener(menu -> { if(quickMenu==menu) quickMenu=null; });
         quickMenu=popup;popup.show();
+    }
+
+    private void showAppLaunchTestDialog() {
+        if (isFinishing() || isDestroyed() ||
+                (appLaunchTestDialog != null && appLaunchTestDialog.isShowing())) return;
+
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(dp(18), dp(14), dp(18), dp(12));
+        body.setBackgroundColor(BG);
+        TextView title = label("Streaming-Start testen", 21, TEXT);
+        title.setTypeface(ThemeArt.typeface(theme.theme, Typeface.BOLD));
+        body.addView(title);
+        TextView explanation = label("Experimenteller vollständiger Play-Store-Aufruf. " +
+            "Nach jedem Test werden TV-Rückmeldungen fünf Sekunden beobachtet. " +
+            "Bitte am TV prüfen, ob die App startet. Jeder Test beginnt nur nach Antippen.", 13, MUTED);
+        explanation.setPadding(0, dp(8), 0, dp(10));
+        body.addView(explanation);
+        TextView availability = label("", 13, MUTED);
+        availability.setPadding(0, 0, 0, dp(6));
+        body.addView(availability);
+
+        AppLaunchTest.Target[] targets = {AppLaunchTest.Target.YOUTUBE, AppLaunchTest.Target.DYN};
+        Button[] buttons = new Button[targets.length];
+        TextView[] results = new TextView[targets.length];
+        for (int i = 0; i < targets.length; i++) {
+            Button button = appLaunchTestButton(targets[i].label + " testen");
+            buttons[i] = button;
+            LinearLayout.LayoutParams buttonLp = new LinearLayout.LayoutParams(-1, -2);
+            buttonLp.topMargin = dp(10);
+            body.addView(button, buttonLp);
+            TextView result = label("Noch nicht getestet.", 13, TEXT);
+            result.setPadding(0, dp(8), 0, dp(12));
+            result.setTextIsSelectable(true);
+            result.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+            results[i] = result;
+            body.addView(result, new LinearLayout.LayoutParams(-1, -2));
+        }
+
+        Button copy = appLaunchTestButton("Ergebnisse kopieren");
+        body.addView(copy, new LinearLayout.LayoutParams(-1, -2));
+        TextView copyFeedback = label("", 12, MUTED);
+        copyFeedback.setPadding(0, dp(6), 0, 0);
+        copyFeedback.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        body.addView(copyFeedback);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        scroll.addView(body, new ScrollView.LayoutParams(-1, -2));
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(scroll)
+            .setNegativeButton("Schließen", null).create();
+        appLaunchTestDialog = dialog;
+        Runnable render = () -> {
+            if (appLaunchTestDialog != dialog || !dialog.isShowing()) return;
+            boolean busy = tv.appLaunchTestBusy();
+            boolean allowed = tv.canTestAppLaunch();
+            String status = busy ? "Test läuft …" : allowed ? "Bereit. Gewünschten Test antippen." :
+                !tv.state().connected() ? "Für einen Test zuerst den Fernseher verbinden." :
+                !tv.state().apps ? "Der TV meldet keine App-Link-Unterstützung." :
+                "Test derzeit nicht möglich. TV-Verbindung prüfen.";
+            if (!status.contentEquals(availability.getText())) availability.setText(status);
+            for (int i = 0; i < targets.length; i++) {
+                buttons[i].setEnabled(!busy && allowed);
+                buttons[i].setAlpha(!busy && allowed ? 1f : .42f);
+                AppLaunchTest.Result result = tv.appLaunchTestResult(targets[i]);
+                String message = result == null ? "Noch nicht getestet." : result.message;
+                if (!message.contentEquals(results[i].getText())) results[i].setText(message);
+            }
+        };
+        for (int i = 0; i < targets.length; i++) {
+            AppLaunchTest.Target target = targets[i];
+            buttons[i].setOnClickListener(v -> {
+                if (!tv.appLaunchTestBusy() && tv.canTestAppLaunch()) {
+                    copyFeedback.setText("");
+                    tv.testAppLaunch(target);
+                }
+                render.run();
+            });
+        }
+        copy.setOnClickListener(v -> {
+            StringBuilder report = new StringBuilder("Sofacockpit ").append(updates.versionName())
+                .append(" – Streaming-Start testen\n");
+            for (AppLaunchTest.Target target : targets) {
+                AppLaunchTest.Result result = tv.appLaunchTestResult(target);
+                report.append('\n').append(target.label).append(":\n")
+                    .append(result == null ? "Noch nicht getestet." : result.message).append('\n');
+            }
+            report.append("Der tatsächliche App-Start muss am TV geprüft werden.");
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (clipboard == null) {
+                copyFeedback.setText("Zwischenablage nicht verfügbar.");
+                return;
+            }
+            try {
+                clipboard.setPrimaryClip(ClipData.newPlainText("Sofacockpit Streaming-Test", report));
+                copyFeedback.setText("Beide Ergebnisse kopiert.");
+            } catch (RuntimeException ex) {
+                copyFeedback.setText("Ergebnisse konnten nicht kopiert werden.");
+            }
+        });
+        dialog.setOnDismissListener(d -> {
+            if (appLaunchTestDialog != dialog) return;
+            appLaunchTestDialog = null;
+            tv.setAppLaunchTestListener(null);
+            tv.stopAppLaunchTest();
+        });
+        dialog.show();
+        Button close = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+        close.setAllCaps(false);
+        close.setTextColor(ACCENT);
+        close.setMinHeight(dp(48));
+        if (dialog.getWindow() != null) {
+            int width = Math.min(getResources().getDisplayMetrics().widthPixels - dp(20), dp(540));
+            dialog.getWindow().setLayout(width, -2);
+        }
+        tv.setAppLaunchTestListener(render);
+        render.run();
+    }
+
+    private Button appLaunchTestButton(String text) {
+        Button button = new Button(this);
+        button.setText(text);
+        button.setAllCaps(false);
+        button.setTextColor(TEXT);
+        button.setTextSize(14 * theme.theme.fontScale);
+        button.setTypeface(ThemeArt.typeface(theme.theme, Typeface.BOLD));
+        button.setPadding(dp(12), dp(10), dp(12), dp(10));
+        button.setBackground(shape(SURFACE_ALT, 14));
+        button.setMinHeight(dp(48));
+        button.setMinimumHeight(dp(48));
+        return button;
+    }
+
+    private void closeAppLaunchTestDialog() {
+        AlertDialog dialog = appLaunchTestDialog;
+        appLaunchTestDialog = null;
+        if (tv != null) {
+            tv.setAppLaunchTestListener(null);
+            tv.stopAppLaunchTest();
+        }
+        if (dialog != null) dialog.dismiss();
     }
 
     private void showQuickMenu(int category, View anchor) {
@@ -984,6 +1131,7 @@ public class MainActivity extends ComponentActivity {
 
     @Override protected void onDestroy() {
         if (quickMenu != null) quickMenu.dismiss();
+        closeAppLaunchTestDialog();
         if (connectionRefresh != null) connectionRefresh.close();
         if (updates != null) updates.close();
         if (themePicker != null) themePicker.close();

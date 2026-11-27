@@ -85,7 +85,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v1.1.4
+          name: Sofacockpit-Android-v1.1.5
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -94,9 +94,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create sofacockpit-v1.1.4 \
+          gh release create sofacockpit-v1.1.5 \
             dist/Sofacockpit.apk dist/*.sofatheme \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "Sofacockpit v1.1.4 (Streaming-Fehler isolieren)" \
-            --notes "Test-Patch: abgelehnte App-Link-Befehle beenden die ausgehandelte TV-Sitzung nicht mehr automatisch. Bei tatsächlichem kurzfristigem Transportverlust nach App-Start einmalige begrenzte Wiederverbindung ohne erneuten App-Start oder WoL. Paketname-Starts nur nach ausdrücklicher Testbestätigung. Bestehende Deep Links und Favoriten bleiben unverändert; Dyn-Direktstart noch ungelöst. Soundbar-Hintergrundproblem separat offen. Signatur unverändert."
+            --title "Sofacockpit v1.1.5 (Streaming-Start testen)" \
+            --notes "Gezielter Gerätetest: Start lange drücken → Streaming-Start testen. YouTube und Dyn einzeln über den vollständigen Play-Store-Aufruf testen. Der Dialog zeigt Versand, zuordenbare TV-Ablehnung mit Fehlercode und Verbindungsverlust; Ergebnisse lassen sich kopieren. Fünf Sekunden Beobachtung, keine automatische Testfolge und kein erneutes Senden. Ein Dyn-Direktstart ist noch nicht bestätigt. Favoriten, Standardlinks, Kopplung und Signatur unverändert; keine zusätzliche TV-App oder ADB."

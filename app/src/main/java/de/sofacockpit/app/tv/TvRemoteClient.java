@@ -81,6 +81,11 @@ public final class TvRemoteClient implements AutoCloseable {
     private final ForegroundRecovery recovery = new ForegroundRecovery();
     private final RefreshIntent refreshIntent = new RefreshIntent();
     private RefreshProbe refreshProbe;
+    private static final long APP_TEST_OBSERVATION_MS = 5_000L;
+    private final java.util.EnumMap<AppLaunchTest.Target, AppLaunchTest> appLaunchTests =
+        new java.util.EnumMap<>(AppLaunchTest.Target.class);
+    private Runnable appLaunchTestListener;
+    private LaunchAttempt appLaunchAttempt;
 
     public TvRemoteClient(Context context, Listener listener) {
         appContext = context.getApplicationContext();
@@ -210,6 +215,7 @@ public final class TvRemoteClient implements AutoCloseable {
         if (next.connected() && current != null && paired() && current.host.equals(lastAddress()))
             refreshIntent.confirmed(current.host, next.powerOn);
         listener.onState(state);
+        notifyAppLaunchTest();
     }
     private void publish(Session s, Phase phase, String detail, boolean keys) {
         main.post(() -> { if (!closed && current == s && !s.cancelled) update(phase, detail, keys); });
@@ -218,6 +224,7 @@ public final class TvRemoteClient implements AutoCloseable {
     public void onBackground() {
         if (closed) return;
         foregroundNetworkAllowed = false;
+        stopAppLaunchTest("App im Hintergrund; Testbeobachtung beendet.");
         recovery.background(current != null && state.connected() &&
             !Boolean.FALSE.equals(state.powerOn) ? current.host : null);
     }
@@ -227,6 +234,7 @@ public final class TvRemoteClient implements AutoCloseable {
         foregroundNetworkAllowed = networkAllowed;
         recovery.foreground(SystemClock.elapsedRealtime(), networkAllowed);
         restoreForegroundSession();
+        notifyAppLaunchTest();
     }
 
     private void restoreForegroundSession() {
@@ -279,6 +287,7 @@ public final class TvRemoteClient implements AutoCloseable {
         if (!closed) update(Phase.DISCONNECTED, "Nicht verbunden", false);
     }
     private void cancelCurrent() {
+        stopAppLaunchTest("Steuersitzung gewechselt; Testbeobachtung beendet.");
         Session s = current;
         current = null;
         if (s != null) s.cancel();
@@ -363,10 +372,12 @@ public final class TvRemoteClient implements AutoCloseable {
 
     public void sendKey(int key) {
         if (!allowedKey(key)) { commandDetail("Dieser TV-Befehl wird nicht unterstützt."); return; }
+        stopAppLaunchTest("Weiterer TV-Befehl; Testbeobachtung beendet.");
         sendCommand(TvProtocol.key(key), false, null);
     }
 
     public void launchApp(String link, String label) {
+        stopAppLaunchTest("Weiterer App-Start; Testbeobachtung beendet.");
         try { sendCommand(TvProtocol.appLink(link), true,
             "Startbefehl für " + label + " gesendet – Start am TV prüfen."); }
         catch (IllegalArgumentException ex) { commandDetail(ex.getMessage()); }
@@ -376,20 +387,133 @@ public final class TvRemoteClient implements AutoCloseable {
         if (!closed) setState(state.withDetail(detail));
     }
 
+    /** Explicit diagnostics only; results stay in memory and never alter saved shortcuts. */
+    public void setAppLaunchTestListener(Runnable listener) { appLaunchTestListener = listener; }
+    public AppLaunchTest.Result appLaunchTestResult(AppLaunchTest.Target target) {
+        AppLaunchTest report = appLaunchTests.get(target);
+        return report == null ? null : report.result();
+    }
+    public boolean appLaunchTestBusy() { return appLaunchAttempt != null; }
+    public boolean canTestAppLaunch() {
+        return !closed && foregroundNetworkAllowed && state.connected() && current != null &&
+            current.ready && current.apps && !Boolean.FALSE.equals(state.powerOn);
+    }
+    public void testAppLaunch(AppLaunchTest.Target target) {
+        if (target == null || closed || appLaunchAttempt != null) return;
+        AppLaunchTest report = new AppLaunchTest(target);
+        appLaunchTests.put(target, report);
+        if (!canTestAppLaunch()) {
+            report.notSent("TV muss verbunden und eingeschaltet sein und App-Links unterstützen.");
+            notifyAppLaunchTest();
+            return;
+        }
+        Session s = current;
+        LaunchAttempt attempt = new LaunchAttempt(s, TvProtocol.playStoreAppLink(target.packageName), report);
+        appLaunchAttempt = attempt;
+        s.launchAttempt = attempt;
+        notifyAppLaunchTest();
+        sendCommand(attempt.request, true, null, attempt);
+    }
+    public void stopAppLaunchTest() {
+        stopAppLaunchTest("Testdialog geschlossen; Testbeobachtung beendet.");
+    }
+    private void stopAppLaunchTest(String reason) {
+        LaunchAttempt attempt = appLaunchAttempt;
+        if (attempt == null) return;
+        boolean started = attempt.cancel();
+        if (attempt.written) attempt.report.sent();
+        attempt.report.stop(reason, started);
+        finishAppLaunchTest(attempt);
+    }
+    private void notifyAppLaunchTest() {
+        if (!closed && appLaunchTestListener != null) appLaunchTestListener.run();
+    }
+    private void finishAppLaunchTest(LaunchAttempt attempt) {
+        if (appLaunchAttempt != attempt) return;
+        attempt.cancel();
+        if (attempt.expiry != null) main.removeCallbacks(attempt.expiry);
+        if (attempt.session.launchAttempt == attempt) attempt.session.launchAttempt = null;
+        appLaunchAttempt = null;
+        notifyAppLaunchTest();
+    }
+    private void appLaunchTestNotSent(LaunchAttempt attempt) {
+        if (appLaunchAttempt != attempt) return;
+        attempt.report.notSent("Test vor dem Versand beendet oder TV-Verbindung nicht mehr bereit.");
+        finishAppLaunchTest(attempt);
+    }
+    private void appLaunchTestSent(LaunchAttempt attempt) {
+        if (appLaunchAttempt != attempt) return;
+        attempt.report.sent();
+        attempt.expiry = () -> {
+            if (appLaunchAttempt != attempt) return;
+            attempt.report.observationEnded();
+            finishAppLaunchTest(attempt);
+        };
+        long remaining = Math.max(0L, attempt.sentAt + APP_TEST_OBSERVATION_MS - SystemClock.elapsedRealtime());
+        main.postDelayed(attempt.expiry, remaining);
+        notifyAppLaunchTest();
+    }
+    private void appLaunchTestConnectionLost(Session s) {
+        LaunchAttempt attempt = appLaunchAttempt;
+        if (attempt == null || attempt.session != s) return;
+        boolean started = attempt.cancel();
+        if (attempt.written) attempt.report.sent();
+        attempt.report.disconnected(started);
+        finishAppLaunchTest(attempt);
+    }
+
+    /** The short lock guards cancellation versus the first write; it never covers TLS I/O. */
+    private static final class LaunchAttempt {
+        final Session session;
+        final byte[] request;
+        final AppLaunchTest report;
+        private boolean cancelled, started;
+        volatile boolean written;
+        volatile long sentAt;
+        Runnable expiry; // UI thread only
+        LaunchAttempt(Session session, byte[] request, AppLaunchTest report) {
+            this.session = session; this.request = request; this.report = report;
+        }
+        synchronized boolean begin() {
+            if (cancelled || started) return false;
+            started = true;
+            return true;
+        }
+        synchronized boolean observes(long now) {
+            return started && !cancelled && (!written || now <= sentAt + APP_TEST_OBSERVATION_MS);
+        }
+        synchronized boolean cancel() { cancelled = true; return started; }
+    }
+
     private void sendCommand(byte[] message, boolean app, String sentDetail) {
+        sendCommand(message, app, sentDetail, null);
+    }
+    private void sendCommand(byte[] message, boolean app, String sentDetail, LaunchAttempt attempt) {
         Session s = current;
         if (s == null || !s.ready || !state.connected()) {
+            if (attempt != null) appLaunchTestNotSent(attempt);
             commandDetail("TV nicht verbunden. Zuerst verbinden."); return;
         }
         if (app ? !s.apps : !s.keys) {
+            if (attempt != null) appLaunchTestNotSent(attempt);
             commandDetail(app ? "TV meldet keine App-Link-Unterstützung." : "TV meldet keine Tastenunterstützung.");
             return;
         }
         try {
             writers.execute(() -> {
-                if (s.cancelled || !s.ready || (app ? !s.apps : !s.keys)) return;
+                if (s.cancelled || !s.ready || (app ? !s.apps : !s.keys)) {
+                    if (attempt != null) main.post(() -> appLaunchTestNotSent(attempt));
+                    return;
+                }
                 try {
-                    if (app) {
+                    if (attempt != null) {
+                        boolean sent = s.sendTest(attempt);
+                        main.post(() -> {
+                            if (sent) appLaunchTestSent(attempt);
+                            else appLaunchTestNotSent(attempt);
+                        });
+                        return;
+                    } else if (app) {
                         s.appLinkRejected = false;
                         s.lastAppLaunchAt = SystemClock.elapsedRealtime();
                     } else {
@@ -408,6 +532,7 @@ public final class TvRemoteClient implements AutoCloseable {
                 }
             });
         } catch (RejectedExecutionException ex) {
+            if (attempt != null) appLaunchTestNotSent(attempt);
             if (!closed && current == s) commandDetail("Zu viele TV-Befehle. Bitte kurz warten.");
         }
     }
@@ -505,6 +630,7 @@ public final class TvRemoteClient implements AutoCloseable {
             final boolean reportFailure = hardFailure || (s.explicit && !s.everReady);
             main.post(() -> {
                 if (!closed && current == s && !s.cancelled) {
+                    appLaunchTestConnectionLost(s);
                     current = null;
                     writers.getQueue().clear();
                     actionableConnectionFailure = reportFailure;
@@ -644,9 +770,17 @@ public final class TvRemoteClient implements AutoCloseable {
                         announced = false; previous = null;
                         publish(s, Phase.CONNECTING, "TV-Steuersitzung wird neu ausgehandelt …", false);
                     }
-                    if (handshake.takeAppLinkRejection()) {
+                    TvProtocol.AppLinkRejection rejection = handshake.takeAppLinkRejectionDetails();
+                    if (rejection != null) {
                         s.appLinkRejected = true;
+                        LaunchAttempt attempt = s.launchAttempt;
+                        boolean matches = attempt != null && attempt.observes(SystemClock.elapsedRealtime()) &&
+                            rejection.matchesRequest(attempt.request);
                         main.post(() -> {
+                            if (!closed && current == s && !s.cancelled && matches && appLaunchAttempt == attempt) {
+                                attempt.report.rejected(rejection.code);
+                                notifyAppLaunchTest();
+                            }
                             if (!closed && current == s && !s.cancelled && state.connected())
                                 commandDetail("TV hat den App-Start abgelehnt. Anderen App-Link verwenden.");
                         });
@@ -702,6 +836,7 @@ public final class TvRemoteClient implements AutoCloseable {
         final BlockingQueue<String> codes = new ArrayBlockingQueue<>(1);
         volatile boolean cancelled, ready, keys, apps, writeFailed, everReady;
         volatile boolean appLinkRejected;
+        volatile LaunchAttempt launchAttempt;
         volatile long lastAppLaunchAt = -1L;
         volatile Boolean reportedPower;
         String stage = "TV-Verbindung";
@@ -719,6 +854,21 @@ public final class TvRemoteClient implements AutoCloseable {
                 TvProtocol.writeFrame(socket.getOutputStream(), message);
                 RemoteLiveness live = liveness;
                 if (live != null) live.outbound(SystemClock.elapsedRealtime());
+            }
+        }
+        boolean sendTest(LaunchAttempt attempt) throws IOException {
+            synchronized (outputLock) {
+                SSLSocket socket = tls;
+                if (cancelled || !ready || !apps || socket == null || socket.isClosed()) return false;
+                if (!attempt.begin()) return false;
+                appLinkRejected = false;
+                lastAppLaunchAt = SystemClock.elapsedRealtime();
+                TvProtocol.writeFrame(socket.getOutputStream(), attempt.request);
+                attempt.sentAt = SystemClock.elapsedRealtime();
+                attempt.written = true;
+                RemoteLiveness live = liveness;
+                if (live != null) live.outbound(attempt.sentAt);
+                return true;
             }
         }
         void closeSocket() {

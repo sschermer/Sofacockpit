@@ -168,19 +168,76 @@ public final class TvProtocol {
         return bytes(90, string(1, normalizeLaunchLink(link)));
     }
 
+    /** Explicit diagnostic request routed to the TV's Play Store, not a generic URI fallback. */
+    static byte[] playStoreAppLink(String packageName) {
+        String prefix = "https://play.google.com/apps/launch?id=";
+        if (packageName == null || packageName.length() > 2048 - prefix.length()
+                || !packageName.matches("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+"))
+            throw new IllegalArgumentException("Ungültiger oder zu langer Android-Paketname.");
+        return bytes(90, concat(string(1, prefix + packageName),
+            string(2, "com.android.vending"), number(3, 1)));
+    }
+
+    /** A command rejection preserves the numeric code and the exact rejected RemoteMessage. */
+    static final class AppLinkRejection {
+        final long code;
+        private final byte[] request;
+        private AppLinkRejection(long code, byte[] request) {
+            this.code = code;
+            this.request = request.clone();
+        }
+        byte[] request() { return request.clone(); }
+        boolean matchesRequest(byte[] expected) {
+            try {
+                Message actualLink = appLinkFields(request), expectedLink = appLinkFields(expected);
+                return actualLink != null && expectedLink != null
+                    && Arrays.equals(actualLink.messages.get(1), expectedLink.messages.get(1))
+                    && Arrays.equals(actualLink.messages.getOrDefault(2, new byte[0]),
+                        expectedLink.messages.getOrDefault(2, new byte[0]))
+                    && actualLink.integer(3, 0) == expectedLink.integer(3, 0)
+                    && actualLink.integer(4, 0) == expectedLink.integer(4, 0);
+            } catch (IOException malformed) { return false; }
+        }
+        /** Compare known fields independent of serialization order; never guess about extra fields. */
+        private static Message appLinkFields(byte[] request) throws IOException {
+            if (request == null || request.length == 0 || request.length > MAX_FRAME) return null;
+            ByteArrayInputStream outer = new ByteArrayInputStream(request);
+            if (readVarint(outer) != ((90L << 3) | 2)) return null;
+            ByteArrayInputStream in = new ByteArrayInputStream(readBytes(outer, readVarint(outer)));
+            if (outer.available() != 0) return null;
+            Message link = new Message();
+            while (in.available() > 0) {
+                long key = readVarint(in);
+                int tag = (int)(key >>> 3);
+                if (key == 10 || key == 18) {
+                    if (link.messages.containsKey(tag)) return null;
+                    link.messages.put(tag, readBytes(in, readVarint(in)));
+                } else if (key == 24 || key == 32) {
+                    if (link.integers.containsKey(tag)) return null;
+                    link.integers.put(tag, readVarint(in));
+                } else return null;
+            }
+            return link.has(1) ? link : null;
+        }
+    }
+
     /** The TV drives negotiation. Receiving remote_start (even when power is off)
      * after configure/active confirms a real remote session, not just an open socket. */
     static final class RemoteHandshake {
         private int features, advertisedFeatures;
         private int configureCount, activeCount, startCount, pingCount, otherCount;
-        private boolean configured, activated, ready, appLinkRejected;
+        private boolean configured, activated, ready;
+        private AppLinkRejection appLinkRejection;
         private Boolean powerOn, muted;
         private Integer volumeLevel, volumeMax;
         private final java.util.SortedSet<Integer> seenFields = new java.util.TreeSet<>();
         boolean ready() { return ready; }
         boolean takeAppLinkRejection() {
-            boolean result = appLinkRejected;
-            appLinkRejected = false;
+            return takeAppLinkRejectionDetails() != null;
+        }
+        AppLinkRejection takeAppLinkRejectionDetails() {
+            AppLinkRejection result = appLinkRejection;
+            appLinkRejection = null;
             return result;
         }
         boolean supportsKeys() { return ready && (features & KEY_FEATURE) != 0; }
@@ -203,7 +260,7 @@ public final class TvProtocol {
             if (m.has(1)) {
                 configureCount++;
                 configured = true; activated = false; ready = false; powerOn = null;
-                appLinkRejected = false;
+                appLinkRejection = null;
                 volumeLevel = null; volumeMax = null; muted = null;
                 advertisedFeatures = (int)m.child(1).integer(1, 0);
                 features = advertisedFeatures & REQUESTED_FEATURES;
@@ -242,12 +299,13 @@ public final class TvProtocol {
             }
             if (m.has(3)) {
                 Message error = m.child(3);
-                if (error.integer(1, 0) != 0) {
+                long code = error.integer(1, 0);
+                if (code != 0) {
                     // RemoteError.message (field 2) contains the rejected RemoteMessage.
                     // A rejected AppLinkLaunchRequest (field 90) is a command error,
                     // not proof that the already negotiated TLS session is broken.
                     if (supportsApps() && error.has(2) && error.child(2).has(90)) {
-                        appLinkRejected = true;
+                        appLinkRejection = new AppLinkRejection(code, error.messages.get(2));
                         return null;
                     }
                     // Unknown, handshake and non-app command errors keep the existing fail-closed path.
