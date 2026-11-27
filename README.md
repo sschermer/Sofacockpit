@@ -34,9 +34,11 @@ Kurzer Tipp auf Stimme startet die lokale Aufnahme unmittelbar bei verfügbarer 
 
 [Signierte Lab-APK v0.1.4](https://github.com/sschermer/Sofacockpit/releases/download/sofacockpit-lab-v0.1.4/Sofacockpit-Lab.apk) · [CI erfolgreich](https://github.com/sschermer/Sofacockpit/actions/runs/45950375502).
 
-### Lab v0.1.5 – direkte Ausführung von Sprachbefehlen (Build ausstehend)
+### Lab v0.1.5 – direkte Ausführung von Sprachbefehlen (Pre-Release veröffentlicht; Gerätetest offen)
 
 Nach dem bewussten kurzen Tipp auf Stimme werden eindeutige vollständige Ergebnisse der lokalen Spracherkennung direkt einmalig ausgeführt; die Ausführen-Bestätigung entfällt für diese Sprachbefehle. Texteingabe weiterhin bewusst bestätigen. Unklare oder verneinte Formulierungen, nicht verfügbare Ziele, zu lange Transkripte, geänderte Zuordnungen und verspätete Ergebnisse werden nicht automatisch ausgeführt. Vor dem Versand dieselbe aktuelle Befehlszuordnung und bestehende Geräte-/Statusprüfungen verwenden. Keine Ausführung aus Teilresultaten oder im Hintergrund. Die einmalige HDMI-Referenzmodell-/Konfigurationsauswahl bleibt bei Bedarf erhalten. Spracherkennung kann sich verhören; tatsächliche Geräteaktion erst am Gerät bestätigen. Keine neue KI oder Sprachausgabe.
+
+[Signierte Lab-APK v0.1.5](https://github.com/sschermer/Sofacockpit/releases/download/sofacockpit-lab-v0.1.5/Sofacockpit-Lab.apk) · [CI erfolgreich](https://github.com/sschermer/Sofacockpit/actions/runs/45953666091). L21: Favoritenverwaltung für nicht zuordenbare gespeicherte Einträge wird repariert (v0.1.6 vorgesehen).
 
 **Designstudie 01 (27.11.2026):** Ein eigenständiger [klickbarer HTML-Prototyp](https://github.com/sschermer/Sofacockpit/blob/experiment/intuitive-ui/docs/prototype/Sofacockpit_Prototyp.html) liegt ausschließlich im Experimentierzweig. Datei herunterladen und im Browser öffnen. Alle Geräteaktionen und Zustände sind simuliert; die wichtigsten Abläufe sind im Browser getestet. Keine Änderung der Android-App oder des stabilen Releases. Details und offene technische Voraussetzungen in Aufgabe 0.4 der Roadmap.
 
