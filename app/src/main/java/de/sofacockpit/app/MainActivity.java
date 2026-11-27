@@ -81,6 +81,7 @@ public class MainActivity extends ComponentActivity {
     private final TvAppInventory tvAppInventory = new TvAppInventory();
     private boolean includeSystemApps;
     private boolean appInventoryLoading;
+    private boolean wasTvInventoryConnected;
     private String appInventoryError = "";
     private TextView appsInventoryStatus;
     private final List<TextView> tvKeys = new ArrayList<>();
@@ -1262,6 +1263,9 @@ public class MainActivity extends ComponentActivity {
         tvAppInventory.device(tv.inventoryDeviceKey());
         if (!state.connected()) tvAppInventory.stale();
         renderStreamingShortcuts();
+        boolean firstConnected = state.connected() && !wasTvInventoryConnected;
+        wasTvInventoryConnected = state.connected();
+        if (firstConnected) refreshTvAppInventory();
         renderVolumes(state);
         if (tvDialog != null) tvDialog.render(state);
     }
