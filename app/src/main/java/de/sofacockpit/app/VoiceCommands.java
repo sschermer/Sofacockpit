@@ -58,13 +58,26 @@ final class VoiceCommands {
         boolean hasStandardPhrase(String text){
             return phrases.containsKey(phrase(text));
         }
+        boolean conflictsWith(String text,Command intended){
+            Set<Command> candidates=phrases.get(phrase(text));
+            if(candidates==null)return false;
+            for(Command c:candidates)if(!c.equals(intended))return true;
+            return false;
+        }
+        private void addNamePatterns(Command command,String name,boolean includeBare){
+            for(String variant:VoicePhrases.variants(command.kind,command.target,name)){
+                if(!includeBare&&phrase(variant).equals(phrase(name)))continue;
+                add(command,variant);
+            }
+        }
         void includeAliases(List<VoiceAliases.Entry> aliases){
             for(VoiceAliases.Entry entry:aliases){
                 Command command=find(entry.kind,entry.target);
                 // Reserve inactive phrases too: a removed target must never silently
                 // turn an existing personal phrase into a different device action.
                 if(command==null)command=new Command(entry.kind,entry.target,entry.label);
-                phrases.computeIfAbsent(phrase(entry.text),k->new LinkedHashSet<>()).add(command);
+                for(String key:VoicePhrases.keys(entry.kind,entry.target,entry.text))
+                    phrases.computeIfAbsent(key,k->new LinkedHashSet<>()).add(command);
             }
         }
         void block(String reason){blocked=reason;}
@@ -131,24 +144,35 @@ final class VoiceCommands {
         }
         void app(String name,String pkg,String displayName){
             Command c=new Command(Kind.APP,pkg,displayName+" starten");
-            for(String n:names(name))add(c,n,"starte "+n,"start "+n,"oeffne "+n,n+" starten",n+" oeffnen",
-                "app "+n,"streaming "+n);
+            for(String n:names(name)){
+                add(c,n,"starte "+n,"start "+n,"oeffne "+n,n+" starten",n+" oeffnen","app "+n,"streaming "+n);
+                addNamePatterns(c,n,true);
+            }
         }
         void hdmi(String name,int port){
             Command c=new Command(Kind.HDMI,Integer.toString(port),name+" (HDMI "+port+") auswählen");
             Set<String> variants=names(name);variants.addAll(names("HDMI "+port));variants.addAll(names("h d m i "+port));
-            for(String n:variants)add(c,n,"schalte auf "+n,"wechsel zu "+n,"wechsle zu "+n,"wechsel auf "+n,
-                "wechsle auf "+n,"waehle "+n,n+" spielen","starte "+n,n+" auswaehlen");
+            for(String n:variants){
+                add(c,n,"schalte auf "+n,"wechsel zu "+n,"wechsle zu "+n,"wechsel auf "+n,
+                    "wechsle auf "+n,"waehle "+n,n+" spielen","starte "+n,n+" auswaehlen");
+                addNamePatterns(c,n,true);
+            }
         }
         void profile(String name){
             Command c=new Command(Kind.PROFILE,name,"Klangprofil "+name+" anwenden");
-            for(String n:names(name))add(c,"profil "+n,"klangprofil "+n,"waehle profil "+n,"waehle klangprofil "+n,
-                "waehle das klangprofil "+n,"aktiviere profil "+n,"klangprofil "+n+" anwenden");
+            for(String n:names(name)){
+                add(c,"profil "+n,"klangprofil "+n,"waehle profil "+n,"waehle klangprofil "+n,
+                    "waehle das klangprofil "+n,"aktiviere profil "+n,"klangprofil "+n+" anwenden");
+                addNamePatterns(c,n,false);
+            }
         }
         void mode(String name,int id){
             Command c=new Command(Kind.MODE,Integer.toString(id),"Klangmodus "+name+" auswählen");
-            for(String n:names(name))add(c,"klangmodus "+n,"soundmodus "+n,"waehle klangmodus "+n,
-                "waehle den klangmodus "+n,"klangmodus "+n+" auswaehlen");
+            for(String n:names(name)){
+                add(c,"klangmodus "+n,"soundmodus "+n,"waehle klangmodus "+n,
+                    "waehle den klangmodus "+n,"klangmodus "+n+" auswaehlen");
+                addNamePatterns(c,n,false);
+            }
         }
         Match resolve(String text){
             if(blocked!=null)return new Match(null,blocked);

@@ -39,8 +39,17 @@ final class VoiceAliases {
         List<Entry> next=new ArrayList<>(existing);
         if(previous!=null)removeChecked(next,previous);
         if(next.size()>=MAX_ENTRIES)throw new IllegalArgumentException("Maximal 256 eigene Synonyme.");
-        for(Entry entry:next)if(entry.key().equals(replacement.key()))
-            throw new IllegalArgumentException("Dieses Synonym ist bereits einem Befehl zugeordnet.");
+        Set<String> generated=VoicePhrases.keys(replacement.kind,replacement.target,replacement.text);
+        for(String variant:generated)if(base.conflictsWith(variant,live))
+            throw new IllegalArgumentException("Satzmuster kollidiert mit einem Standardbefehl: "+variant);
+        for(Entry entry:next){
+            if(entry.key().equals(replacement.key()))
+                throw new IllegalArgumentException("Dieses Synonym ist bereits einem Befehl zugeordnet.");
+            if(entry.pointsTo(live))continue;
+            Set<String> other=VoicePhrases.keys(entry.kind,entry.target,entry.text);
+            for(String variant:generated)if(other.contains(variant))
+                throw new IllegalArgumentException("Satzmuster kollidiert mit einem anderen Synonym: "+variant);
+        }
         next.add(replacement);
         return next;
     }
