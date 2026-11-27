@@ -61,7 +61,8 @@ public class MainActivity extends ComponentActivity {
     private final View[] categoryViews = new View[3];
     private final SwipeCategoryPager[] categoryPagers = new SwipeCategoryPager[3];
     private final TextView[] tabs = new TextView[3];
-    private TextView labTitle, labPages, labPower, labActivityTab, labGameStatus;
+    private TextView labTitle, labPages, labActivityTab, labGameStatus;
+    private View labPower;
     private int labActiveCategory=-1, labActivePage;
     private String labActiveName="";
     private int labExpanded=-1;
@@ -89,7 +90,7 @@ public class MainActivity extends ComponentActivity {
     private TvIconButton tvPower, tvMute;
     private final List<VolumeControl> volumeControls = new ArrayList<>();
     private LinearLayout streamRow;
-    private HorizontalScrollView streamScroll;
+    private LabAppStrip streamScroll, labStreamScroll;
     private LinearLayout sourcesAppList;
     private TextView sourcesStatus, systemStatus;
     private StreamingShortcuts shortcuts;
@@ -198,7 +199,7 @@ public class MainActivity extends ComponentActivity {
         java.util.Arrays.fill(labActivityPanels,null);
         tvConnectionButton=soundConnectionButton=tvHomeStatus=tvHomeDetail=tvRemoteStatus=sourcesStatus=systemStatus=null;
         tvDeviceHeader=null; tvPower=tvMute=null; remoteDial=null;
-        streamRow=sourcesAppList=null; streamScroll=null;
+        streamRow=sourcesAppList=null; streamScroll=labStreamScroll=null;
         appsInventoryStatus=null;
         java.util.Arrays.fill(categoryViews,null);
         java.util.Arrays.fill(categoryPagers,null);
@@ -251,6 +252,7 @@ public class MainActivity extends ComponentActivity {
 
     private View labHeader(){
         LinearLayout row=new LinearLayout(this);
+        row.setBaselineAligned(false);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(8),dp(4),dp(8),dp(2));
         labTitle=label("Sofacockpit Lab",17,TEXT);
@@ -261,7 +263,14 @@ public class MainActivity extends ComponentActivity {
         labPages.setTextSize(12*theme.theme.fontScale);
         labPages.setOnClickListener(v->showQuickMenu(navigation.category(),v));
         row.addView(labPages,new LinearLayout.LayoutParams(dp(76),dp(48)));
-        labPower=actionButton("⏻","");
+        android.widget.ImageButton powerMenu=new android.widget.ImageButton(this);
+        powerMenu.setImageResource(R.drawable.lab_power_menu);
+        powerMenu.setColorFilter(TEXT);
+        powerMenu.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+        powerMenu.setPadding(dp(12),dp(12),dp(12),dp(12));
+        powerMenu.setBackground(shape(SURFACE_ALT,14));
+        powerMenu.setFocusable(true);
+        labPower=powerMenu;
         labPower.setContentDescription("Geräte ein- und ausschalten");
         labPower.setOnClickListener(this::labPowerMenu);
         row.addView(labPower,new LinearLayout.LayoutParams(dp(48),dp(48)));
@@ -702,11 +711,10 @@ public class MainActivity extends ComponentActivity {
                 else labChooseHdmiFavorites();
             }).setNegativeButton("Schließen",null).show());
         streamHeader.addView(add,new LinearLayout.LayoutParams(dp(48),dp(48)));
-        streamScroll=new HorizontalScrollView(this);
-        streamScroll.setHorizontalScrollBarEnabled(false);
-        streamRow=new LinearLayout(this);streamRow.setOrientation(LinearLayout.HORIZONTAL);
-        streamScroll.addView(streamRow);streaming.addView(streamScroll);
-        streamScroll.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{if(r-l!=or-ol&&r>l)sizeStreamingTiles();});
+        streamScroll=new LabAppStrip(this,4,60,8);
+        streamRow=new LinearLayout(this);
+        streamScroll.bind(streamRow);
+        streaming.addView(streamScroll,new LinearLayout.LayoutParams(-1,dp(AppTileLayout.HEIGHT_DP)));
         renderStreamingShortcuts();
         content.addView(label("Eigene Aktivitäten (Makros): in Vorbereitung",12,MUTED));
         return scrollPage(content);
@@ -726,18 +734,29 @@ public class MainActivity extends ComponentActivity {
         });
         frame.addView(face,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout panel=new LinearLayout(this);
+        panel.setBaselineAligned(false);
         panel.setGravity(Gravity.CENTER_VERTICAL);
         panel.setPadding(dp(4),dp(4),dp(4),dp(4));
         panel.setBackground(shape(SURFACE,14));
         TextView back=actionButton("‹","");
         back.setContentDescription("Quellenauswahl schließen");
         back.setOnClickListener(v->labExpand(-1));
-        panel.addView(back,new LinearLayout.LayoutParams(dp(48),dp(60)));
-        HorizontalScrollView scroll=new HorizontalScrollView(this);
-        scroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout.LayoutParams backLp=new LinearLayout.LayoutParams(dp(48),dp(index==0?AppTileLayout.HEIGHT_DP:60));
+        if(index==0)backLp.rightMargin=dp(6);
+        panel.addView(back,backLp);
         LinearLayout choices=new LinearLayout(this);
+        choices.setBaselineAligned(false);
         choices.setGravity(Gravity.CENTER_VERTICAL);
-        scroll.addView(choices,new HorizontalScrollView.LayoutParams(-2,-1));
+        HorizontalScrollView scroll;
+        if(index==0){
+            labStreamScroll=new LabAppStrip(this,3,82,6);
+            labStreamScroll.bind(choices);
+            scroll=labStreamScroll;
+        }else{
+            scroll=new HorizontalScrollView(this);
+            scroll.setHorizontalScrollBarEnabled(false);
+            scroll.addView(choices,new HorizontalScrollView.LayoutParams(-2,-1));
+        }
         panel.addView(scroll,new LinearLayout.LayoutParams(0,-1,1));
         frame.addView(panel,new FrameLayout.LayoutParams(-1,-1));
         panel.setVisibility(View.INVISIBLE);
@@ -832,43 +851,37 @@ public class MainActivity extends ComponentActivity {
             .setNegativeButton("Neu prüfen",(d,w)->refreshTvAppInventory()).show();
     }
 
-    /** Keep text until a valid local bitmap is available. Warning text is never hidden. */
-    private AppPresentation.Mode appArtwork(TextView tile,String link,TclAppLauncher.App app,boolean allowIcon){
+    /** Separate image and text views keep all tiles aligned, including fallbacks. */
+    private LabAppTile appTile(CharSequence caption,int textSize,String link,TclAppLauncher.App app,boolean allowIcon){
         AppPresentation.Mode mode=appPresentation.effective(AppPresentation.key(link));
-        tile.setTag(mode);
-        if(mode==AppPresentation.Mode.TEXT||!allowIcon||app==null)return mode;
-        appIcons.device(tvAppInventory.device());
-        android.graphics.Bitmap image=appIcons.get(app.packageName,app.iconUrl,tv.iconPeerAddress(),tv.iconLoader());
-        if(image==null)return mode;
-        android.graphics.drawable.BitmapDrawable art=new android.graphics.drawable.BitmapDrawable(getResources(),image);
-        float scale=Math.min((float)dp(52)/image.getWidth(),(float)dp(mode==AppPresentation.Mode.ICON?40:26)/image.getHeight());
-        art.setBounds(0,0,Math.max(1,Math.round(image.getWidth()*scale)),Math.max(1,Math.round(image.getHeight()*scale)));
-        tile.setCompoundDrawables(null,art,null,null);
-        tile.setCompoundDrawablePadding(dp(2));
-        tile.setIncludeFontPadding(false);
-        tile.setMaxLines(2);
-        tile.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        if(mode==AppPresentation.Mode.ICON){tile.setText("");tile.setTextSize(0);}
-        return mode;
+        android.graphics.Bitmap image=null;
+        if(mode!=AppPresentation.Mode.TEXT&&allowIcon&&app!=null){
+            appIcons.device(tvAppInventory.device());
+            image=appIcons.get(app.packageName,app.iconUrl,tv.iconPeerAddress(),tv.iconLoader());
+        }
+        return new LabAppTile(this,caption,mode,image,TEXT,
+            ThemeArt.typeface(theme.theme,Typeface.BOLD),textSize*theme.theme.fontScale,shape(SURFACE_ALT,14));
     }
 
     private void renderLabStreamChoices(){
-        if(labStreamChoices==null)return;
+        if(labStreamChoices==null||labStreamScroll==null)return;
         labStreamChoices.removeAllViews();
         if(!tvAppInventory.verified()){
             labChoice(labStreamChoices,appInventoryLoading?"Lade TV-Apps …":"TV-App-Liste laden",
                 ()->{if(tv.state().connected())refreshTvAppInventory();else tvDialog.open();});
-            return;
+        }else{
+            for(TclAppLauncher.App app:tvAppInventory.visible(false)){
+                final StreamingShortcuts.Entry selected=StreamingShortcuts.forAppChoice(shortcuts.entries,app);
+                LabAppTile tile=appTile(selected.name,13,selected.link,app,true);
+                tile.setContentDescription(selected.name+"; lange drücken für Darstellung");
+                tile.setOnClickListener(v->launchStreaming(selected));
+                tile.setOnLongClickListener(v->{showAppPresentation(selected.link,selected.name);return true;});
+                labStreamChoices.addView(tile);
+            }
+            if(labStreamChoices.getChildCount()==0)
+                labChoice(labStreamChoices,"TV-Apps aktualisieren",this::refreshTvAppInventory);
         }
-        for(TclAppLauncher.App app:tvAppInventory.visible(false)){
-            final StreamingShortcuts.Entry selected=StreamingShortcuts.forAppChoice(shortcuts.entries,app);
-            TextView tile=labChoice(labStreamChoices,selected.name,()->launchStreaming(selected));
-            tile.setContentDescription(selected.name+"; lange drücken für Darstellung");
-            tile.setOnLongClickListener(v->{showAppPresentation(selected.link,selected.name);return true;});
-            if(appArtwork(tile,selected.link,app,true)==AppPresentation.Mode.BOTH)
-                tile.getLayoutParams().height=dp(72);
-        }
-        if(labStreamChoices.getChildCount()==0)labChoice(labStreamChoices,"TV-Apps aktualisieren",this::refreshTvAppInventory);
+        labStreamScroll.resizeTiles();
     }
 
     private void renderLabHdmiChoices(){
@@ -1001,17 +1014,7 @@ public class MainActivity extends ComponentActivity {
     }
 
     private void sizeStreamingTiles() {
-        int width = streamScroll.getWidth();
-        int tileWidth = width > 0 ? Math.max(dp(60), (width - 3 * dp(8)) / 4) : dp(80);
-        boolean combined=false;
-        for(int i=0;i<streamRow.getChildCount();i++)
-            if(streamRow.getChildAt(i).getTag()==AppPresentation.Mode.BOTH)combined=true;
-        for (int i = 0; i < streamRow.getChildCount(); i++) {
-            View tile = streamRow.getChildAt(i);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(tileWidth, dp(combined?76:58));
-            lp.rightMargin = i + 1 < streamRow.getChildCount() ? dp(8) : 0;
-            tile.setLayoutParams(lp);
-        }
+        if(streamScroll!=null)streamScroll.resizeTiles();
     }
     private TvAppInventory currentFavoriteInventory() {
         tvAppInventory.device(tv.inventoryDeviceKey());
@@ -1027,18 +1030,16 @@ public class MainActivity extends ComponentActivity {
         // Keep their positions and show uncertainty as a status rather than hiding them.
         for (TvAppInventory.FavoriteTile favorite : tvAppInventory.homeFavorites(shortcuts.savedFavorites())) {
             StreamingShortcuts.Entry entry = favorite.entry;
-            TextView tile = actionButton(entry.name, "");
-            tile.setTextSize(12 * theme.theme.fontScale);
-            tile.setPadding(dp(3), 0, dp(3), 0);
-            tile.setMaxLines(3);
-            tile.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            CharSequence caption=entry.name;
             if (favorite.status != TvAppInventory.FavoriteStatus.AVAILABLE) {
                 android.text.SpannableString marked = new android.text.SpannableString(entry.name + "\n" + favorite.status.shortLabel);
                 int start = entry.name.length() + 1;
                 marked.setSpan(new android.text.style.RelativeSizeSpan(.78f), start, marked.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 marked.setSpan(new android.text.style.ForegroundColorSpan(MUTED), start, marked.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                tile.setText(marked);
+                caption=marked;
             }
+            LabAppTile tile=appTile(caption,12,entry.link,tvAppInventory.find(TclAppLauncher.packageForLink(entry.link)),
+                favorite.status==TvAppInventory.FavoriteStatus.AVAILABLE);
             tile.setContentDescription(entry.name + "; " + favorite.status.label +
                 (favorite.canTryStart() ? "; antippen zum Starten" : "; antippen zum Verwalten") +
                 "; lange drücken zum Bearbeiten");
@@ -1048,8 +1049,6 @@ public class MainActivity extends ComponentActivity {
                 else shortcutOptions(entry, true);
             });
             tile.setOnLongClickListener(v -> { shortcutOptions(entry); return true; });
-            appArtwork(tile,entry.link,tvAppInventory.find(TclAppLauncher.packageForLink(entry.link)),
-                favorite.status==TvAppInventory.FavoriteStatus.AVAILABLE);
             streamRow.addView(tile);
         }
         int hdmiMask=connectionOptions.getInt("lab_hdmi_favorites",0);
@@ -1057,6 +1056,8 @@ public class MainActivity extends ComponentActivity {
             final int p=port;
             TextView tile=actionButton(hdmiLabel(port),"");
             tile.setTextSize(12*theme.theme.fontScale);
+            tile.setMaxLines(3);
+            tile.setEllipsize(android.text.TextUtils.TruncateAt.END);
             tile.setOnClickListener(v->selectHdmi(p));
             tile.setOnLongClickListener(v->{editHdmiLabel(p,tile);return true;});
             streamRow.addView(tile);
@@ -1674,11 +1675,10 @@ public class MainActivity extends ComponentActivity {
         List<TclAppLauncher.App> entries = tvAppInventory.visible(includeSystemApps);
         for (int i = 0; i < entries.size(); i += 2) {
             LinearLayout row = new LinearLayout(this);
-            boolean combined=false;
-            for(int k=i;k<Math.min(i+2,entries.size());k++)
-                if(appPresentation.effective(AppPresentation.key(entries.get(k).packageName))==AppPresentation.Mode.BOTH)combined=true;
+            row.setBaselineAligned(false);
+            row.setGravity(Gravity.CENTER_VERTICAL);
             for (int j = 0; j < 2; j++) {
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(combined?76:56), 1f);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(AppTileLayout.HEIGHT_DP), 1f);
                 if (j > 0) lp.leftMargin = dp(8);
                 if (i + j >= entries.size()) { row.addView(new View(this), lp); continue; }
                 TclAppLauncher.App app = entries.get(i + j);
@@ -1689,8 +1689,8 @@ public class MainActivity extends ComponentActivity {
                     }
                 final StreamingShortcuts.Entry favorite = favoriteEntry;
                 final String inventoryIdentity = tvAppInventory.device();
-                TextView tile = actionButton((favorite != null ? "★  " : "") + app.name, "");
-                tile.setTextSize(13 * theme.theme.fontScale);
+                LabAppTile tile=appTile((favorite != null ? "★  " : "") + app.name,13,app.packageName,app,
+                    tvAppInventory.verified());
                 tile.setContentDescription(app.name + (favorite != null ? ", Favorit" : "") +
                     "; lange drücken zum Verwalten");
                 tile.setOnClickListener(v -> launchStreaming(
@@ -1705,7 +1705,6 @@ public class MainActivity extends ComponentActivity {
                         }).setNegativeButton("Schließen", null).show();
                     return true;
                 });
-                appArtwork(tile,app.packageName,app,tvAppInventory.verified());
                 row.addView(tile, lp);
             }
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
