@@ -85,12 +85,12 @@ jobs:
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist/Sofacockpit-Lab.apk > "$RUNNER_TEMP/lab-badging.txt"
-          grep -E "^package: name='de.sofacockpit.lab' versionCode='1' versionName='0.1.0' " "$RUNNER_TEMP/lab-badging.txt"
+          grep -E "^package: name='de.sofacockpit.lab' versionCode='2' versionName='0.1.1' " "$RUNNER_TEMP/lab-badging.txt"
           grep -F "application-label:'Sofacockpit Lab'" "$RUNNER_TEMP/lab-badging.txt"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Lab-Android-v0.1.0
+          name: Sofacockpit-Lab-Android-v0.1.1
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -105,10 +105,10 @@ jobs:
             echo "Skipping superseded Lab build."
             exit 0
           fi
-          if gh release view sofacockpit-lab-v0.1.0 >/dev/null 2>&1; then
+          if gh release view sofacockpit-lab-v0.1.1 >/dev/null 2>&1; then
             echo "Lab release already exists; never replace a published version."
             exit 0
           fi
-          gh release create sofacockpit-lab-v0.1.0 dist/Sofacockpit-Lab.apk \
-            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.0" \
-            --prerelease --latest=false --notes "Erste native Lab-Testversion. Eigenständiges Android-Paket de.sofacockpit.lab, Original-App bleibt installiert. Aktivitäten mit gemeldetem TV-App-Inventar und HDMI-Namen, Navigation ohne Seitenwischen, kontextbezogene Streaming-/Gaming-/Soundbar-Steuerung, kompakte DRC-/Night-Time-Zeile, haptische Orientierung. TV-/Soundbar-Steuerung und Konfiguration aus v1.1.10 wiederverwendet. Erneute Einrichtung/Kopplung oder geprüfter Backup-Import erforderlich. Sprache, Makros, direkte Bild-/Maus-/Tastatursteuerung und Standby-Automatik noch offen. Haptik und parallele Installation/Updates am Gerät prüfen."
+          gh release create sofacockpit-lab-v0.1.1 dist/Sofacockpit-Lab.apk \
+            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.1" \
+            --prerelease --latest=false --notes "Lab v0.1.1: erste lokale Sprachsteuerung über Stimme. Deutsche Befehlsbibliothek mit Synonymen, aktuellem TV-App-Inventar, HDMI-Namen und Klangprofilen/-modi. Einmalige Mikrofonberechtigung auf Wunsch; Android 12+ mit lokalem deutschem Sprachdienst erforderlich. Keine Cloud-Erkennung, keine Daueraufnahme. Text-Fallback und Vorschau mit ausdrücklicher Ausführen-Bestätigung. Unbekannte, negierte oder mehrdeutige Befehle werden nicht ausgeführt. Bestehende Gerätesteuerung und Statusprüfungen bleiben erhalten. Mediensteuerung als explizites Play/Pause-Umschalten; separate Pause/Fortsetzen-Befehle noch offen. Makros, freie Synonymbearbeitung und Google Home folgen getrennt. Gerätetest und Update von v0.1.0 offen."

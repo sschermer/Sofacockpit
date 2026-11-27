@@ -50,6 +50,7 @@ public class MainActivity extends ComponentActivity {
     private ThemePack theme;
     private ThemePicker themePicker;
     private UpdateManager updates;
+    private LabVoiceDialog voice;
     private ConnectionRefresh connectionRefresh;
     private final List<NativePullRefreshLayout> refreshLayouts = new ArrayList<>();
     private LinearLayout shell;
@@ -116,6 +117,7 @@ public class MainActivity extends ComponentActivity {
         });
         tvDialog = new TvConnectionDialog(this, tv, soundbarModel, connectionOptions, backups::requestExport, backups::requestImport, () -> theme);
         updates = new UpdateManager(this, () -> theme);
+        voice = new LabVoiceDialog(this, this::voiceLibrary, this::executeVoice);
         connectionRefresh = new ConnectionRefresh(tv, soundbarModel, updates,
             () -> Build.VERSION.SDK_INT < 37 || checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED,
@@ -269,8 +271,8 @@ public class MainActivity extends ComponentActivity {
                 tab.setOnClickListener(v->{if(CockpitNavigation.valid(labActiveCategory,labActivePage))
                     selectScreen(labActiveCategory,labActivePage);});
             }else if(position==4){
-                tab.setEnabled(false);tab.setAlpha(.45f);
-                tab.setContentDescription("Sprachsteuerung – in Vorbereitung");
+                tab.setContentDescription("Sprachsteuerung öffnen");
+                tab.setOnClickListener(v->voice.show());
             }else{
                 final int group=position==0?0:position-1;
                 tabs[group]=tab;
@@ -280,6 +282,118 @@ public class MainActivity extends ComponentActivity {
             row.addView(tab,new LinearLayout.LayoutParams(0,dp(52),1));
         }
         return row;
+    }
+
+    /** Build aliases from current, verified device inventory and saved user names. */
+    private VoiceCommands.Library voiceLibrary(){
+        VoiceCommands.Library library=new VoiceCommands.Library();
+        if(tvAppInventory.verified() && tvAppInventory.device().equals(tv.inventoryDeviceKey())){
+            for(TclAppLauncher.App app:tvAppInventory.visible(false)){
+                library.app(app.name,app.packageName,app.name);
+            }
+            for(StreamingShortcuts.Entry entry:tvAppInventory.activeFavorites(shortcuts.entries)){
+                String pkg=TclAppLauncher.packageForLink(entry.link);
+                if(pkg!=null) library.app(entry.name,pkg,entry.name);
+            }
+        }
+        for(int port=1;port<=4;port++)library.hdmi(hdmiLabel(port),port);
+        for(String profile:soundbarModel.getProfiles().getValue().keySet())library.profile(profile);
+        for(java.util.Map.Entry<String,Integer> mode:soundbarModel.getDevice().getValue().getSelectableModes().entrySet())
+            library.mode(mode.getKey(),mode.getValue());
+        return library;
+    }
+    private int voiceKey(String target){
+        switch(target){
+            case "UP":return KeyEvent.KEYCODE_VOLUME_UP;
+            case "DOWN":return KeyEvent.KEYCODE_VOLUME_DOWN;
+            case "BACK":return KeyEvent.KEYCODE_BACK;
+            case "HOME":return KeyEvent.KEYCODE_HOME;
+            case "DPAD_UP":return KeyEvent.KEYCODE_DPAD_UP;
+            case "DPAD_DOWN":return KeyEvent.KEYCODE_DPAD_DOWN;
+            case "DPAD_LEFT":return KeyEvent.KEYCODE_DPAD_LEFT;
+            case "DPAD_RIGHT":return KeyEvent.KEYCODE_DPAD_RIGHT;
+            case "OK":return KeyEvent.KEYCODE_DPAD_CENTER;
+            case "PLAY_PAUSE":return KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE;
+            case "REWIND":return KeyEvent.KEYCODE_MEDIA_REWIND;
+            case "FAST_FORWARD":return KeyEvent.KEYCODE_MEDIA_FAST_FORWARD;
+            case "INPUT":return KeyEvent.KEYCODE_TV_INPUT;
+            case "SETTINGS":return KeyEvent.KEYCODE_SETTINGS;
+            default:return -1;
+        }
+    }
+    /** Dispatch only existing control paths, with current device and capability checks. */
+    private String executeVoice(VoiceCommands.Command command){
+        if(isFinishing()||isDestroyed())return "";
+        TvRemoteClient.State t=tv.state();
+        DeviceState s=soundbarModel.getDevice().getValue();
+        boolean tvReady=t.connected()&&t.keys&&!Boolean.FALSE.equals(t.powerOn);
+        boolean soundReady=s.getConnection()==Connection.CONNECTED&&!Boolean.FALSE.equals(s.getPowerOn());
+        boolean on="on".equals(command.target);
+        String requested="Befehl angefordert – Geräterückmeldung prüfen.";
+        switch(command.kind){
+            case KEY:
+                if(!tvReady)return "TV verbinden und einschalten.";
+                int key=voiceKey(command.target);
+                if(key<0)return "TV-Befehl nicht unterstützt.";
+                tv.sendKey(key);return requested;
+            case TV_MUTE:
+                if(!tvReady)return "TV verbinden und einschalten.";
+                if(t.muted==null)return "TV-Stummstatus unbekannt. Keine Umschaltung.";
+                if(t.muted==on)return on?"TV bereits stumm.":"TV nicht stumm.";
+                tv.sendKey(KeyEvent.KEYCODE_VOLUME_MUTE);return requested;
+            case TV_POWER:
+                if(t.connected()&&t.powerOn!=null&&t.powerOn==on)return on?"TV bereits eingeschaltet.":"TV bereits ausgeschaltet.";
+                if(on&&!t.connected()&&tv.canWake()){tv.requestPower();return "Aufwecken angefordert – TV-Rückmeldung abwarten.";}
+                if(!t.connected()||!t.keys||t.powerOn==null)return "TV-Powerstatus unbekannt oder TV nicht erreichbar. Keine blinde Umschaltung.";
+                tv.requestPower();return requested;
+            case APP:
+                if(!tv.canRequestTclApps()||!tvAppInventory.verified()||!tvAppInventory.device().equals(tv.inventoryDeviceKey()))
+                    return "TV-App-Liste nicht bestätigt. TV verbinden und Quellen aktualisieren.";
+                TclAppLauncher.App app=tvAppInventory.find(command.target);
+                if(app==null)return "App nicht in der aktuellen TV-Liste.";
+                StreamingShortcuts.Entry selected=null;
+                for(StreamingShortcuts.Entry entry:tvAppInventory.activeFavorites(shortcuts.entries))
+                    if(command.target.equals(TclAppLauncher.packageForLink(entry.link))){selected=entry;break;}
+                if(selected==null){
+                    String name=app.name.trim();if(name.length()>48)name=name.substring(0,48);
+                    if(name.isEmpty())return "TV-App ohne gültigen Namen.";
+                    selected=new StreamingShortcuts.Entry(name,app.packageName);
+                }
+                launchStreaming(selected);return "App-Aufruf angefordert – TV-Rückmeldung prüfen.";
+            case HDMI:
+                if(tv.hdmiDeviceKey()==null)return "TV verbinden und einschalten; HDMI-Direktwahl muss verfügbar sein.";
+                selectHdmi(Integer.parseInt(command.target));return "";
+            case SOUND_POWER:
+                if(s.getConnection()!=Connection.CONNECTED)return "Soundbar nicht verbunden.";
+                if(s.getPowerOn()==null)return "Soundbar-Powerstatus unbekannt.";
+                if(s.getPowerOn()==on)return on?"Soundbar bereits eingeschaltet.":"Soundbar bereits ausgeschaltet.";
+                soundbarModel.setPower(on);return requested;
+            case SOUND_VOLUME:
+                if(!soundReady)return "Soundbar verbinden und einschalten.";
+                Integer volume=s.getVolume();
+                if(volume==null||volume<0||volume>100)return "Soundbar-Pegel unbekannt.";
+                int next=Math.max(0,Math.min(100,volume+("up".equals(command.target)?1:-1)));
+                if(next==volume)return "Lautstärke bereits an der Grenze.";
+                soundbarModel.setVolume(next);return requested;
+            case NIGHT:
+            case DRC:
+                if(!soundReady)return "Soundbar verbinden und einschalten.";
+                boolean night=command.kind==VoiceCommands.Kind.NIGHT;
+                Boolean current=night?s.getNightTime():s.getDrc();
+                if(current==null)return "Schalterzustand unbekannt.";
+                if(current==on)return "Einstellung bereits "+(on?"ein.":"aus.");
+                soundbarModel.setOption(night?"b_night_time":"b_drc",on);return requested;
+            case PROFILE:
+                if(!soundReady)return "Soundbar verbinden und einschalten.";
+                if(!soundbarModel.getProfiles().getValue().containsKey(command.target))return "Klangprofil nicht mehr vorhanden.";
+                soundbarModel.applyProfile(command.target);return requested;
+            case MODE:
+                if(!soundReady)return "Soundbar verbinden und einschalten.";
+                int mode=Integer.parseInt(command.target);
+                if(!s.getSelectableModes().containsValue(mode))return "Klangmodus nicht verfügbar.";
+                soundbarModel.chooseMode(mode);return requested;
+            default:return "Befehl nicht unterstützt.";
+        }
     }
 
     private void labPowerMenu(View anchor){
@@ -569,7 +683,7 @@ public class MainActivity extends ComponentActivity {
         streamScroll.addView(streamRow);streaming.addView(streamScroll);
         streamScroll.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->{if(r-l!=or-ol&&r>l)sizeStreamingTiles();});
         renderStreamingShortcuts();
-        content.addView(label("Eigene Aktivitäten (Makros) und Sprache: in Vorbereitung",12,MUTED));
+        content.addView(label("Eigene Aktivitäten (Makros): in Vorbereitung",12,MUTED));
         return scrollPage(content);
     }
 
@@ -1646,6 +1760,7 @@ public class MainActivity extends ComponentActivity {
     }
 
     @Override protected void onPause() {
+        if (voice != null) voice.pause();
         if (updates != null) updates.onPause();
         if (connectionRefresh != null) connectionRefresh.cancel();
         if (tv != null) tv.onBackground();
@@ -1664,6 +1779,7 @@ public class MainActivity extends ComponentActivity {
     }
 
     @Override protected void onDestroy() {
+        if (voice != null) voice.close();
         if (quickMenu != null) quickMenu.dismiss();
         closeAppLaunchTestDialog();
         if (connectionRefresh != null) connectionRefresh.close();
