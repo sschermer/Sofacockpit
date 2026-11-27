@@ -93,6 +93,7 @@ public class MainActivity extends ComponentActivity {
     private LinearLayout sourcesAppList;
     private TextView sourcesStatus, systemStatus;
     private StreamingShortcuts shortcuts;
+    private LabSavedFavoritesDialog savedFavorites;
     private final TvAppInventory tvAppInventory = new TvAppInventory();
     private boolean includeSystemApps;
     private boolean appInventoryLoading;
@@ -111,6 +112,8 @@ public class MainActivity extends ComponentActivity {
         connectionOptions = getSharedPreferences("connection_options", MODE_PRIVATE);
         themes = new ThemeStore(this, connectionOptions);
         theme = themes.selected();
+        savedFavorites = new LabSavedFavoritesDialog(this, shortcuts, this::currentFavoriteInventory,
+            () -> theme, entry -> shortcutOptions(entry, true));
         themePicker = new ThemePicker(this, themes, this::applySelectedTheme);
         backups = new ConnectionBackupManager(this, tv, soundbarModel, shortcuts, connectionOptions, themes, () -> {
             applySelectedTheme();
@@ -684,8 +687,10 @@ public class MainActivity extends ComponentActivity {
         TextView add=actionButton("+","");
         add.setContentDescription("Favoriten verwalten");
         add.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("Favoriten")
-            .setItems(new String[]{"TV-App hinzufügen","HDMI-Favoriten wählen"},(d,i)->{
-                if(i==0)addStreamingShortcut();else labChooseHdmiFavorites();
+            .setItems(new String[]{"TV-App hinzufügen","Gespeicherte Favoriten verwalten","HDMI-Favoriten wählen"},(d,i)->{
+                if(i==0)addStreamingShortcut();
+                else if(i==1)savedFavorites.show();
+                else labChooseHdmiFavorites();
             }).setNegativeButton("Schließen",null).show());
         streamHeader.addView(add,new LinearLayout.LayoutParams(dp(48),dp(48)));
         streamScroll=new HorizontalScrollView(this);
@@ -924,8 +929,14 @@ public class MainActivity extends ComponentActivity {
             tile.setLayoutParams(lp);
         }
     }
+    private TvAppInventory currentFavoriteInventory() {
+        tvAppInventory.device(tv.inventoryDeviceKey());
+        if (!tv.state().connected()) tvAppInventory.stale();
+        return tvAppInventory;
+    }
     private void renderStreamingShortcuts() {
         if (streamRow == null) return;
+        currentFavoriteInventory();
         streamRow.removeAllViews();
         // Saved mappings and their order survive absent apps. They are not a source of inventory.
         for (StreamingShortcuts.Entry entry : tvAppInventory.activeFavorites(shortcuts.entries)) {
@@ -957,6 +968,7 @@ public class MainActivity extends ComponentActivity {
         sizeStreamingTiles();
         renderSourcesApps();
         renderLabStreamChoices();
+        if (savedFavorites != null) savedFavorites.refresh();
     }
     private void launchStreaming(StreamingShortcuts.Entry entry) {
         if (!tv.state().connected()) {
@@ -1010,48 +1022,63 @@ public class MainActivity extends ComponentActivity {
         labActivate(CockpitNavigation.TV,0,entry.name);
         tv.launchApp(entry.link, entry.name);
     }
-    private void saveStreamingShortcuts() {
-        shortcuts.save();
+    private void applyFavoriteChanges(List<StreamingShortcuts.Entry> next) {
+        shortcuts.replaceEntries(next);
         renderStreamingShortcuts();
     }
-    private void shortcutOptions(StreamingShortcuts.Entry entry) {
+    private void favoriteError(String message) {
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+    }
+    private void shortcutOptions(StreamingShortcuts.Entry entry) { shortcutOptions(entry,false); }
+    private void shortcutOptions(StreamingShortcuts.Entry entry, boolean manageOnly) {
         int index = shortcuts.entries.indexOf(entry);
-        if (index < 0) return;
+        if (index < 0) { favoriteError("Favorit nicht mehr vorhanden."); return; }
         List<String> labels = new ArrayList<>();
         List<Runnable> actions = new ArrayList<>();
         labels.add("Name / App-Link bearbeiten"); actions.add(() -> editStreamingShortcut(entry));
         labels.add("Installierte TV-App zuordnen"); actions.add(() -> loadInstalledApps(entry));
-        if (!entry.link.startsWith("market://launch?id=") && TclAppLauncher.packageForLink(entry.link) != null) {
+        if (!manageOnly && !entry.link.startsWith("market://launch?id=") && TclAppLauncher.packageForLink(entry.link) != null) {
             labels.add("Alternativ mit App-Link starten"); actions.add(() -> launchStreamingLink(entry));
         }
         if (index > 0) {
-            labels.add("Nach links verschieben");
-            actions.add(() -> { java.util.Collections.swap(shortcuts.entries, index, index - 1); saveStreamingShortcuts(); });
+            labels.add(manageOnly?"Nach oben verschieben":"Nach links verschieben");
+            actions.add(() -> moveFavorite(entry,-1));
         }
         if (index + 1 < shortcuts.entries.size()) {
-            labels.add("Nach rechts verschieben");
-            actions.add(() -> { java.util.Collections.swap(shortcuts.entries, index, index + 1); saveStreamingShortcuts(); });
+            labels.add(manageOnly?"Nach unten verschieben":"Nach rechts verschieben");
+            actions.add(() -> moveFavorite(entry,1));
         }
-        labels.add("Aus Leiste entfernen");
-        actions.add(() -> { shortcuts.entries.remove(entry); saveStreamingShortcuts(); });
+        labels.add("Favorit löschen");
+        actions.add(() -> new AlertDialog.Builder(this).setTitle("Favorit löschen?")
+            .setMessage("„"+entry.name+"“ wird aus den gespeicherten Favoriten entfernt. Die TV-App bleibt installiert.")
+            .setNegativeButton("Abbrechen",null)
+            .setPositiveButton("Löschen",(d,w)->{
+                try { applyFavoriteChanges(StreamingShortcuts.removed(shortcuts.entries,entry)); }
+                catch (IllegalArgumentException e) { favoriteError(e.getMessage()); }
+            }).show());
         new AlertDialog.Builder(this).setTitle(entry.name)
             .setItems(labels.toArray(new String[0]), (d, i) -> actions.get(i).run())
             .setNegativeButton("Schließen", null).show();
     }
+    private void moveFavorite(StreamingShortcuts.Entry entry,int direction) {
+        try { applyFavoriteChanges(StreamingShortcuts.moved(shortcuts.entries,entry,direction)); }
+        catch (IllegalArgumentException e) { favoriteError(e.getMessage()); }
+    }
     private void addStreamingShortcut() {
         if (shortcuts.entries.size() >= 50) {
-            Toast.makeText(this, "Maximal 50 Schnellwahltasten.", Toast.LENGTH_SHORT).show(); return;
+            favoriteError("Maximal 50 Schnellwahltasten. Gespeicherte Favoriten verwalten."); return;
         }
         loadInstalledApps(null);
     }
     private void loadInstalledApps(StreamingShortcuts.Entry old) {
-        tvAppInventory.device(tv.inventoryDeviceKey());
-        if (!tvAppInventory.verified()) {
+        if(old!=null&&!shortcuts.entries.contains(old)){favoriteError("Favorit nicht mehr vorhanden.");return;}
+        currentFavoriteInventory();
+        if (!tv.canRequestTclApps() || !tvAppInventory.verified()) {
             if (tv.canRequestTclApps()) {
                 refreshTvAppInventory();
-                Toast.makeText(this, "TV-App-Liste wird geladen. Danach erneut auswählen.", Toast.LENGTH_LONG).show();
+                favoriteError("TV-App-Liste wird geladen. Danach erneut „Installierte TV-App zuordnen“ wählen.");
             } else {
-                Toast.makeText(this, "Keine aktuelle TV-App-Liste. Fernseher verbinden und Quellen aktualisieren.", Toast.LENGTH_LONG).show();
+                favoriteError("Keine aktuelle TV-App-Liste. Fernseher verbinden und Quellen aktualisieren. Gespeicherte Favoriten bleiben bearbeitbar.");
             }
             return;
         }
@@ -1059,19 +1086,17 @@ public class MainActivity extends ComponentActivity {
     }
 
     private void showInstalledApps(StreamingShortcuts.Entry old, boolean all) {
-        List<StreamingShortcuts.Entry> choices = new ArrayList<>();
+        currentFavoriteInventory();
+        if(!tv.canRequestTclApps()||!tvAppInventory.verified()){loadInstalledApps(old);return;}
+        if(old!=null&&!shortcuts.entries.contains(old)){favoriteError("Favorit nicht mehr vorhanden.");return;}
+        final String identity=tvAppInventory.device();
+        List<TclAppLauncher.App> choices = tvAppInventory.visible(all);
         List<String> names = new ArrayList<>();
-        for (TclAppLauncher.App app : tvAppInventory.visible(all)) {
-            StreamingShortcuts.Entry entry = new StreamingShortcuts.Entry(app.name, app.packageName);
-            boolean duplicate = false;
-            for (StreamingShortcuts.Entry other : shortcuts.entries) {
-                if (other != old && app.packageName.equals(TclAppLauncher.packageForLink(other.link))) {
-                    duplicate = true; break;
-                }
-            }
-            if (duplicate) continue;
-            choices.add(entry);
-            names.add(app.name + "\n" + app.packageName);
+        for (TclAppLauncher.App app : choices) {
+            StreamingShortcuts.Entry entry = StreamingShortcuts.forInstalledApp(old,app);
+            StreamingShortcuts.Entry conflict = StreamingShortcuts.conflict(shortcuts.entries,old,entry);
+            names.add(app.name + "\n" + app.packageName +
+                (conflict==null?"":"\nBereits belegt: "+conflict.name));
         }
         int count = choices.size();
         names.add(all ? "System-Apps ausblenden" : "Auch System-Apps anzeigen");
@@ -1081,20 +1106,33 @@ public class MainActivity extends ComponentActivity {
                 if (i == count) showInstalledApps(old, !all);
                 else if (i == count + 1) {
                     refreshTvAppInventory();
-                    Toast.makeText(this, "App-Liste wird aktualisiert. Auswahl danach erneut öffnen.", Toast.LENGTH_LONG).show();
-                } else {
-                    StreamingShortcuts.Entry entry = choices.get(i);
-                    if (old == null) {
-                        if (shortcuts.entries.size() >= 50 || shortcuts.contains(entry)) return;
-                        shortcuts.entries.add(entry);
-                    } else {
-                        int index = shortcuts.entries.indexOf(old);
-                        if (index < 0) return;
-                        shortcuts.entries.set(index, new StreamingShortcuts.Entry(old.name, entry.link));
-                    }
-                    saveStreamingShortcuts();
-                }
+                    favoriteError("App-Liste wird aktualisiert. Auswahl danach erneut öffnen.");
+                } else assignInstalledFavorite(old,identity,choices.get(i).packageName,false);
             }).setNegativeButton("Schließen", null).show();
+    }
+
+    /** Explicit assignment only. A content link is never silently translated into a root launch. */
+    private void assignInstalledFavorite(StreamingShortcuts.Entry old,String identity,String pkg,boolean replaceConfirmed) {
+        currentFavoriteInventory();
+        if(!tv.canRequestTclApps()||!tvAppInventory.verified()||!identity.equals(tvAppInventory.device())){
+            favoriteError("TV-App-Bestand nicht mehr aktuell. Bitte Auswahl erneut öffnen.");return;
+        }
+        TclAppLauncher.App app=tvAppInventory.find(pkg);
+        if(app==null){favoriteError("App wird nicht mehr vom Fernseher gemeldet.");return;}
+        try {
+            StreamingShortcuts.Entry entry=StreamingShortcuts.forInstalledApp(old,app);
+            List<StreamingShortcuts.Entry> next=StreamingShortcuts.updated(shortcuts.entries,old,entry);
+            if(old!=null&&TclAppLauncher.packageForLink(old.link)==null&&!replaceConfirmed){
+                new AlertDialog.Builder(this).setTitle("Individuellen Link ersetzen?")
+                    .setMessage("„"+old.name+"“ wird der TV-App „"+app.name+"“ zugeordnet. "+
+                        "Der bisherige individuelle App-/Inhaltslink wird durch den normalen App-Start ersetzt. "+
+                        "Name und Position bleiben erhalten.")
+                    .setNegativeButton("Abbrechen",null)
+                    .setPositiveButton("App zuordnen",(d,w)->assignInstalledFavorite(old,identity,pkg,true)).show();
+                return;
+            }
+            applyFavoriteChanges(next);
+        } catch(IllegalArgumentException e){favoriteError(e.getMessage());}
     }
 
     private void refreshTvAppInventory() {
@@ -1133,7 +1171,7 @@ public class MainActivity extends ComponentActivity {
         LinearLayout form = new LinearLayout(this);
         form.setOrientation(LinearLayout.VERTICAL);
         form.setPadding(dp(20), dp(12), dp(20), dp(12));
-        form.addView(label("Name der auf dem TV installierten App", 13, TEXT));
+        form.addView(label("Name des gespeicherten Favoriten", 13, TEXT));
         EditText name = new EditText(this);
         name.setSingleLine(true);
         name.setHint("z. B. Dyn");
@@ -1144,7 +1182,7 @@ public class MainActivity extends ComponentActivity {
         link.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
         link.setHint("https://… oder com.beispiel.app");
         form.addView(link);
-        form.addView(label("Bei kompatiblen TCL-TVs werden Paketnamen direkt gestartet. Andere TVs benötigen einen funktionierenden App-Link.", 12, MUTED));
+        form.addView(label("Paketnamen und bekannte Standardlinks erlauben den normalen TCL-App-Start. Individuelle Inhaltslinks bleiben gespeichert, werden aber ohne eindeutige Zuordnung nicht in der aktiven Leiste angezeigt.", 12, MUTED));
         if (old != null) { name.setText(old.name); link.setText(old.link); }
         AlertDialog dialog = new AlertDialog.Builder(this)
             .setTitle(old == null ? "Eigene TV-App" : "Dienst bearbeiten")
@@ -1153,19 +1191,8 @@ public class MainActivity extends ComponentActivity {
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             try {
                 StreamingShortcuts.Entry entry = new StreamingShortcuts.Entry(name.getText().toString(), link.getText().toString());
-                for (StreamingShortcuts.Entry other : shortcuts.entries) {
-                    if (other != old && StreamingShortcuts.sameTarget(other, entry))
-                        throw new IllegalArgumentException("Dieser Name oder Link ist bereits vorhanden.");
-                }
-                if (old == null) {
-                    if (shortcuts.entries.size() >= 50) throw new IllegalArgumentException("Maximal 50 Schnellwahltasten.");
-                    shortcuts.entries.add(entry);
-                } else {
-                    int index = shortcuts.entries.indexOf(old);
-                    if (index < 0) { dialog.dismiss(); return; }
-                    shortcuts.entries.set(index, entry);
-                }
-                saveStreamingShortcuts(); dialog.dismiss();
+                applyFavoriteChanges(StreamingShortcuts.updated(shortcuts.entries,old,entry));
+                dialog.dismiss();
             } catch (IllegalArgumentException ex) { link.setError(ex.getMessage()); }
         });
     }
@@ -1539,6 +1566,7 @@ public class MainActivity extends ComponentActivity {
                         favoriteEntry = saved; break;
                     }
                 final StreamingShortcuts.Entry favorite = favoriteEntry;
+                final String inventoryIdentity = tvAppInventory.device();
                 TextView tile = actionButton((favorite != null ? "★  " : "") + app.name, "");
                 tile.setTextSize(13 * theme.theme.fontScale);
                 tile.setContentDescription(app.name + (favorite != null ? ", Favorit" : "") +
@@ -1548,16 +1576,9 @@ public class MainActivity extends ComponentActivity {
                 tile.setOnLongClickListener(v -> {
                     if (favorite != null) shortcutOptions(favorite);
                     else new AlertDialog.Builder(this).setTitle(app.name)
-                        .setItems(new String[]{"Zum Startscreen hinzufügen"}, (d, which) -> {
-                            if (shortcuts.entries.size() >= 50)
-                                Toast.makeText(this, "Maximal 50 Schnellwahltasten.", Toast.LENGTH_SHORT).show();
-                            else {
-                                StreamingShortcuts.Entry entry = new StreamingShortcuts.Entry(app.name, app.packageName);
-                                if (!shortcuts.contains(entry)) {
-                                    shortcuts.entries.add(entry);
-                                    saveStreamingShortcuts();
-                                }
-                            }
+                        .setItems(new String[]{"Zum Startscreen hinzufügen","Gespeicherte Favoriten verwalten"}, (d, which) -> {
+                            if(which==0)assignInstalledFavorite(null,inventoryIdentity,app.packageName,false);
+                            else savedFavorites.show();
                         }).setNegativeButton("Schließen", null).show();
                     return true;
                 });
@@ -1792,6 +1813,7 @@ public class MainActivity extends ComponentActivity {
     @Override protected void onDestroy() {
         if (voice != null) voice.close();
         if (voiceEditor != null) voiceEditor.close();
+        if (savedFavorites != null) savedFavorites.close();
         if (quickMenu != null) quickMenu.dismiss();
         closeAppLaunchTestDialog();
         if (connectionRefresh != null) connectionRefresh.close();

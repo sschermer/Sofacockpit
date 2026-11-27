@@ -85,12 +85,12 @@ jobs:
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist/Sofacockpit-Lab.apk > "$RUNNER_TEMP/lab-badging.txt"
-          grep -E "^package: name='de.sofacockpit.lab' versionCode='6' versionName='0.1.5' " "$RUNNER_TEMP/lab-badging.txt"
+          grep -E "^package: name='de.sofacockpit.lab' versionCode='7' versionName='0.1.6' " "$RUNNER_TEMP/lab-badging.txt"
           grep -F "application-label:'Sofacockpit Lab'" "$RUNNER_TEMP/lab-badging.txt"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Lab-Android-v0.1.5
+          name: Sofacockpit-Lab-Android-v0.1.6
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -105,10 +105,10 @@ jobs:
             echo "Skipping superseded Lab build."
             exit 0
           fi
-          if gh release view sofacockpit-lab-v0.1.5 >/dev/null 2>&1; then
+          if gh release view sofacockpit-lab-v0.1.6 >/dev/null 2>&1; then
             echo "Lab release already exists; never replace a published version."
             exit 0
           fi
-          gh release create sofacockpit-lab-v0.1.5 dist/Sofacockpit-Lab.apk \
-            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.5" \
-            --prerelease --latest=false --notes "Lab v0.1.5: eindeutige vollständige lokal erkannte Sprachbefehle werden nach bewusstem Sprachstart sofort einmalig ausgeführt, ohne zusätzlichen Tipp auf Ausführen. Manuelle Texteingabe weiterhin mit Bestätigung. Unbekannte, negierte, mehrdeutige, zu lange, geänderte oder nicht verfügbare Zuordnungen werden nicht automatisch ausgeführt. Kein automatischer Versand aus Teilresultaten, nach Abbruch, Timeout oder im Hintergrund; bestehende Geräteprüfungen und erforderliche erstmalige HDMI-Konfigurationsauswahl bleiben erhalten. Keine neue Berechtigung, Cloud oder KI. Gerätetest der direkten Ausführung offen."
+          gh release create sofacockpit-lab-v0.1.6 dist/Sofacockpit-Lab.apk \
+            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.6" \
+            --prerelease --latest=false --notes "Lab v0.1.6: vollständige Verwaltung aller gespeicherten Streaming-Favoriten unter Start > Favoriten > Plus > Gespeicherte Favoriten verwalten, auch ohne aktuelle TV-App-Liste. Individuelle App-/Inhaltslinks und fehlende Zuordnungen bleiben sichtbar und bearbeitbar. Name/Link ändern, installierte TV-App explizit zuordnen, Reihenfolge ändern und löschen. Beim Ersetzen eines individuellen Links durch normalen App-Start wird vorher gefragt; Name und Position bleiben. Doppelte Namen, Links und bekannte Paketziele werden geprüft. Bei Konflikten wird die Verwaltung genannt. Aktive Leiste und TV-App-Bestand bleiben an bestätigtes Inventar gebunden; nativer TCL-Start und vorhandenes Speicher-/Backupformat unverändert. Keine Filmsuche oder neue Inhaltslink-Startlogik. Gerätetest der Wiederherstellung offen."
