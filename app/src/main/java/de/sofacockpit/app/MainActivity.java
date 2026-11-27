@@ -51,6 +51,8 @@ public class MainActivity extends ComponentActivity {
     private ThemePicker themePicker;
     private UpdateManager updates;
     private LabVoiceDialog voice;
+    private VoiceAliasStore voiceAliases;
+    private LabVoiceLibraryDialog voiceEditor;
     private ConnectionRefresh connectionRefresh;
     private final List<NativePullRefreshLayout> refreshLayouts = new ArrayList<>();
     private LinearLayout shell;
@@ -117,7 +119,9 @@ public class MainActivity extends ComponentActivity {
         });
         tvDialog = new TvConnectionDialog(this, tv, soundbarModel, connectionOptions, backups::requestExport, backups::requestImport, () -> theme);
         updates = new UpdateManager(this, () -> theme);
-        voice = new LabVoiceDialog(this, this::voiceLibrary, this::executeVoice);
+        voiceAliases = new VoiceAliasStore(this);
+        voiceEditor = new LabVoiceLibraryDialog(this, this::baseVoiceLibrary, voiceAliases);
+        voice = new LabVoiceDialog(this, this::voiceLibrary, this::executeVoice, voiceEditor::show);
         connectionRefresh = new ConnectionRefresh(tv, soundbarModel, updates,
             () -> Build.VERSION.SDK_INT < 37 || checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED,
@@ -271,8 +275,9 @@ public class MainActivity extends ComponentActivity {
                 tab.setOnClickListener(v->{if(CockpitNavigation.valid(labActiveCategory,labActivePage))
                     selectScreen(labActiveCategory,labActivePage);});
             }else if(position==4){
-                tab.setContentDescription("Sprachsteuerung öffnen");
+                tab.setContentDescription("Sprachsteuerung öffnen; lange drücken für die Bibliothek");
                 tab.setOnClickListener(v->voice.show());
+                tab.setOnLongClickListener(v->{voiceEditor.show();return true;});
             }else{
                 final int group=position==0?0:position-1;
                 tabs[group]=tab;
@@ -286,6 +291,12 @@ public class MainActivity extends ComponentActivity {
 
     /** Build aliases from current, verified device inventory and saved user names. */
     private VoiceCommands.Library voiceLibrary(){
+        VoiceCommands.Library library=baseVoiceLibrary();
+        try{library.includeAliases(voiceAliases.read());}
+        catch(RuntimeException ex){library.block("Gespeicherte Synonyme unlesbar. Bibliothek prüfen. Keine Aktion.");}
+        return library;
+    }
+    private VoiceCommands.Library baseVoiceLibrary(){
         VoiceCommands.Library library=new VoiceCommands.Library();
         if(tvAppInventory.verified() && tvAppInventory.device().equals(tv.inventoryDeviceKey())){
             for(TclAppLauncher.App app:tvAppInventory.visible(false)){
@@ -1780,6 +1791,7 @@ public class MainActivity extends ComponentActivity {
 
     @Override protected void onDestroy() {
         if (voice != null) voice.close();
+        if (voiceEditor != null) voiceEditor.close();
         if (quickMenu != null) quickMenu.dismiss();
         closeAppLaunchTestDialog();
         if (connectionRefresh != null) connectionRefresh.close();

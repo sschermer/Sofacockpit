@@ -33,6 +33,7 @@ final class LabVoiceDialog implements AutoCloseable {
     private final ComponentActivity activity;
     private final Supplier<VoiceCommands.Library> library;
     private final Function<VoiceCommands.Command,String> execute;
+    private final Runnable openLibrary;
     private final ActivityResultLauncher<String> permission;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private AlertDialog dialog;
@@ -48,8 +49,8 @@ final class LabVoiceDialog implements AutoCloseable {
     };
 
     LabVoiceDialog(ComponentActivity activity,Supplier<VoiceCommands.Library> library,
-                   Function<VoiceCommands.Command,String> execute){
-        this.activity=activity;this.library=library;this.execute=execute;
+                   Function<VoiceCommands.Command,String> execute,Runnable openLibrary){
+        this.activity=activity;this.library=library;this.execute=execute;this.openLibrary=openLibrary;
         permission=activity.registerForActivityResult(new ActivityResultContracts.RequestPermission(),granted->{
             permissionPending=false;
             if(!visible())return;
@@ -88,6 +89,10 @@ final class LabVoiceDialog implements AutoCloseable {
         preview=new TextView(activity);preview.setTextSize(16);preview.setPadding(0,dp(10),0,dp(10));
         preview.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         body.addView(preview);
+        Button editLibrary=new Button(activity);editLibrary.setText("Sprachbibliothek");editLibrary.setAllCaps(false);
+        editLibrary.setMinimumHeight(dp(48));
+        editLibrary.setOnClickListener(v->{if(!visible())return;stop();dialog.dismiss();openLibrary.run();});
+        body.addView(editLibrary,new LinearLayout.LayoutParams(-1,dp(48)));
         TextView examples=new TextView(activity);
         examples.setText("Beispiele\nLauter · Leiser · Stumm · Ton an\nStarte Netflix · HDMI zwei · PS5 spielen\nNight Time an · DRC aus\nKlangprofil Kino · Klangmodus Cinema\nFernseher aus · Soundbar an\nZurück · Home · OK · Wiedergabe umschalten\n\nApp-, HDMI-, Profil- und Klangmodusnamen werden aus der aktuellen Konfiguration übernommen. Bei TV-Befehlen gelten die vorhandenen Verbindungs- und Statusprüfungen.");
         body.addView(examples);

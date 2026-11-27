@@ -85,12 +85,12 @@ jobs:
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist/Sofacockpit-Lab.apk > "$RUNNER_TEMP/lab-badging.txt"
-          grep -E "^package: name='de.sofacockpit.lab' versionCode='2' versionName='0.1.1' " "$RUNNER_TEMP/lab-badging.txt"
+          grep -E "^package: name='de.sofacockpit.lab' versionCode='3' versionName='0.1.2' " "$RUNNER_TEMP/lab-badging.txt"
           grep -F "application-label:'Sofacockpit Lab'" "$RUNNER_TEMP/lab-badging.txt"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Lab-Android-v0.1.1
+          name: Sofacockpit-Lab-Android-v0.1.2
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -105,10 +105,10 @@ jobs:
             echo "Skipping superseded Lab build."
             exit 0
           fi
-          if gh release view sofacockpit-lab-v0.1.1 >/dev/null 2>&1; then
+          if gh release view sofacockpit-lab-v0.1.2 >/dev/null 2>&1; then
             echo "Lab release already exists; never replace a published version."
             exit 0
           fi
-          gh release create sofacockpit-lab-v0.1.1 dist/Sofacockpit-Lab.apk \
-            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.1" \
-            --prerelease --latest=false --notes "Lab v0.1.1: erste lokale Sprachsteuerung über Stimme. Deutsche Befehlsbibliothek mit Synonymen, aktuellem TV-App-Inventar, HDMI-Namen und Klangprofilen/-modi. Einmalige Mikrofonberechtigung auf Wunsch; Android 12+ mit lokalem deutschem Sprachdienst erforderlich. Keine Cloud-Erkennung, keine Daueraufnahme. Text-Fallback und Vorschau mit ausdrücklicher Ausführen-Bestätigung. Unbekannte, negierte oder mehrdeutige Befehle werden nicht ausgeführt. Bestehende Gerätesteuerung und Statusprüfungen bleiben erhalten. Mediensteuerung als explizites Play/Pause-Umschalten; separate Pause/Fortsetzen-Befehle noch offen. Makros, freie Synonymbearbeitung und Google Home folgen getrennt. Gerätetest und Update von v0.1.0 offen."
+          gh release create sofacockpit-lab-v0.1.2 dist/Sofacockpit-Lab.apk \
+            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.2" \
+            --prerelease --latest=false --notes "Lab v0.1.2: bearbeitbare Sprachbibliothek. Stimme lange drücken oder im Sprachdialog Sprachbibliothek öffnen. Befehl auswählen, persönliche Synonyme hinzufügen, bearbeiten oder löschen. Standardformulierungen bleiben erhalten; Kollisionen und Verneinungen werden abgelehnt. Ziele aus aktuellem Inventar, HDMI-Namen, Profilen und Klangmodi; nicht verfügbare Ziele lösen keine Aktion aus. Synonyme werden lokal gespeichert und über APK-Updates erhalten; noch nicht Teil der Konfigurationssicherung. Lokale Spracherkennung, Text-Fallback und Ausführen-Bestätigung bleiben unverändert. Makroverwaltung und neue Gerätebefehle noch offen. Gerätetest der Bibliothek ausstehend."
