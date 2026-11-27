@@ -22,31 +22,13 @@ final class StreamingShortcuts {
         }
     }
 
-    static final Entry[] CATALOG = {
-        new Entry("Netflix", "netflix://"),
-        new Entry("Prime Video", "https://app.primevideo.com"),
-        new Entry("Apple TV+", "https://tv.apple.com"),
-        new Entry("Disney+", "https://www.disneyplus.com"),
-        // Native TCL package start confirmed by the user; old saved links stay compatible.
-        new Entry("Dyn", "sport.dyn.app.android.prod"),
-        new Entry("YouTube", "https://www.youtube.com"),
-        new Entry("ARD Mediathek", "https://www.ardmediathek.de"),
-        new Entry("ZDF Mediathek", "https://www.zdf.de/filme"),
-        new Entry("Waipu.tv", "waipu://tv"),
-        new Entry("Crunchyroll", "crunchyroll://"),
-        new Entry("Zattoo", "zattoo://zattoo.com"),
-        new Entry("Arte", "arte://display"),
-        new Entry("Spotify", "spotify://"),
-        new Entry("Paramount+", "https://www.paramountplus.com/"),
-        new Entry("Rakuten Viki", "viki://home")
-    };
     private final SharedPreferences prefs;
     final List<Entry> entries = new ArrayList<>();
     StreamingShortcuts(Context context) {
         prefs = context.getSharedPreferences("streaming_shortcuts", Context.MODE_PRIVATE);
         String saved = prefs.getString("entries", null);
         if (saved == null) {
-            for (int i = 0; i < 5; i++) entries.add(CATALOG[i]);
+            // New installations start without synthetic app selections.
             save();
         } else {
             try {
