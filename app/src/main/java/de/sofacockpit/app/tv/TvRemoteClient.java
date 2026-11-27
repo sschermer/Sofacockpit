@@ -103,6 +103,8 @@ public final class TvRemoteClient implements AutoCloseable {
     public State state() { return state; }
     public boolean paired() { return prefs.contains(PIN); }
     public String lastAddress() { return prefs.getString(HOST, ""); }
+    /** Ephemeral device identity for UI inventory isolation; never persist or log it. */
+    public String inventoryDeviceKey() { return lastAddress() + "|" + prefs.getString(PIN, ""); }
     public boolean busy() { return current != null; }
     public String wakeMac() {
         // A local wake target belongs to the saved IPv4 address and trusted TV certificate.
