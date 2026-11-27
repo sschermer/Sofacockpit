@@ -12,7 +12,7 @@ Diese Roadmap steuert die eigenständige Experimentier-App im Zweig `experiment/
 
 | ID | Rang | Aufgabe | Ziel / Abnahmekriterien | Status | Version / Nachweis |
 | --- | --- | --- | --- | --- | --- |
-| L01 | 1 | Sprachsteuerung | Tab Stimme aktivieren; bewusste Spracheingabe für vorhandene TV-/Soundbar-Befehle, Streamingdienste und HDMI-Auswahl; erkannte Befehle eindeutig auswerten, Fehler anzeigen, keine ungewollten Aktionen. Lokale/on-device Erkennung bevorzugen; Verfügbarkeit, Sprache, Berechtigungen und Datenschutz prüfen. Keine ständig lauschende App, keine neue Cloud-Abhängigkeit ohne Freigabe. Später Makros über dieselbe Befehlsebene auslösen. | Geplant | Stimme ist deaktivierter Platzhalter in v0.1.0 |
+| L01 | 1 | Sprachsteuerung | Tab Stimme aktivieren; bewusste Spracheingabe für vorhandene TV-/Soundbar-Befehle, Streamingdienste und HDMI-Auswahl; erkannte Befehle eindeutig auswerten, Fehler anzeigen, keine ungewollten Aktionen. Lokale/on-device Erkennung bevorzugen; Verfügbarkeit, Sprache, Berechtigungen und Datenschutz prüfen. Keine ständig lauschende App, keine neue Cloud-Abhängigkeit ohne Freigabe. Später Makros über dieselbe Befehlsebene auslösen. | In Entwicklung | v0.1.1 geplant: native lokale Spracherkennung, Befehlsbibliothek, explizite Ausführung nach Vorschau; Gerätetest offen |
 | L02 | 2 | Tastatur | Smartphone-Texteingabe in TV-Eingabefeldern. Bestehende Remote-v2-/T-Cast-Schnittstellen prüfen und nutzen, sofern geeignet; Texteingabe und Korrekturen am TCL testen. Kein dauerhaftes ADB oder zusätzliche TV-App. Bezug Haupt-Roadmap 1. | Geplant | Noch keine Texteingabesteuerung |
 | L03 | 3 | Touchpad / Mauszeiger | Freie Zeigerbewegung und gezielter Klick auf dem TV, sofern die Schnittstelle dies unterstützt; von Steuerkreuz, Scrollen und haptischer Orientierung getrennte Gesten. Keine vorgetäuschte Maussteuerung durch bloße Richtungstasten. Bezug Haupt-Roadmap 2. | Geplant | Noch keine Maussteuerung |
 
@@ -63,3 +63,5 @@ Die Zuordnung zu den Haupt-Roadmap-IDs bedeutet keine automatische Implementieru
 ## Änderungsverlauf
 
 - 27.11.2026: Eigenständige Lab-Roadmap auf Nutzerwunsch angelegt. Sprachsteuerung, Tastatur und Touchpad/Mauszeiger verbindlich in dieser Reihenfolge priorisiert. Übrige offene Funktionen übernommen; ihre Reihenfolge bleibt offen. Keine Änderungen an Android-Code, Build oder Veröffentlichungen.
+
+- 27.11.2026: L01 begonnen auf Nutzerfreigabe. Erste Version mit lokaler Android-Erkennung (ab API 31 bei verfügbarem Dienst), Texteingabe als lokaler Fallback, deterministischer deutscher Befehlsbibliothek, dynamischen TV-/HDMI-/Profilnamen, Vorschau mit expliziter Ausführung. Keine Cloud, keine Daueraufnahme. Mehrdeutige, negierte oder unbekannte Befehle nicht ausführen. Keine neue Geräteprotokollimplementierung; eigene Synonyme und Google Home bleiben separat.
