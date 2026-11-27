@@ -408,9 +408,8 @@ final class HapticLabDialog implements AutoCloseable {
                     new int[]{accent,accent,android.graphics.Color.TRANSPARENT},
                     new float[]{0f,inner/outer,1f},android.graphics.Shader.TileMode.CLAMP));
                 paint.setAlpha(100);c.drawCircle(cx,cy,outer,paint);paint.setShader(null);paint.setAlpha(255);
-                paint.setStyle(Paint.Style.STROKE);paint.setColor(accent);paint.setAlpha(85);paint.setStrokeWidth(dp(1));
-                c.drawCircle(cx,cy,outer,paint);
-                for(int i=1;i<4;i++)c.drawCircle(cx,cy,inner+(outer-inner)*i/4f,paint);
+                // Keep the radial mist unchanged, without visual subdivisions
+                // or an outer contour. Only the actual OK target has a border.
                 paint.setStyle(Paint.Style.FILL);paint.setAlpha(255);
                 paint.setColor(magnetReading!=null&&magnetReading.latched?accent:panel);
                 c.drawCircle(cx,cy,inner,paint);

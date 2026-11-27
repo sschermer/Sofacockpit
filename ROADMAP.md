@@ -207,3 +207,5 @@ Keine Änderung an TV-Systemsoftware, keine erfundenen Parameter. Die technische
 - 27.11.2026: Lab L22.1 v0.1.21 (versionCode 22) auf ausdrücklichen Auftrag angepasst: Magnetismus-Dauervibration ohne periodische Neustarts, gefilterte Intensitätsänderungen und kurze Übergangsstufen, bisherige Rastung/Abbruch. Quellcode und JVM-Tests vorhanden, CI und physische Geräteabnahme offen; Haupt-App unverändert.
 
 - 27.11.2026: Lab v0.1.21 CI und signiertes Pre-Release verifiziert; Haptik-Gerätetest teilweise positiv (grundsätzlich besser), verbleibende Klicks beim Überstreichen grafischer Zwischenringe. L22.1 bleibt In Entwicklung. Genauere Ursachenabgrenzung und weitere Nachbesserung offen; nur Dokumentationsänderung, Haupt-App unverändert.
+
+- 27.11.2026: Lab L22.1 v0.1.22 (versionCode 23): Nutzerauftrag, Zwischenringe und äußere Kontur rein visuell entfernen, radialen Farbnebel und Vibrationslogik unverändert erhalten; kontrollierter Vergleich mit v0.1.21. CI/Gerätetest offen, Haupt-App unverändert.
