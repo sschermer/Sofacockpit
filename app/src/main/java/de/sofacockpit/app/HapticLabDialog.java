@@ -30,6 +30,10 @@ final class HapticLabDialog implements AutoCloseable {
     private final int bg,panel,text,muted,accent;
     private final Vibrator motor;
     private final boolean amplitude,hasMotor,envelope;
+    private final HapticReferenceRamp.EnvelopePlan nativeReference;
+    private final android.os.Handler referenceHandler=new android.os.Handler(android.os.Looper.getMainLooper());
+    private long referenceDeadline;
+    private final Runnable referenceGuard=this::guardReference;
     private final int motorCount;
     private Dialog dialog;
     private Pad pad;
@@ -55,6 +59,7 @@ final class HapticLabDialog implements AutoCloseable {
         motorCount=Build.VERSION.SDK_INT>=31?count:hasMotor?1:0;
         amplitude=hasMotor&&v.hasAmplitudeControl();
         envelope=hasMotor&&Build.VERSION.SDK_INT>=36&&Envelope.supported(v);
+        nativeReference=hasMotor&&Build.VERSION.SDK_INT>=36?Envelope.referencePlan(v):null;
     }
 
     void show(){
@@ -124,6 +129,19 @@ final class HapticLabDialog implements AutoCloseable {
         description=label(surfaceDescription(),13,muted);body.addView(description);
         pad=new Pad(activity);
         body.addView(pad,new LinearLayout.LayoutParams(-1,dp(224)));
+        heading(body,"Referenz · ohne neue Vibrationsanforderung");
+        body.addView(label("3 Sekunden Anstieg, kurz halten, weich abklingen. Nicht streichen: nur antippen und die gleichmäßige Zunahme beurteilen.",13,muted));
+        Button waveformReference=button("Automatische Rampe · Wellenform",()->playReference(false));
+        waveformReference.setEnabled(amplitude);
+        body.addView(waveformReference,new LinearLayout.LayoutParams(-1,dp(48)));
+        Button envelopeReference=button("Automatische Rampe · native Hüllkurve",()->playReference(true));
+        envelopeReference.setEnabled(nativeReference!=null);
+        body.addView(envelopeReference,new LinearLayout.LayoutParams(-1,dp(48)));
+        if(nativeReference==null)body.addView(label("Die native 3,7-s-Hüllkurve ist innerhalb der gemeldeten Gerätegrenzen nicht verfügbar.",12,muted));
+        if(!amplitude)body.addView(label("Keine Amplitudenregelung – Wellenformvergleich nicht verfügbar.",12,muted));
+        heading(body,"Echtzeit-Haptik · Geräteprüfung");
+        body.addView(label(audioHapticsSupport(),13,muted));
+        body.addView(label("Nur Abfrage der Android-Unterstützung. Noch kein Audio-Test, keine Änderung der Lautstärke. Falls beide Funktionen verfügbar sind, ist ein separater Streaming-Test sinnvoll.",12,muted));
         heading(body,"Einzelimpulse");
         HapticLabPatterns.Cue[] patterns={
             HapticLabPatterns.Cue.TICK,HapticLabPatterns.Cue.CLICK,
@@ -221,6 +239,7 @@ final class HapticLabDialog implements AutoCloseable {
         long now=android.os.SystemClock.uptimeMillis();
         if(now-lastStart<45||(motion&&now<busyUntil))return false;
         try{
+            clearReferenceGuard();
             motor.cancel();
             vibrate(effect);
             lastStart=now;busyUntil=now+duration;
@@ -299,6 +318,51 @@ final class HapticLabDialog implements AutoCloseable {
         }
         if(shown==0)body.addView(label("Keine nativen Einzelimpulse gemeldet.",13,muted));
     }
+    private String audioHapticsSupport(){
+        String playback="nicht verfügbar",generator="nicht verfügbar";
+        if(Build.VERSION.SDK_INT>=29){
+            try{playback=android.media.AudioManager.isHapticPlaybackSupported()?"ja":"nein";}
+            catch(RuntimeException e){playback="Abfrage fehlgeschlagen";}
+        }
+        if(Build.VERSION.SDK_INT>=31){
+            try{generator=android.media.audiofx.HapticGenerator.isAvailable()?"ja":"nein";}
+            catch(RuntimeException e){generator="Abfrage fehlgeschlagen";}
+        }
+        return "Audio-gekoppelte Haptik: "+playback+"\nHapticGenerator: "+generator;
+    }
+    private void clearReferenceGuard(){
+        referenceDeadline=0;referenceHandler.removeCallbacks(referenceGuard);
+    }
+    private void guardReference(){
+        if(referenceDeadline==0)return;
+        if(!available()){stop();return;}
+        long left=referenceDeadline-android.os.SystemClock.uptimeMillis();
+        if(left<=0){clearReferenceGuard();report("Referenz beendet");return;}
+        referenceHandler.postDelayed(referenceGuard,Math.min(50,left));
+    }
+    private void playReference(boolean nativeEnvelope){
+        stop();
+        if(!available())return;
+        if(nativeEnvelope&&nativeReference==null){report("Native Referenz nicht unterstützt");return;}
+        if(!nativeEnvelope&&!amplitude){report("Amplitudenregelung fehlt");return;}
+        try{
+            VibrationEffect effect;
+            if(nativeEnvelope){
+                effect=Envelope.reference(nativeReference,strength/100f,0f);
+            }else{
+                HapticReferenceRamp.Waveform plan=HapticReferenceRamp.waveform(strength);
+                effect=VibrationEffect.createWaveform(plan.times,plan.amplitudes,-1);
+            }
+            // Exactly one call to vibrate per reference. No timer-driven restarts.
+            long now=android.os.SystemClock.uptimeMillis();
+            vibrate(effect);
+            lastStart=now;busyUntil=now+HapticReferenceRamp.DURATION_MS;
+            referenceDeadline=busyUntil;
+            referenceHandler.postDelayed(referenceGuard,50);
+            report((nativeEnvelope?"Native Hüllkurve":"Einzelne Wellenform")+" · 3 s Anstieg · "+strength+" %");
+        }catch(RuntimeException e){stop();report("Referenz konnte nicht gestartet werden");}
+    }
+
     private void playEnvelope(int from,int to){
         if(!available()||!envelope)return;
         try{
@@ -316,6 +380,22 @@ final class HapticLabDialog implements AutoCloseable {
                     &&info.getMaxControlPointDurationMillis()>=60&&info.getMaxDurationMillis()>=240;
             }catch(RuntimeException e){return false;}
         }
+        static HapticReferenceRamp.EnvelopePlan referencePlan(Vibrator v){
+            try{
+                if(!v.areEnvelopeEffectsSupported())return null;
+                android.os.vibrator.VibratorEnvelopeEffectInfo info=v.getEnvelopeEffectInfo();
+                if(info==null)return null;
+                return HapticReferenceRamp.envelope(info.getMinControlPointDurationMillis(),
+                    info.getMaxControlPointDurationMillis(),info.getMaxSize(),info.getMaxDurationMillis());
+            }catch(RuntimeException e){return null;}
+        }
+        static VibrationEffect reference(HapticReferenceRamp.EnvelopePlan plan,float intensity,float sharpness){
+            VibrationEffect.BasicEnvelopeBuilder builder=new VibrationEffect.BasicEnvelopeBuilder()
+                .setInitialSharpness(sharpness);
+            for(int i=0;i<plan.times.length;i++)
+                builder.addControlPoint(intensity*plan.intensities[i],sharpness,plan.times[i]);
+            return builder.build();
+        }
         static VibrationEffect create(Vibrator v,float intensity,float from,float to){
             long minimum=v.getEnvelopeEffectInfo().getMinControlPointDurationMillis();
             long rise=Math.max(40,minimum),fall=Math.max(40,minimum);
@@ -327,6 +407,7 @@ final class HapticLabDialog implements AutoCloseable {
     }
 
     private void stop(){
+        clearReferenceGuard();
         if(pad!=null)pad.reset();
         if(hasMotor)try{motor.cancel();}catch(RuntimeException ignored){}
         busyUntil=0;magnetOutput.reset();
