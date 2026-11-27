@@ -85,12 +85,12 @@ jobs:
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist/Sofacockpit-Lab.apk > "$RUNNER_TEMP/lab-badging.txt"
-          grep -E "^package: name='de.sofacockpit.lab' versionCode='7' versionName='0.1.6' " "$RUNNER_TEMP/lab-badging.txt"
+          grep -E "^package: name='de.sofacockpit.lab' versionCode='8' versionName='0.1.7' " "$RUNNER_TEMP/lab-badging.txt"
           grep -F "application-label:'Sofacockpit Lab'" "$RUNNER_TEMP/lab-badging.txt"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Lab-Android-v0.1.6
+          name: Sofacockpit-Lab-Android-v0.1.7
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -105,10 +105,10 @@ jobs:
             echo "Skipping superseded Lab build."
             exit 0
           fi
-          if gh release view sofacockpit-lab-v0.1.6 >/dev/null 2>&1; then
+          if gh release view sofacockpit-lab-v0.1.7 >/dev/null 2>&1; then
             echo "Lab release already exists; never replace a published version."
             exit 0
           fi
-          gh release create sofacockpit-lab-v0.1.6 dist/Sofacockpit-Lab.apk \
-            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.6" \
-            --prerelease --latest=false --notes "Lab v0.1.6: vollständige Verwaltung aller gespeicherten Streaming-Favoriten unter Start > Favoriten > Plus > Gespeicherte Favoriten verwalten, auch ohne aktuelle TV-App-Liste. Individuelle App-/Inhaltslinks und fehlende Zuordnungen bleiben sichtbar und bearbeitbar. Name/Link ändern, installierte TV-App explizit zuordnen, Reihenfolge ändern und löschen. Beim Ersetzen eines individuellen Links durch normalen App-Start wird vorher gefragt; Name und Position bleiben. Doppelte Namen, Links und bekannte Paketziele werden geprüft. Bei Konflikten wird die Verwaltung genannt. Aktive Leiste und TV-App-Bestand bleiben an bestätigtes Inventar gebunden; nativer TCL-Start und vorhandenes Speicher-/Backupformat unverändert. Keine Filmsuche oder neue Inhaltslink-Startlogik. Gerätetest der Wiederherstellung offen."
+          gh release create sofacockpit-lab-v0.1.7 dist/Sofacockpit-Lab.apk \
+            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.7" \
+            --prerelease --latest=false --notes "Lab v0.1.7: persönliche Namen gespeicherter Streaming-Favoriten werden nach Bearbeitung direkt in der Favoritenleiste auf Start und in der Filmabend-Auswahl angezeigt. Nicht favorisierte TV-Apps behalten ihre Originalnamen; TV > Quellen zeigt weiterhin den tatsächlichen vom TV gemeldeten Bestand. Paketzuordnung, App-Start, Datenformat, Favoritenreihenfolge und Sprachsynonyme unverändert. Regressionstest für Umbenennung, Speicherung, erneutes Laden, Inventar-Refresh und exakte Paketzuordnung ergänzt. Gerätetest offen."

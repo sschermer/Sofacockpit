@@ -781,11 +781,8 @@ public class MainActivity extends ComponentActivity {
             return;
         }
         for(TclAppLauncher.App app:tvAppInventory.visible(false)){
-            StreamingShortcuts.Entry entry=new StreamingShortcuts.Entry(app.name,app.packageName);
-            for(StreamingShortcuts.Entry saved:shortcuts.entries)
-                if(app.packageName.equals(TclAppLauncher.packageForLink(saved.link))){entry=saved;break;}
-            final StreamingShortcuts.Entry selected=entry;
-            labChoice(labStreamChoices,app.name,()->launchStreaming(selected));
+            final StreamingShortcuts.Entry selected=StreamingShortcuts.forAppChoice(shortcuts.entries,app);
+            labChoice(labStreamChoices,selected.name,()->launchStreaming(selected));
         }
         if(labStreamChoices.getChildCount()==0)labChoice(labStreamChoices,"TV-Apps aktualisieren",this::refreshTvAppInventory);
     }
@@ -942,10 +939,10 @@ public class MainActivity extends ComponentActivity {
         for (StreamingShortcuts.Entry entry : tvAppInventory.activeFavorites(shortcuts.entries)) {
             TclAppLauncher.App app = tvAppInventory.find(TclAppLauncher.packageForLink(entry.link));
             if (app == null) continue;
-            TextView tile = actionButton(app.name, "");
+            TextView tile = actionButton(entry.name, "");
             tile.setTextSize(12 * theme.theme.fontScale);
             tile.setPadding(dp(3), 0, dp(3), 0);
-            tile.setContentDescription(app.name + " starten; lange drücken zum Bearbeiten");
+            tile.setContentDescription(entry.name + " starten; lange drücken zum Bearbeiten");
             tile.setOnClickListener(v -> launchStreaming(entry));
             tile.setOnLongClickListener(v -> { shortcutOptions(entry); return true; });
             streamRow.addView(tile);

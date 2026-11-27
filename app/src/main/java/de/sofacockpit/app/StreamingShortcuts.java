@@ -89,6 +89,13 @@ final class StreamingShortcuts {
     static Entry forInstalledApp(Entry old, TclAppLauncher.App app) {
         return new Entry(old == null ? app.name : old.name, app.packageName);
     }
+    /** Activity choices use the saved personal label only for an exact app-package match.
+     * The reported inventory itself is never renamed and content links remain separate. */
+    static Entry forAppChoice(List<Entry> saved, TclAppLauncher.App app) {
+        for (Entry entry : saved)
+            if (app.packageName.equals(TclAppLauncher.packageForLink(entry.link))) return entry;
+        return forInstalledApp(null, app);
+    }
     /** All stored favorites, not only the launchable subset; in saved order. */
     List<Entry> savedFavorites() { return new ArrayList<>(entries); }
     JSONArray exportEntries() {

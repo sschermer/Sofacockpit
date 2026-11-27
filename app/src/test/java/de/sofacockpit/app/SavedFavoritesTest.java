@@ -80,4 +80,25 @@ public class SavedFavoritesTest {
         reject(()->StreamingShortcuts.removed(changed,a));
         assertEquals(Arrays.asList(a,b),saved);
     }
+
+    @Test public void renamedFavoriteKeepsPersonalLabelAfterSavingAndInventoryRefresh() throws Exception {
+        TclAppLauncher.App netflix=app("Netflix","com.netflix.ninja");
+        TclAppLauncher.App dyn=app("Dyn","sport.dyn.app.android.prod");
+        StreamingShortcuts.Entry old=favorite("Netflix","netflix://");
+        List<StreamingShortcuts.Entry> renamed=StreamingShortcuts.updated(Collections.singletonList(old),old,
+            favorite("Filmabend Netflix",old.link));
+        JSONArray persisted=new JSONArray().put(new JSONObject().put("name",renamed.get(0).name).put("link",renamed.get(0).link));
+        List<StreamingShortcuts.Entry> loaded=StreamingShortcuts.parseEntries(persisted);
+        TvAppInventory inventory=new TvAppInventory();inventory.device("tv");
+        inventory.received(Arrays.asList(netflix,dyn));
+        assertEquals("Filmabend Netflix",inventory.activeFavorites(loaded).get(0).name);
+        assertEquals("Filmabend Netflix",StreamingShortcuts.forAppChoice(loaded,netflix).name);
+        assertEquals("netflix://",StreamingShortcuts.forAppChoice(loaded,netflix).link);
+        assertEquals("Dyn",StreamingShortcuts.forAppChoice(loaded,dyn).name);
+        assertEquals("Netflix",inventory.find("com.netflix.ninja").name);
+        inventory.stale();inventory.received(Arrays.asList(netflix,dyn));
+        assertEquals("Filmabend Netflix",inventory.activeFavorites(loaded).get(0).name);
+        assertEquals("Netflix",StreamingShortcuts.forAppChoice(
+            Collections.singletonList(favorite("Filmabend Netflix",CONTENT)),netflix).name);
+    }
 }
