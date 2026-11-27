@@ -178,7 +178,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         resumeIntent.cancel()
         generation++
         val id = generation
-        lastConfirmedPower = null
+        // An automatic replacement must retain the last observed power state
+        // until a real new power report arrives. Otherwise a second focus
+        // return after a limited standby probe would become an unrestricted retry.
+        if (!limitRecoveryUntilAwake) lastConfirmedPower = null
         client?.stop()
         _device.value = DeviceState(connection = Connection.CONNECTING)
         _message.value = "Verbindung wird hergestellt …"
