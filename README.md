@@ -40,9 +40,11 @@ Nach dem bewussten kurzen Tipp auf Stimme werden eindeutige vollständige Ergebn
 
 [Signierte Lab-APK v0.1.5](https://github.com/sschermer/Sofacockpit/releases/download/sofacockpit-lab-v0.1.5/Sofacockpit-Lab.apk) · [CI erfolgreich](https://github.com/sschermer/Sofacockpit/actions/runs/45953666091). L21: Favoritenverwaltung für nicht zuordenbare gespeicherte Einträge wird repariert (v0.1.6 vorgesehen).
 
-### Lab v0.1.6 – vollständige Favoritenverwaltung (Build ausstehend)
+### Lab v0.1.6 – vollständige Favoritenverwaltung (Pre-Release veröffentlicht; Gerätetest offen)
 
 Unter **Start → Favoriten → Plus → Gespeicherte Favoriten verwalten** werden alle gespeicherten Streaming-Favoriten in ihrer gespeicherten Reihenfolge unabhängig von der TV-Verbindung aufgelistet. Status unterscheidet installierte TV-App, nicht bestätigten Bestand, aktuell nicht gemeldete App und individuellen Link ohne eindeutige Paketzuordnung. Einträge bearbeiten, verschieben, löschen oder einer tatsächlich gemeldeten TV-App zuordnen. Beim Zuordnen eines individuellen Links wird dessen bewusstes Ersetzen bestätigt; keine automatische Umdeutung von Inhaltslinks. Einen ausgeblendeten Netflix-Favoriten mit Titel-URL in der Verwaltung auswählen → Installierte TV-App zuordnen → Netflix → App zuordnen; Name und Position bleiben erhalten. Bei fehlender bestätigter Liste TV verbinden, Quellen aktualisieren, erneut auswählen. Das bestehende Favoriten-/Backupformat (Name, Link) und die nativen TCL-Befehle bleiben unverändert. Weitere Inhaltslink- oder Filmsuchfunktionen nicht Bestandteil dieser Version. Gerätetest offen.
+
+[Signierte Lab-APK v0.1.6](https://github.com/sschermer/Sofacockpit/releases/download/sofacockpit-lab-v0.1.6/Sofacockpit-Lab.apk) · [CI erfolgreich](https://github.com/sschermer/Sofacockpit/actions/runs/45954824732). Bekannte Anzeigeabweichung: individuelle Namen werden gespeichert, aber auf Start/Filmabend noch nicht angezeigt; L21.1 in Entwicklung.
 
 **Designstudie 01 (27.11.2026):** Ein eigenständiger [klickbarer HTML-Prototyp](https://github.com/sschermer/Sofacockpit/blob/experiment/intuitive-ui/docs/prototype/Sofacockpit_Prototyp.html) liegt ausschließlich im Experimentierzweig. Datei herunterladen und im Browser öffnen. Alle Geräteaktionen und Zustände sind simuliert; die wichtigsten Abläufe sind im Browser getestet. Keine Änderung der Android-App oder des stabilen Releases. Details und offene technische Voraussetzungen in Aufgabe 0.4 der Roadmap.
 
