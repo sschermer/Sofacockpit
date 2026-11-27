@@ -22,9 +22,11 @@ Im Tab **Stimme** einen Befehl sprechen oder eingeben und nach Vorschau **Ausfü
 
 [Lab v0.1.2 APK](https://github.com/sschermer/Sofacockpit/releases/download/sofacockpit-lab-v0.1.2/Sofacockpit-Lab.apk) · [CI erfolgreich](https://github.com/sschermer/Sofacockpit/actions/runs/45941136725). Die gemeinsame Sprachgrundlage wird zunächst im bestehenden Lab-Zweig weiterentwickelt (L01.2–L01.4). Ein möglicher lokaler KI-Interpreter ist noch nicht Bestandteil der App.
 
-### Lab v0.1.3 – natürliche Satzmuster (Build ausstehend)
+### Lab v0.1.3 – natürliche Satzmuster (Pre-Release veröffentlicht; Gerätetest offen)
 
 Persönliche kurze Synonyme erhalten befehlsspezifische, vollständige Satzvarianten. Ein Synonym „Basketball“ für Dyn wird auch bei „Mach Basketball an“, „Starte Basketball“ und „Ich möchte Basketball schauen“ erkannt. Vollständige Sätze bleiben exakt; Profile, HDMI und Schalter haben eigene Muster. Vor dem Speichern zeigt der Editor Varianten und Konflikte an. Verneinungen, Mehrdeutigkeiten und nicht verfügbare Ziele verhindern die Ausführung. Keine neue Berechtigung, kein Cloud-Dienst, kein KI-Modell. Die bestehende Ausführen-Bestätigung bleibt. [Entwurf der gemeinsamen Sprachgrundlage](docs/VOICE_FOUNDATION.md) und [Lab-Roadmap](ROADMAP_LAB.md) beschreiben die folgenden Dialog-, Lern-, Makro- und Sicherungsschritte; diese sind noch nicht implementiert.
+
+[Signierte Lab-APK v0.1.3](https://github.com/sschermer/Sofacockpit/releases/download/sofacockpit-lab-v0.1.3/Sofacockpit-Lab.apk) · [CI erfolgreich](https://github.com/sschermer/Sofacockpit/actions/runs/45945839642). Gerätetest der neuen Satzmuster steht noch aus.
 
 **Designstudie 01 (27.11.2026):** Ein eigenständiger [klickbarer HTML-Prototyp](https://github.com/sschermer/Sofacockpit/blob/experiment/intuitive-ui/docs/prototype/Sofacockpit_Prototyp.html) liegt ausschließlich im Experimentierzweig. Datei herunterladen und im Browser öffnen. Alle Geräteaktionen und Zustände sind simuliert; die wichtigsten Abläufe sind im Browser getestet. Keine Änderung der Android-App oder des stabilen Releases. Details und offene technische Voraussetzungen in Aufgabe 0.4 der Roadmap.
 
