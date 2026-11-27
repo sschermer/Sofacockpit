@@ -186,27 +186,50 @@ public final class TvRemoteClient implements AutoCloseable {
             validatePin(pairing.getString("serverPin"));
             config.put("pairing", pairing);
         }
+        String host=(String)snapshot.get(HOST), pin=(String)snapshot.get(PIN);
+        if(host!=null&&!host.isEmpty()&&pin!=null){
+            validatePin(pin);
+            String mac=DeviceBackupBinding.matchingMac(host,pin,(String)snapshot.get(WAKE_HOST),
+                (String)snapshot.get(WAKE_PIN),(String)snapshot.get(WAKE_MAC));
+            config.put("deviceSettings",new DeviceBackupBinding(host,pin,mac).toJson());
+        }
         return config;
+    }
+    /** Same key as a live HDMI session, computed from the saved pairing only. */
+    public String savedDeviceKey(){
+        java.util.Map<String,?> snapshot=prefs.getAll();
+        return DeviceBackupBinding.key((String)snapshot.get(HOST),(String)snapshot.get(PIN));
+    }
+    public static String backupDeviceKey(org.json.JSONObject config)throws org.json.JSONException{
+        return config.has("deviceSettings")?
+            DeviceBackupBinding.parse(config.getString("address"),config.getJSONObject("deviceSettings")).key():null;
     }
     public static final class PreparedConfiguration {
         public final String address;
         private final String pin, wrapped;
-        PreparedConfiguration(String address, String pin, String wrapped) {
-            this.address = address; this.pin = pin; this.wrapped = wrapped;
+        private final DeviceBackupBinding binding;
+        PreparedConfiguration(String address, String pin, String wrapped,DeviceBackupBinding binding) {
+            this.address = address; this.pin = pin; this.wrapped = wrapped;this.binding=binding;
         }
         public boolean includesPairing() { return wrapped != null; }
+        public String deviceSettingsKey(){return binding==null?null:binding.key();}
     }
     /** Validate and wrap imported material before applying any device settings. */
     public PreparedConfiguration prepareConfiguration(org.json.JSONObject config) throws Exception {
         String host = config.getString("address").trim();
-        if (!host.isEmpty()) localAddress(host);
-        if (!config.has("pairing")) return new PreparedConfiguration(host, null, null);
+        InetAddress target=host.isEmpty()?null:localAddress(host);
+        DeviceBackupBinding binding=config.has("deviceSettings")?
+            DeviceBackupBinding.parse(host,config.getJSONObject("deviceSettings")):null;
+        if(binding!=null&&!binding.mac.isEmpty()&&!(target instanceof Inet4Address))
+            throw new IOException("Wake-on-LAN ohne LAN-IPv4-Adresse");
+        if (!config.has("pairing")) return new PreparedConfiguration(host, null, null,binding);
         if (host.isEmpty()) throw new IOException("TV-Kopplung ohne Adresse");
         org.json.JSONObject pairing = config.getJSONObject("pairing");
         String pin = pairing.getString("serverPin");
         validatePin(pin);
+        if(binding!=null&&!binding.matches(host,pin))throw new IOException("Abweichende TV-Gerätebindung");
         PortableTvIdentity identity = PortableTvIdentity.parse(pairing);
-        return new PreparedConfiguration(host, pin, TvIdentityVault.seal(identity));
+        return new PreparedConfiguration(host, pin, TvIdentityVault.seal(identity),binding);
     }
     private static void validatePin(String pin) throws GeneralSecurityException {
         try {
@@ -225,6 +248,13 @@ public final class TvRemoteClient implements AutoCloseable {
         else if (!config.address.equals(lastAddress()))
             edit.remove(PIN).remove(KEY_ALIAS).remove(WRAPPED_IDENTITY);
         // A settings-only backup preserves an existing pairing only for the same address.
+        String effectivePin=config.includesPairing()?config.pin:
+            config.address.equals(lastAddress())?prefs.getString(PIN,null):null;
+        if(config.binding!=null&&config.binding.matches(config.address,effectivePin)){
+            if(config.binding.mac.isEmpty())clearWake(edit);
+            else edit.putString(WAKE_MAC,config.binding.mac).putString(WAKE_HOST,config.address)
+                .putString(WAKE_PIN,effectivePin);
+        }
         if (!edit.commit()) throw new IOException("TV-Konfiguration konnte nicht gespeichert werden.");
         update(Phase.DISCONNECTED, "Konfiguration geladen – bitte verbinden.", false);
     }
@@ -413,8 +443,7 @@ public final class TvRemoteClient implements AutoCloseable {
     /** Locally scoped key, only for the currently connected and paired TV. */
     public String hdmiDeviceKey() {
         if (!canTestAppLaunch() || !paired() || !current.host.equals(lastAddress())) return null;
-        return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
-            TvProtocol.sha256(inventoryDeviceKey().getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        return savedDeviceKey();
     }
 
     /** One deliberate native input command, using the existing pinned TLS session. */

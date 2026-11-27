@@ -98,6 +98,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         source = _source.value
     )
 
+    /** Only private local profiles; never read the displayed NAS cache for backup. */
+    fun exportLocalProfiles(): String = ProfileCodec.encode(store.load())
+
+    /** Restore the private local file only. Never call a shared NAS write path. */
+    fun restoreLocalProfiles(encoded: String): Boolean {
+        if (_profileBusy.value) return false
+        return try {
+            val restored = ProfileCodec.decode(encoded)
+            store.save(restored)
+            if (_source.value == ProfileSource.LOCAL) {
+                _profiles.value = restored
+                _selectedProfile.value = null
+            }
+            true
+        } catch (_: Exception) {
+            _message.value = "Lokale Klangprofile konnten nicht gespeichert werden"
+            false
+        }
+    }
+
     /** Restore portable settings; shared NAS profiles are retrieved from the NAS afterwards. */
     @JvmOverloads
     fun restoreConfiguration(backup: ConfigurationBackup, refreshNas: Boolean = true): Boolean {

@@ -9,7 +9,7 @@ import java.util.*;
 /** Private storage; only known IDs are ever used as filenames. */
 public final class ThemeStore {
     private static final String[] BUILTINS={"minimal-premium","av-konsole","high-tech-hud","soft-industrial","executive-monochrome"};
-    private static final int MAX_IMPORTED=12;
+    private static final int MAX_IMPORTED=ThemeBackup.MAX_COUNT;
     private final Context context;
     private final SharedPreferences options;
     private final File directory;
@@ -40,7 +40,7 @@ public final class ThemeStore {
             }
         }
     }
-    private static boolean reserved(String id) { return Arrays.asList(BUILTINS).contains(id); }
+    static boolean reserved(String id) { return Arrays.asList(BUILTINS).contains(id); }
     public synchronized List<ThemePack> all() { return new ArrayList<>(packs.values()); }
     public synchronized boolean has(String id) { return packs.containsKey(id); }
     public synchronized ThemePack selected() {
@@ -51,11 +51,36 @@ public final class ThemeStore {
         if(!packs.containsKey(id)) id=CockpitTheme.DEFAULT_ID;
         options.edit().putString("theme_id",id).apply();
     }
+    public synchronized org.json.JSONArray exportImported()throws IOException{
+        return ThemeBackup.encode(all());
+    }
+    /** Validate the merge before the first write; built-ins can never be overwritten. */
+    public synchronized void validateRestore(List<ThemePack> imported)throws IOException{
+        Set<String> ids=new HashSet<>();
+        for(ThemePack existing:packs.values())if(!existing.builtin)ids.add(existing.theme.id);
+        Set<String> incoming=new HashSet<>();
+        for(ThemePack pack:imported){
+            String id=pack.theme.id;
+            if(pack.builtin||reserved(id)||!incoming.add(id)||pack.bytes==null)
+                throw new IOException("Ungültiges Sicherungsdesign");
+            ids.add(id);
+        }
+        if(ids.size()>MAX_IMPORTED)throw new IOException("Maximal "+MAX_IMPORTED+" importierte Themes; vorhandene Designs zuerst verwalten");
+    }
+    /** Confirmed merge: replace matching imported IDs, keep other existing themes. */
+    public synchronized void restoreImported(List<ThemePack> imported)throws IOException{
+        validateRestore(imported);
+        for(ThemePack pack:imported)persist(pack);
+    }
     public synchronized ThemePack add(ThemePack pack) throws IOException {
         String id=pack.theme.id;
         if(reserved(id)||packs.containsKey(id)) throw new IOException("Theme-ID bereits vorhanden");
         if(packs.values().stream().filter(p->!p.builtin).count()>=MAX_IMPORTED)
             throw new IOException("Maximal "+MAX_IMPORTED+" importierte Themes");
+        return persist(pack);
+    }
+    private ThemePack persist(ThemePack pack)throws IOException{
+        String id=pack.theme.id;
         if(!directory.isDirectory()&&!directory.mkdirs()) throw new IOException("Theme-Ordner nicht verfügbar");
         AtomicFile target=new AtomicFile(new File(directory,id+".sofatheme"));
         FileOutputStream out=null;

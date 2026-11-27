@@ -29,6 +29,21 @@ public class HdmiInputProfileTest {
         assertFalse(HdmiInputProfile.canSelect("", 1, saved::contains));
     }
 
+    @Test public void backupMaskOnlyRestoresMatchingDevice(){
+        Set<String> saved=new HashSet<>();
+        saved.add(HdmiInputProfile.legacyPortKey("tv-a",2));
+        saved.add(HdmiInputProfile.profileKey("tv-b"));
+        assertEquals(2,HdmiInputProfile.mask("tv-a",saved::contains));
+        assertEquals(15,HdmiInputProfile.mask("tv-b",saved::contains));
+        java.util.function.BiConsumer<String,Boolean> write=(k,v)->{if(v)saved.add(k);else saved.remove(k);};
+        HdmiInputProfile.restoreMask("tv-a","tv-b",0,write);
+        assertEquals(15,HdmiInputProfile.mask("tv-b",saved::contains));
+        HdmiInputProfile.restoreMask("tv-a","tv-a",9,write);
+        assertEquals(9,HdmiInputProfile.mask("tv-a",saved::contains));
+        HdmiInputProfile.restoreMask("tv-b","tv-b",0,write);
+        assertEquals(0,HdmiInputProfile.mask("tv-b",saved::contains));
+    }
+
     @Test public void partialConfirmationDoesNotImplyOtherPorts() {
         Set<String> saved = new HashSet<>();
         saved.add("hdmi_native_hw15_v1_tv-a_2");

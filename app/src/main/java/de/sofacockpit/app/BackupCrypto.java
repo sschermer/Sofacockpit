@@ -13,7 +13,7 @@ import javax.crypto.spec.SecretKeySpec;
 
 /** Versioned authenticated encrypted configuration. No cleartext export mode. */
 final class BackupCrypto {
-    static final int MAX_BYTES = 1024 * 1024;
+    static final int MAX_BYTES = 20 * 1024 * 1024;
     static final int MIN_PASSWORD = 12;
     private static final byte[] MAGIC = "SOFACFG1".getBytes(StandardCharsets.US_ASCII);
     private static final int SALT = 16, IV = 12, HEADER = MAGIC.length + SALT + IV;
