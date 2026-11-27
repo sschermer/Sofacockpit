@@ -85,7 +85,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v1.1.7
+          name: Sofacockpit-Android-v1.1.8
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -94,8 +94,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create sofacockpit-v1.1.7 \
+          gh release create sofacockpit-v1.1.8 \
             dist/Sofacockpit.apk dist/*.sofatheme \
             --target "$GITHUB_SHA" \
-            --title "Sofacockpit v1.1.7 (Nativer TCL-App-Start)" \
-            --notes "Stabile Ausgabe auf Basis der am TCL getesteten v1.1.6. Dyn (nach Neuzuordnung), Netflix, YouTube, installierte App-Liste und neuer Favorit vom Nutzer bestätigt. Nativer TCL-App-Start über LAN ohne ADB und ohne zusätzliche TV-App. Roadmap und verbindliche Pflegeanweisungen im Repository ergänzt. Keine funktionalen Änderungen gegenüber v1.1.6; bestehende Kopplung, Favoriten, Sicherung, Soundbar und feste Signatur bleiben unverändert."
+            --title "Sofacockpit v1.1.8 (TV-App-Inventar – Testversion)" \
+            --prerelease \
+            --notes "Pre-Release: TV → Quellen und Streaming-Favoriten verwenden ausschließlich den abgefragten T-Cast-App-Bestand des verbundenen TVs. System-Apps sind einblendbar; Aktualisierung beim Öffnen und manuell. Gespeicherte Favoriten bleiben erhalten, nicht gemeldete Apps werden in der aktiven Leiste ausgeblendet. Leere und fehlgeschlagene Abfragen erzeugen keinen statischen Ersatzkatalog. Gerätetest erforderlich, insbesondere Start von Dyn, Netflix und YouTube sowie App-Installation und Deinstallation."
