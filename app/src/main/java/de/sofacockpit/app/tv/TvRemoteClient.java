@@ -415,7 +415,7 @@ public final class TvRemoteClient implements AutoCloseable {
         stopAppLaunchTest("HDMI-Direktwahl; Testbeobachtung beendet.");
         if (!expectedDeviceKey.equals(hdmiDeviceKey())) return false;
         return sendCommand(TvProtocol.tclHdmiInput(port), true,
-            "HDMI " + port + " – Direktwahlbefehl gesendet; Wechsel am TV prüfen.", null);
+            "HDMI " + port + " – Umschaltbefehl gesendet.", null);
     }
 
     /** Use only the address of the existing, certificate-pinned foreground session.

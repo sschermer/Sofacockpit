@@ -1022,12 +1022,12 @@ public class MainActivity extends ComponentActivity {
                 hdmiButtons.add(tile);
                 tile.setOnClickListener(v -> {
                     v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
-                    selectHdmi(port, false);
+                    selectHdmi(port);
                 });
                 tile.setTextSize(15 * theme.theme.fontScale);
                 compactInputButton(tile);
-                tile.setContentDescription("HDMI " + port + ": " + hdmiLabel(port) + "; lange drücken für Optionen");
-                tile.setOnLongClickListener(v -> { showHdmiOptions(port, tile); return true; });
+                tile.setContentDescription("HDMI " + port + ": " + hdmiLabel(port) + "; lange drücken zum Umbenennen");
+                tile.setOnLongClickListener(v -> { editHdmiLabel(port, tile); return true; });
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f);
                 if (col>0) lp.leftMargin=dp(8);
                 row.addView(tile,lp);
@@ -1039,7 +1039,7 @@ public class MainActivity extends ComponentActivity {
         TextView chooser = tvButton("TV-Eingangsauswahl",KeyEvent.KEYCODE_TV_INPUT);
         compactInputButton(chooser);
         inputs.addView(chooser,new LinearLayout.LayoutParams(-1,ViewGroup.LayoutParams.WRAP_CONTENT));
-        inputs.addView(label("Direktwahl: Ersten Versuch je HDMI bestätigen. Lange drücken: Name ändern oder erneut testen. Die allgemeine Eingangsauswahl bleibt verfügbar.",12,MUTED));
+        inputs.addView(label("Antippen: HDMI direkt wählen. Lange drücken: Eingang benennen.",12,MUTED));
         LinearLayout apps = section(body,"APPS");
         TextView add = actionButton("+ TV-App / Favorit","");
         add.setOnClickListener(v -> addStreamingShortcut());
@@ -1075,58 +1075,42 @@ public class MainActivity extends ComponentActivity {
     private void renderHdmiButtons() {
         boolean ready = tv.hdmiDeviceKey() != null;
         for (TextView tile : hdmiButtons) {
-            // Keep rename and retest accessible even if not connected; clicks explain the reason.
+            // Keep rename accessible even if not connected; clicks explain the reason.
             tile.setAlpha(ready ? 1f : .55f);
         }
     }
 
-    private String hdmiConfirmationKey(String device, int port) {
-        return "hdmi_native_hw15_v1_" + device + "_" + port;
-    }
-
-    private void showHdmiOptions(int port, TextView tile) {
-        new AlertDialog.Builder(this).setTitle(hdmiLabel(port))
-            .setItems(new String[]{"Eingang umbenennen", "Direktwahl erneut testen"},
-                (d, i) -> { if (i == 0) editHdmiLabel(port, tile); else selectHdmi(port, true); })
-            .setNegativeButton("Schließen", null).show();
-    }
-
-    private void selectHdmi(int port, boolean retest) {
+    private void selectHdmi(int port) {
         String device = tv.hdmiDeviceKey();
         if (device == null) {
             Toast.makeText(this, "TV verbinden und einschalten; App-Link-Unterstützung erforderlich.", Toast.LENGTH_LONG).show();
             return;
         }
-        String key = hdmiConfirmationKey(device, port);
-        if (!retest && connectionOptions.getBoolean(key, false)) {
-            tv.selectTclHdmiInput(port, device);
+        if (HdmiInputProfile.canSelect(device, port, key -> connectionOptions.getBoolean(key, false))) {
+            sendHdmi(port, device);
             return;
         }
-        new AlertDialog.Builder(this).setTitle("HDMI " + port + " – Direktwahl testen")
-            .setMessage("Dieser native TCL-Befehl wurde bei einem anderen Modell beobachtet. Öffne vor dem Test einen anderen TV-Eingang oder die Startseite. Bestätige anschließend nur, wenn der Fernseher tatsächlich auf HDMI " + port + " wechselt.")
+        // No model is reliably reported by the current Remote-v2 handshake.
+        // On an unknown pairing, ask for the supported model once, not for a test on every port.
+        new AlertDialog.Builder(this).setTitle("HDMI-Direktwahl einrichten")
+            .setMessage("Die native Direktwahl ist für TCL 85C89L (Gerätebezeichnung 85C8L) bestätigt. Ist dies dein Fernseher? Bei anderen Modellen kann die Zuordnung abweichen; verwende dort die allgemeine TV-Eingangsauswahl.")
             .setNegativeButton("Abbrechen", null)
-            .setPositiveButton("Testen", (d, w) -> {
-                if (!tv.selectTclHdmiInput(port, device)) {
-                    Toast.makeText(this, "Test nicht gestartet. TV-Verbindung prüfen.", Toast.LENGTH_LONG).show();
+            .setNeutralButton("TV-Eingangsauswahl", (d, w) -> {
+                if (device.equals(tv.hdmiDeviceKey())) tv.sendKey(KeyEvent.KEYCODE_TV_INPUT);
+            })
+            .setPositiveButton("TCL 85C89L", (d, w) -> {
+                if (!device.equals(tv.hdmiDeviceKey())) {
+                    Toast.makeText(this, "TV-Verbindung geändert. Bitte erneut auswählen.", Toast.LENGTH_LONG).show();
                     return;
                 }
-                // A confirmed mapping belongs to this TV and this exact native candidate.
-                // Re-testing invalidates the old confirmation until the user observes success.
-                connectionOptions.edit().remove(key).apply();
-                new AlertDialog.Builder(this).setTitle("HDMI " + port + " erreicht?")
-                    .setMessage("Warte auf das TV-Bild bzw. die Eingangsbezeichnung. Hat der Fernseher tatsächlich auf den gewünschten HDMI-Eingang gewechselt?")
-                    .setNegativeButton("Nein", (dd, ww) ->
-                        Toast.makeText(this, "Nicht bestätigt. Nutze vorerst die TV-Eingangsauswahl.", Toast.LENGTH_LONG).show())
-                    .setNeutralButton("Unklar", null)
-                    .setPositiveButton("Ja", (dd, ww) -> {
-                        if (device.equals(tv.hdmiDeviceKey())) {
-                            connectionOptions.edit().putBoolean(key, true).apply();
-                            Toast.makeText(this, "HDMI " + port + " bestätigt. Künftig genügt Antippen.", Toast.LENGTH_LONG).show();
-                        } else {
-                            Toast.makeText(this, "TV-Verbindung geändert. Test erneut durchführen.", Toast.LENGTH_LONG).show();
-                        }
-                    }).show();
+                connectionOptions.edit().putBoolean(HdmiInputProfile.profileKey(device), true).apply();
+                sendHdmi(port, device);
             }).show();
+    }
+
+    private void sendHdmi(int port, String device) {
+        if (!tv.selectTclHdmiInput(port, device))
+            Toast.makeText(this, "HDMI-Befehl nicht gesendet. TV-Verbindung prüfen.", Toast.LENGTH_LONG).show();
     }
 
     private String hdmiLabel(int port) {
@@ -1144,7 +1128,7 @@ public class MainActivity extends ComponentActivity {
             if (value.isEmpty() || value.length()>40) { name.setError("1–40 Zeichen"); return; }
             connectionOptions.edit().putString("hdmi_name_" + port,value).apply();
             tile.setText(value);
-            tile.setContentDescription("HDMI " + port + ": " + value + "; lange drücken für Optionen");
+            tile.setContentDescription("HDMI " + port + ": " + value + "; lange drücken zum Umbenennen");
             dialog.dismiss();
         });
     }

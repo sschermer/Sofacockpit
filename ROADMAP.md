@@ -49,12 +49,12 @@ Einzelne Detailtests (System-Apps ein-/ausblenden, App-Liste manuell aktualisier
 
 | ID | Aufgabe | Zielversion | Priorität | Status | Nachweis / tatsächliche Version |
 | --- | --- | --- | --- | --- | --- |
-| 0.3 | HDMI-Eingänge direkt auswählen | 1.1.9 (Pre-Release) | Hoch – vor Neugestaltung und Phase 1 | Getestet | v1.1.9 (versionCode 28): CI, Release-Build, feste Signatur und vollständiges Pre-Release-APK verifiziert. Nutzer bestätigt am 27.11.2026 die native Direktwahl aller vier HDMI-Eingänge am TCL 85C89L. Stabile Freigabe ausstehend. |
+| 0.3 | HDMI-Eingänge direkt auswählen | 1.1.9 getestet; 1.1.10 stabile Freigabe | Hoch – vor Neugestaltung und Phase 1 | Getestet | v1.1.9 (versionCode 28): CI und signierte APK verifiziert; alle vier HDMI-Eingänge am TCL 85C89L vom Nutzer bestätigt. Reguläre Bedienung v1.1.10 auf ausdrückliche Freigabe: keine Testdialoge, bisherige Bestätigungen erhalten, einmalige Modellwahl bei unbekannter Kopplung. Build und stabile Veröffentlichung noch ausstehend. |
 
 - Ziel: Einmaliges Antippen eines HDMI-Eingangs wechselt zuverlässig zum richtigen Eingang, ohne die manuelle Navigation im TV-Eingangsmenü. Individuelle HDMI-Namen und allgemeine TV-Eingangsauswahl bleiben erhalten.
 - Zunächst vorhandene T-Cast-Steuerung und mögliche TCL-spezifische lokale Befehle untersuchen. Keine feste Zuordnung ungeprüfter Hardware-IDs, keine blind ausgeführte Menü-Tastenfolge und kein dauerhaftes ADB oder zusätzliche TV-App.
 - Gerätetest: Alle vier HDMI-Eingänge am Referenz-TCL erfolgreich bestätigt. Gesonderte Tests aus verschiedenen Ausgangszuständen sowie HDMI-CEC/eARC-Regression wurden nicht ausdrücklich berichtet. Keine Erfolgsmeldung allein aufgrund des Befehlsversands.
-- Reihenfolge am 27.11.2026 vom Nutzer bestätigt: HDMI-Direktwahl vor Neugestaltung und Tastatur. Aufgabe 0.2 bleibt bis zur separaten Geräteabnahme offen. Native TCL-Eingangslinks werden über die bestehende Remote-v2-Sitzung getestet, ohne ADB. Erst nach beobachtetem Wechsel wird die Zuordnung je TV und Anschluss gespeichert. Quellen: https://community.home-assistant.io/t/android-tv-hdmi/234411/107 und https://github.com/Linkestis/tcl-google-tv-adb-hdmi-ha .
+- Reihenfolge am 27.11.2026 vom Nutzer bestätigt: HDMI-Direktwahl vor Neugestaltung und Tastatur. Aufgabe 0.2 bleibt bis zur separaten Geräteabnahme offen. Native TCL-Eingangslinks über die bestehende Remote-v2-Sitzung sind am Referenzgerät ohne ADB bestätigt. v1.1.10 übernimmt vorhandene lokale Portbestätigungen und ermöglicht einmalige Auswahl des bestätigten Referenzmodellprofils für eine unbekannte Kopplung. Quellen: https://community.home-assistant.io/t/android-tv-hdmi/234411/107 und https://github.com/Linkestis/tcl-google-tv-adb-hdmi-ha .
 
 ## Phase 1 – TV-Fernbedienung vervollständigen (1.2.x)
 
@@ -100,7 +100,7 @@ Keine Änderung an TV-Systemsoftware, keine erfundenen Parameter. Die technische
 
 ## Nächste Aufgabe
 
-**0.2 – TV-App-Übersicht:** Die separate Geräteabnahme (insbesondere Bestandswechsel und Favoriten) bleibt offen. **0.3 – HDMI-Direktwahl:** v1.1.9 am Referenz-TCL für alle vier Eingänge bestätigt; stabile Freigabe steht aus. Danach das vom Nutzer angesprochene Bedienkonzept abstimmen, anschließend Tastatur gemäß bestätigter Reihenfolge. Keine ungeprüfte Hochstufung von Aufgabe 0.2.
+**0.2 – TV-App-Übersicht:** Die separate Geräteabnahme (insbesondere Bestandswechsel und Favoriten) bleibt offen. **0.3 – HDMI-Direktwahl:** v1.1.9 am Referenz-TCL für alle vier Eingänge bestätigt; reguläre v1.1.10 nach Nutzerfreigabe in CI und zur stabilen Veröffentlichung vorgesehen. Danach das vom Nutzer angesprochene Bedienkonzept abstimmen, anschließend Tastatur gemäß bestätigter Reihenfolge. Keine ungeprüfte Hochstufung von Aufgabe 0.2.
 
 ## Änderungsverlauf
 
@@ -119,3 +119,5 @@ Keine Änderung an TV-Systemsoftware, keine erfundenen Parameter. Die technische
 - 27.11.2026: Aufgabe 0.3 priorisiert und v1.1.9-Testkandidat implementiert: explizite Bestätigung der nativen HDMI-Eingangslinks je gekoppeltem Gerät und Port, allgemeine Eingangsauswahl und Benennung bleiben unverändert. Automatisierte URI-/Wire-/Grenzwerttests ergänzt; Build und Gerätetest ausstehend. Keine neue Bibliothek oder TV-Software.
 
 - 27.11.2026: Aufgabe 0.3 auf **Getestet** hochgestuft. Nutzer bestätigt alle vier HDMI-Direktwahltests am TCL 85C89L; HW15–HW18 funktionieren auf dem Referenzgerät. [CI-Lauf v1.1.9](https://github.com/sschermer/Sofacockpit/actions/runs/45930670278) vollständig erfolgreich (Tests, APK-Build, feste Signatur, Veröffentlichung); [Pre-Release v1.1.9](https://github.com/sschermer/Sofacockpit/releases/tag/sofacockpit-v1.1.9) mit vollständiger APK (14.744.512 Bytes) verifiziert. Stabile Freigabe und separate Geräteabnahme von 0.2 stehen aus. Keine Änderung des Funktionscodes.
+
+- 27.11.2026: Nutzer gibt die reguläre Implementierung und stabile Veröffentlichung der am Gerät getesteten HDMI-Direktwahl frei. v1.1.10 (versionCode 29) übernimmt den bestätigten nativen Befehl, entfernt Testdialoge für bereits bestätigte Eingänge und stellt langes Drücken zum Umbenennen wieder her. Neue Kopplungen können das bestätigte Referenzmodellprofil einmalig auswählen. Regressionstests für gerätebezogene Übernahme und Profilwahl ergänzt. CI und Veröffentlichung noch nicht verifiziert; 0.2 bleibt separat offen.

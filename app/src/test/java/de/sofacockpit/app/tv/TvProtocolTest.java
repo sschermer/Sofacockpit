@@ -7,7 +7,7 @@ import java.math.BigInteger;
 import java.security.interfaces.RSAPublicKey;
 
 public class TvProtocolTest {
-    @Test public void tclHdmiCandidateUsesOnlyNativeInputLinksForFourPorts() throws Exception {
+    @Test public void tclHdmiUsesOnlyNativeInputLinksForFourPorts() throws Exception {
         for (int port = 1; port <= 4; port++) {
             String expected = "content://android.media.tv/passthrough/com.tcl.tvinput%2F.TvPassThroughService%2FHW" + (14 + port);
             TvProtocol.Message outer = TvProtocol.parse(TvProtocol.tclHdmiInput(port));

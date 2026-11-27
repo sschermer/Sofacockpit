@@ -85,7 +85,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v1.1.9
+          name: Sofacockpit-Android-v1.1.10
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -101,11 +101,11 @@ jobs:
             echo "Skipping release: a newer main commit exists."
             exit 0
           fi
-          notes="Pre-Release: HDMI-Direktwahl über die bestehende TLS-gekoppelte Android-TV-Remote-v2-Schnittstelle. Testkandidat für aktuelle TCL-Modelle mit nativen TV-Eingangslinks (HW15–HW18); Zuordnung je Anschluss am eigenen Fernseher bestätigen. Danach genügt ein Antippen. Allgemeine TV-Eingangsauswahl, HDMI-Namen, App-Inventar und bestehende Steuerung bleiben erhalten. Kein ADB, keine TV-Zusatz-App. Gerätetest aller vier Eingänge erforderlich."
-          if gh release view sofacockpit-v1.1.9 >/dev/null 2>&1; then
+          notes="Stabiles Release der am TCL 85C89L mit v1.1.9 für alle vier HDMI-Eingänge bestätigten nativen Direktwahl. Antippen schaltet ohne Testdialog um; langes Drücken benennt den Eingang um. Vorhandene Testbestätigungen werden übernommen. Bei einem unbekannten TV kann das bestätigte TCL-Modellprofil einmalig gewählt werden. Allgemeine TV-Eingangsauswahl, bestehende Kopplung, HDMI-Namen und App-Favoriten bleiben erhalten. Kein ADB und keine Zusatz-App. Die separate Geräteabnahme der TV-App-Übersicht (Roadmap 0.2) sowie Regressionstests der neuen UI bleiben offen."
+          if gh release view sofacockpit-v1.1.10 >/dev/null 2>&1; then
             echo "Release already exists; not replacing a published version."
             exit 0
           fi
-          gh release create sofacockpit-v1.1.9 dist/Sofacockpit.apk dist/*.sofatheme \
-            --target "$GITHUB_SHA" --title "Sofacockpit v1.1.9 (HDMI-Direktwahl – Testversion)" \
-            --prerelease --notes "$notes"
+          gh release create sofacockpit-v1.1.10 dist/Sofacockpit.apk dist/*.sofatheme \
+            --target "$GITHUB_SHA" --title "Sofacockpit v1.1.10 (HDMI-Direktwahl)" \
+            --latest --notes "$notes"

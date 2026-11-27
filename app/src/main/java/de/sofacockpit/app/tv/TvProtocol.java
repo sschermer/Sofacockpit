@@ -169,9 +169,9 @@ public final class TvProtocol {
     }
 
     /**
-     * Narrow native TCL input candidate for recent Android 14 models. Only four
-     * fixed generated URIs; never allow arbitrary content:// in the app-link editor.
-     * Physical port mapping must be confirmed by the user on this particular TV.
+     * Native TCL input mapping (HW15–HW18), verified for all four ports on
+     * TCL 85C89L / 85C8L. Other models may differ. Only four fixed generated
+     * URIs; never allow arbitrary content:// in the app-link editor.
      */
     static byte[] tclHdmiInput(int port) {
         if (port < 1 || port > 4) throw new IllegalArgumentException("HDMI 1–4 auswählen.");
