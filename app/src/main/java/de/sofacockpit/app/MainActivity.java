@@ -645,7 +645,7 @@ public class MainActivity extends ComponentActivity {
         if (streamRow == null) return;
         streamRow.removeAllViews();
         // Saved mappings and their order survive absent apps. They are not a source of inventory.
-        for (StreamingShortcuts.Entry entry : shortcuts.entries) {
+        if (tvAppInventory.verified()) for (StreamingShortcuts.Entry entry : shortcuts.entries) {
             TclAppLauncher.App app = tvAppInventory.find(TclAppLauncher.packageForLink(entry.link));
             if (app == null) continue;
             TextView tile = actionButton(app.name, "");
@@ -657,7 +657,7 @@ public class MainActivity extends ComponentActivity {
             streamRow.addView(tile);
         }
         if (streamRow.getChildCount() == 0) {
-            TextView empty = actionButton("+", "");
+            TextView empty = actionButton(tvAppInventory.verified() ? "+" : "TV-App-Liste nicht aktuell", "");
             empty.setContentDescription("TV-App als Favorit auswählen");
             empty.setOnClickListener(v -> addStreamingShortcut());
             streamRow.addView(empty);
@@ -776,7 +776,7 @@ public class MainActivity extends ComponentActivity {
             }
             if (duplicate) continue;
             choices.add(entry);
-            names.add(app.name + "\\n" + app.packageName);
+            names.add(app.name + "\n" + app.packageName);
         }
         int count = choices.size();
         names.add(all ? "System-Apps ausblenden" : "Auch System-Apps anzeigen");
