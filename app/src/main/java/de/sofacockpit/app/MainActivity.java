@@ -69,6 +69,10 @@ public class MainActivity extends ComponentActivity {
     private final List<TextView> labNightButtons=new ArrayList<>(), labDrcButtons=new ArrayList<>();
     private final List<View> labHapticKeys=new ArrayList<>();
     private TextView labMode, labProfile;
+    private final LabHapticTracker labHaptics=new LabHapticTracker();
+    private boolean labTracking,labMoved,labMulti;
+    private int labDownZone=-1;
+    private float labDownX,labDownY;
     private PopupMenu quickMenu;
     private AlertDialog appLaunchTestDialog;
     private MainViewModel soundbarModel;
@@ -299,7 +303,7 @@ public class MainActivity extends ComponentActivity {
     private void showStartMenu(View anchor) {
         if (quickMenu != null) quickMenu.dismiss();
         PopupMenu popup = new PopupMenu(this, anchor, Gravity.CENTER);
-        String[] items={"Design auswählen","Software-Updates","Verbindungen","Über Sofacockpit","Verbindungen aktualisieren","Streaming-Start testen"};
+        String[] items={"Design auswählen","Software-Updates","Verbindungen","Über Sofacockpit Lab","Verbindungen aktualisieren","Streaming-Start testen","Haptische Orientierung"};
         for (int i=0;i<items.length;i++) popup.getMenu().add(0,i+1,i,items[i]);
         popup.setOnMenuItemClickListener(item -> {
             switch(item.getItemId()) {
@@ -313,6 +317,11 @@ public class MainActivity extends ComponentActivity {
                     return true;
                 case 5: connectionRefresh.request(navigation.category()); return true;
                 case 6: showAppLaunchTestDialog(); return true;
+                case 7:
+                    new AlertDialog.Builder(this).setTitle("Haptische Orientierung")
+                        .setSingleChoiceItems(new String[]{"Ein","Aus"},connectionOptions.getBoolean("lab_haptics",true)?0:1,
+                            (d,i)->{connectionOptions.edit().putBoolean("lab_haptics",i==0).apply();d.dismiss();})
+                        .setNegativeButton("Schließen",null).show();return true;
                 default: return false;
             }
         });
@@ -477,6 +486,7 @@ public class MainActivity extends ComponentActivity {
 
     private void selectScreen(int category, int page) {
         if (!CockpitNavigation.valid(category, page)) return;
+        labTracking=false;labHaptics.reset();
         navigation.select(category, page);
         for (int i = 0; i < categoryViews.length; i++) {
             if (i != category && categoryPagers[i] != null) categoryPagers[i].finishGesture();
@@ -1562,6 +1572,72 @@ public class MainActivity extends ComponentActivity {
         if (firstConnected) refreshTvAppInventory();
         renderVolumes(state);
         if (tvDialog != null) tvDialog.render(state);
+    }
+
+    private boolean labExploreEnabled(){
+        android.view.accessibility.AccessibilityManager manager=getSystemService(android.view.accessibility.AccessibilityManager.class);
+        return connectionOptions!=null&&connectionOptions.getBoolean("lab_haptics",true)
+            &&navigation.category()==CockpitNavigation.TV&&navigation.page()==0
+            &&remoteDial!=null&&remoteDial.isShown()&&(manager==null||!manager.isTouchExplorationEnabled());
+    }
+
+    private boolean labContains(View view,float x,float y,int[] xy){
+        if(view==null||!view.isShown())return false;
+        view.getLocationOnScreen(xy);
+        android.graphics.Rect visible=new android.graphics.Rect();
+        return view.getLocalVisibleRect(visible)&&visible.contains((int)(x-xy[0]),(int)(y-xy[1]));
+    }
+
+    private int labZone(float x,float y){
+        int[] xy=new int[2];
+        if(labContains(remoteDial,x,y,xy)){
+            int region=remoteDial.regionAt(x-xy[0],y-xy[1]);
+            if(region>=0)return region;
+        }
+        for(int i=0;i<labHapticKeys.size();i++)
+            if(labContains(labHapticKeys.get(i),x,y,xy))return LabHapticTracker.FIRST_BUTTON+i;
+        return LabHapticTracker.NONE;
+    }
+
+    @Override public boolean dispatchTouchEvent(MotionEvent e){
+        int action=e.getActionMasked();
+        float x=e.getRawX(),y=e.getRawY();
+        if(action==MotionEvent.ACTION_DOWN){
+            labTracking=labExploreEnabled();labMoved=false;labMulti=false;
+            if(labTracking){
+                labDownX=x;labDownY=y;labDownZone=labZone(x,y);
+                labHaptics.begin(labDownZone,x,y,e.getEventTime());
+            }
+        }else if(labTracking){
+            if(!labExploreEnabled()){labTracking=false;labHaptics.reset();}
+            else if(action==MotionEvent.ACTION_POINTER_DOWN){labMulti=true;labHaptics.reset();}
+            else if(action==MotionEvent.ACTION_MOVE&&!labMulti){
+                if(Math.hypot(x-labDownX,y-labDownY)>android.view.ViewConfiguration.get(this).getScaledTouchSlop())
+                    labMoved=true;
+                if(labMoved){
+                    LabHapticTracker.Cue cue=labHaptics.move(labZone(x,y),x,y,e.getEventTime(),dp(6));
+                    int feedback=-1;
+                    switch(cue){
+                        case CIRCLE:feedback=android.view.HapticFeedbackConstants.LONG_PRESS;break;
+                        case DIRECTION:feedback=android.view.HapticFeedbackConstants.CLOCK_TICK;break;
+                        case CENTER:feedback=android.view.HapticFeedbackConstants.CONTEXT_CLICK;break;
+                        case BUTTON:feedback=android.view.HapticFeedbackConstants.KEYBOARD_TAP;break;
+                        default:break;
+                    }
+                    if(feedback>=0)shell.performHapticFeedback(feedback);
+                }
+            }
+            if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){
+                boolean cancel=action==MotionEvent.ACTION_UP&&labDownZone>=0&&(labMoved||labMulti);
+                labTracking=false;labHaptics.reset();
+                if(cancel){
+                    MotionEvent aborted=MotionEvent.obtain(e);
+                    aborted.setAction(MotionEvent.ACTION_CANCEL);
+                    try{super.dispatchTouchEvent(aborted);return true;}finally{aborted.recycle();}
+                }
+            }
+        }
+        return super.dispatchTouchEvent(e);
     }
 
     @Override public void onWindowFocusChanged(boolean hasFocus) {

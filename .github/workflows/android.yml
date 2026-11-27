@@ -1,8 +1,8 @@
-name: Sofacockpit Android APK
+name: Sofacockpit Lab Android APK
 
 on:
   push:
-    branches: [main]
+    branches: ['experiment/intuitive-ui']
     paths:
       - 'app/**'
       - 'build.gradle'
@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   android:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/experiment/intuitive-ui'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -74,38 +74,41 @@ jobs:
             --ks-key-alias sofacockpit \
             --ks-pass env:SOFACOCKPIT_KEYSTORE_PASSWORD \
             --key-pass env:SOFACOCKPIT_KEYSTORE_PASSWORD \
-            --out dist/Sofacockpit.apk \
+            --out dist/Sofacockpit-Lab.apk \
             app/build/outputs/apk/release/app-release-unsigned.apk
           unset SOFACOCKPIT_KEYSTORE_PASSWORD
-          "$tools/apksigner" verify --verbose --print-certs dist/Sofacockpit.apk | tee "$RUNNER_TEMP/apk-signature.txt"
+          "$tools/apksigner" verify --verbose --print-certs dist/Sofacockpit-Lab.apk | tee "$RUNNER_TEMP/apk-signature.txt"
           grep -Fx 'Signer #1 certificate SHA-256 digest: 6bc8b1ff2f2f2bc6db4c56d4ffa53c080c05f48089dab7b66ccb7d74fa54ac83' "$RUNNER_TEMP/apk-signature.txt"
 
-      - name: Include standalone theme packages
-        run: cp app/src/main/assets/themes/*.sofatheme dist/
+      - name: Verify Lab package and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist/Sofacockpit-Lab.apk > "$RUNNER_TEMP/lab-badging.txt"
+          grep -E "^package: name='de.sofacockpit.lab' versionCode='1' versionName='0.1.0' " "$RUNNER_TEMP/lab-badging.txt"
+          grep -F "application-label:'Sofacockpit Lab'" "$RUNNER_TEMP/lab-badging.txt"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v1.1.10
+          name: Sofacockpit-Lab-Android-v0.1.0
           path: dist/
           if-no-files-found: error
           retention-days: 90
 
-      - name: Publish installable APK
+      - name: Publish Lab Pre-Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # Do not publish a superseded build after a newer main commit has landed.
-          latest=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq '.sha')
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/experiment/intuitive-ui" --jq '.object.sha')
           if [ "$latest" != "$GITHUB_SHA" ]; then
-            echo "Skipping release: a newer main commit exists."
+            echo "Skipping superseded Lab build."
             exit 0
           fi
-          notes="Stabiles Release der am TCL 85C89L mit v1.1.9 für alle vier HDMI-Eingänge bestätigten nativen Direktwahl. Antippen schaltet ohne Testdialog um; langes Drücken benennt den Eingang um. Vorhandene Testbestätigungen werden übernommen. Bei einem unbekannten TV kann das bestätigte TCL-Modellprofil einmalig gewählt werden. Allgemeine TV-Eingangsauswahl, bestehende Kopplung, HDMI-Namen und App-Favoriten bleiben erhalten. Kein ADB und keine Zusatz-App. Die separate Geräteabnahme der TV-App-Übersicht (Roadmap 0.2) sowie Regressionstests der neuen UI bleiben offen."
-          if gh release view sofacockpit-v1.1.10 >/dev/null 2>&1; then
-            echo "Release already exists; not replacing a published version."
+          if gh release view sofacockpit-lab-v0.1.0 >/dev/null 2>&1; then
+            echo "Lab release already exists; never replace a published version."
             exit 0
           fi
-          gh release create sofacockpit-v1.1.10 dist/Sofacockpit.apk dist/*.sofatheme \
-            --target "$GITHUB_SHA" --title "Sofacockpit v1.1.10 (HDMI-Direktwahl)" \
-            --latest --notes "$notes"
+          gh release create sofacockpit-lab-v0.1.0 dist/Sofacockpit-Lab.apk \
+            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.0" \
+            --prerelease --latest=false --notes "Erste native Lab-Testversion. Eigenständiges Android-Paket de.sofacockpit.lab, Original-App bleibt installiert. Aktivitäten mit gemeldetem TV-App-Inventar und HDMI-Namen, Navigation ohne Seitenwischen, kontextbezogene Streaming-/Gaming-/Soundbar-Steuerung, kompakte DRC-/Night-Time-Zeile, haptische Orientierung. TV-/Soundbar-Steuerung und Konfiguration aus v1.1.10 wiederverwendet. Erneute Einrichtung/Kopplung oder geprüfter Backup-Import erforderlich. Sprache, Makros, direkte Bild-/Maus-/Tastatursteuerung und Standby-Automatik noch offen. Haptik und parallele Installation/Updates am Gerät prüfen."

@@ -63,6 +63,8 @@ public final class ThemedDial extends View {
     }
     @Override protected void onDraw(Canvas c){ThemeArt.drawDial(c,left,top,side,pack,pressed,isEnabled());}
     private int hit(float x,float y){return DialGeometry.hit(x-left,y-top,side,pack.theme.centerRatio);}
+    /** Local coordinates; returns -1 outside the circle. No device action. */
+    public int regionAt(float x,float y){return hit(x,y);}
     @Override public boolean onTouchEvent(MotionEvent e){
         if(!isEnabled())return false;
         switch(e.getActionMasked()){
