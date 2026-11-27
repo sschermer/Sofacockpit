@@ -7,12 +7,11 @@ import android.content.res.ColorStateList;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Typeface;
+import android.graphics.LinearGradient;
+import android.graphics.Shader;
 import android.graphics.drawable.GradientDrawable;
-import android.media.AudioAttributes;
-import android.os.Build;
-import android.os.VibrationEffect;
-import android.os.Vibrator;
-import android.os.VibratorManager;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -23,45 +22,27 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-/** Isolated local experiment: no TV, soundbar, network or production feedback references. */
+/** Two isolated audio-haptic experiments. No TV or soundbar commands. */
 final class HapticLabDialog implements AutoCloseable {
     private final Activity activity;
     private final int bg,panel,text,muted,accent;
-    private final Vibrator motor;
-    private final boolean amplitude,hasMotor,envelope;
-    private final HapticReferenceRamp.EnvelopePlan nativeReference;
-    private final android.os.Handler referenceHandler=new android.os.Handler(android.os.Looper.getMainLooper());
-    private long referenceDeadline;
-    private final Runnable referenceGuard=this::guardReference;
-    private final int motorCount;
+    private final Handler main=new Handler(Looper.getMainLooper());
+    private final boolean direct=HapticAudioSession.directSupported();
+    private final boolean generator=HapticAudioSession.generatorSupported();
     private Dialog dialog;
-    private Pad pad;
-    private TextView status,levelLabel,description;
-    private SeekBar level;
-    private int strength=90,sharpness=85;
-    private HapticLabPatterns.Surface surface=HapticLabPatterns.Surface.TRACK_LINEAR;
-    private long lastStart=-1000;
-    private long busyUntil=0;
-    // One bounded vibration for a stationary finger; no periodic restart.
-    private final MagnetOutput magnetOutput=new MagnetOutput();
+    private TextView status,levelLabel;
+    private Pad first,second,activePad;
+    private ExecutorService worker;
+    private HapticAudioSession session;
+    private int strength=60;
+    private final Runnable guard=this::checkGuard;
 
     HapticLabDialog(Activity activity,int bg,int panel,int text,int muted,int accent){
         this.activity=activity;this.bg=bg;this.panel=panel;this.text=text;this.muted=muted;this.accent=accent;
-        Vibrator v=null;int count=0;
-        try{
-            if(Build.VERSION.SDK_INT>=31){
-                VibratorManager manager=activity.getSystemService(VibratorManager.class);
-                if(manager!=null){v=manager.getDefaultVibrator();count=manager.getVibratorIds().length;}
-            }else v=activity.getSystemService(Vibrator.class);
-        }catch(RuntimeException ignored){}
-        motor=v;hasMotor=v!=null&&v.hasVibrator();
-        motorCount=Build.VERSION.SDK_INT>=31?count:hasMotor?1:0;
-        amplitude=hasMotor&&v.hasAmplitudeControl();
-        envelope=hasMotor&&Build.VERSION.SDK_INT>=36&&Envelope.supported(v);
-        nativeReference=hasMotor&&Build.VERSION.SDK_INT>=36?Envelope.referencePlan(v):null;
     }
-
     void show(){
         if(activity.isFinishing()||activity.isDestroyed()||(dialog!=null&&dialog.isShowing()))return;
         Dialog d=new Dialog(activity,android.R.style.Theme_Material_NoActionBar){
@@ -71,500 +52,173 @@ final class HapticLabDialog implements AutoCloseable {
             }
         };
         dialog=d;
-        LinearLayout outer=new LinearLayout(activity);
-        outer.setOrientation(LinearLayout.VERTICAL);outer.setBackgroundColor(bg);
+        worker=Executors.newSingleThreadExecutor();
+        LinearLayout outer=column();outer.setBackgroundColor(bg);
         outer.setPadding(dp(12),dp(12),dp(12),dp(8));
-        LinearLayout header=row();
+        LinearLayout header=new LinearLayout(activity);header.setGravity(Gravity.CENTER_VERTICAL);
         TextView title=label("Haptik-Labor",22,text);title.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
         header.addView(title,new LinearLayout.LayoutParams(0,-2,1));
-        Button close=button("Schließen",this::close);
-        header.addView(close,new LinearLayout.LayoutParams(-2,dp(48)));
+        header.addView(button("Schließen",this::close),new LinearLayout.LayoutParams(-2,dp(48)));
         outer.addView(header);
-        ScrollView scroll=new ScrollView(activity);scroll.setFillViewport(false);
-        LinearLayout body=new LinearLayout(activity);body.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroll=new ScrollView(activity);LinearLayout body=column();
         scroll.addView(body,new ScrollView.LayoutParams(-1,-2));
         outer.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        body.addView(label("Nur Testfläche. Keine Befehle an TV oder Soundbar.",13,muted));
-        body.addView(label("Motoren laut Android: "+(Build.VERSION.SDK_INT>=31?String.valueOf(motorCount):"nicht einzeln abfragbar")
-            +" · Amplitudenregelung: "+(amplitude?"ja":"nein")
-            +" · Hüllkurven/Schärfe: "+(envelope?"ja":"nein"),12,muted));
-        status=label("Bereit",12,accent);body.addView(status);
-        levelLabel=label("Stärke: "+strength+" %",16,text);body.addView(levelLabel);
-        level=new SeekBar(activity);
-        level.setMax(100);level.setProgress(strength);
-        level.setContentDescription("Vibrationsstärke von 0 bis 100 Prozent");
-        level.setProgressTintList(ColorStateList.valueOf(accent));level.setThumbTintList(ColorStateList.valueOf(accent));
-        body.addView(level,new LinearLayout.LayoutParams(-1,dp(40)));
+        levelLabel=label("Maximale Intensität: "+strength+" %",16,text);body.addView(levelLabel);
+        SeekBar level=new SeekBar(activity);level.setMax(100);level.setProgress(strength);
+        level.setContentDescription("Maximale Intensität");
+        level.setProgressTintList(ColorStateList.valueOf(accent));
+        level.setThumbTintList(ColorStateList.valueOf(accent));
+        body.addView(level,new LinearLayout.LayoutParams(-1,dp(48)));
         level.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
             @Override public void onStartTrackingTouch(SeekBar bar){stop();}
-            @Override public void onStopTrackingTouch(SeekBar bar){play(HapticLabPatterns.Cue.LEVEL,100,false);}
+            @Override public void onStopTrackingTouch(SeekBar bar){}
             @Override public void onProgressChanged(SeekBar bar,int value,boolean user){
-                strength=value;levelLabel.setText("Stärke: "+strength+" %");
-                if(strength==0)stop();
+                strength=value;levelLabel.setText("Maximale Intensität: "+value+" %");
+                if(value==0)stop();
             }
         });
-        LinearLayout presets=row();
-        for(int percent:new int[]{25,60,80,90,100}){
-            presets.addView(button(percent+" %",()->{
-                stop();level.setProgress(percent);play(HapticLabPatterns.Cue.LEVEL,100,false);
-            }),new LinearLayout.LayoutParams(0,dp(48),1));
-        }
-        body.addView(presets);
-        heading(body,"Oberflächen");
-        LinearLayout modes=row();
-        for(HapticLabPatterns.Surface option:HapticLabPatterns.Surface.values()){
-            if(option.isMagnet())continue;
-            Button b=button(option.label,()->chooseSurface(option));
-            modes.addView(b,new LinearLayout.LayoutParams(0,dp(48),1));
-        }
-        body.addView(modes);
-        body.addView(button("Magnetismus · Kreis",()->chooseSurface(HapticLabPatterns.Surface.MAGNET)),
-            new LinearLayout.LayoutParams(-1,dp(48)));
-        LinearLayout tracks=row();
-        for(HapticLabPatterns.Surface option:new HapticLabPatterns.Surface[]{
-                HapticLabPatterns.Surface.TRACK_LINEAR,HapticLabPatterns.Surface.TRACK_QUADRATIC}){
-            tracks.addView(button(option.label,()->chooseSurface(option)),new LinearLayout.LayoutParams(0,dp(48),1));
-        }
-        body.addView(tracks);
-        description=label(surfaceDescription(),13,muted);body.addView(description);
-        pad=new Pad(activity);
-        body.addView(pad,new LinearLayout.LayoutParams(-1,dp(224)));
-        heading(body,"Referenz · ohne neue Vibrationsanforderung");
-        body.addView(label("3 Sekunden Anstieg, kurz halten, weich abklingen. Nicht streichen: nur antippen und die gleichmäßige Zunahme beurteilen.",13,muted));
-        Button waveformReference=button("Automatische Rampe · Wellenform",()->playReference(false));
-        waveformReference.setEnabled(amplitude);
-        body.addView(waveformReference,new LinearLayout.LayoutParams(-1,dp(48)));
-        Button envelopeReference=button("Automatische Rampe · native Hüllkurve",()->playReference(true));
-        envelopeReference.setEnabled(nativeReference!=null);
-        body.addView(envelopeReference,new LinearLayout.LayoutParams(-1,dp(48)));
-        if(nativeReference==null)body.addView(label("Die native 3,7-s-Hüllkurve ist innerhalb der gemeldeten Gerätegrenzen nicht verfügbar.",12,muted));
-        if(!amplitude)body.addView(label("Keine Amplitudenregelung – Wellenformvergleich nicht verfügbar.",12,muted));
-        heading(body,"Echtzeit-Haptik · Geräteprüfung");
-        body.addView(label(audioHapticsSupport(),13,muted));
-        body.addView(label("Nur Abfrage der Android-Unterstützung. Noch kein Audio-Test, keine Änderung der Lautstärke. Falls beide Funktionen verfügbar sind, ist ein separater Streaming-Test sinnvoll.",12,muted));
-        heading(body,"Einzelimpulse");
-        HapticLabPatterns.Cue[] patterns={
-            HapticLabPatterns.Cue.TICK,HapticLabPatterns.Cue.CLICK,
-            HapticLabPatterns.Cue.DOUBLE,HapticLabPatterns.Cue.THUD,
-            HapticLabPatterns.Cue.RISE,HapticLabPatterns.Cue.FALL,
-            HapticLabPatterns.Cue.WAVE,HapticLabPatterns.Cue.RATCHET,
-            HapticLabPatterns.Cue.CENTER,HapticLabPatterns.Cue.LEVEL};
-        for(int i=0;i<patterns.length;i+=2){
-            LinearLayout r=row();
-            for(int j=i;j<Math.min(i+2,patterns.length);j++){
-                HapticLabPatterns.Cue cue=patterns[j];
-                r.addView(button(cue.label,()->play(cue,100,false)),new LinearLayout.LayoutParams(0,dp(48),1));
-            }
-            body.addView(r);
-        }
-        if(Build.VERSION.SDK_INT>=30){
-            heading(body,"Native Motorimpulse");
-            addPrimitives(body);
-        }
-        heading(body,"Hüllkurven: weich bis scharf");
-        if(envelope){
-            TextView sharpLabel=label("Schärfe: "+sharpness+" %",14,text);body.addView(sharpLabel);
-            SeekBar sharp=new SeekBar(activity);sharp.setMax(100);sharp.setProgress(sharpness);
-            sharp.setContentDescription("Haptische Schärfe von 0 bis 100 Prozent");
-            sharp.setProgressTintList(ColorStateList.valueOf(accent));sharp.setThumbTintList(ColorStateList.valueOf(accent));
-            body.addView(sharp,new LinearLayout.LayoutParams(-1,dp(40)));
-            sharp.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
-                @Override public void onStartTrackingTouch(SeekBar bar){stop();}
-                @Override public void onStopTrackingTouch(SeekBar bar){playEnvelope(sharpness,sharpness);}
-                @Override public void onProgressChanged(SeekBar bar,int value,boolean user){
-                    sharpness=value;sharpLabel.setText("Schärfe: "+sharpness+" %");
-                }
-            });
-            LinearLayout r=row();
-            r.addView(button("Weich",()->playEnvelope(0,0)),new LinearLayout.LayoutParams(0,dp(48),1));
-            r.addView(button("Scharf",()->playEnvelope(100,100)),new LinearLayout.LayoutParams(0,dp(48),1));
-            r.addView(button("Verlauf",()->playEnvelope(0,100)),new LinearLayout.LayoutParams(0,dp(48),1));
-            body.addView(r);
-        }else body.addView(label("Android meldet keine Hüllkurvenunterstützung. Die Amplitudenmuster oben bleiben verfügbar.",13,muted));
-        body.addView(label("100 % = maximaler angeforderter API-Wert; Android-Einstellungen und Motor begrenzen die reale Stärke. Bei ausgeschalteter Systemhaptik bleibt der Test stumm. Relief, Texturen und Rastleiste geben Bewegungsimpulse ab; Magnetismus: eine gleichbleibende Vibration bei ruhendem Finger; Änderung nur bei merklichem Abstandswandel. Alle Testflächen enden nach 5 Sekunden pro Berührung; danach erneut ansetzen.",12,muted));
-        Button stop=button("Vibration stoppen",this::stop);
-        outer.addView(stop,new LinearLayout.LayoutParams(-1,dp(48)));
+        body.addView(label("Von links nach rechts streichen, innehalten, zurückstreichen. Rechts 80 → 100 % Einrasten, danach Ruhe.",13,muted));
+        status=label("Bereit · maximal 5 Sekunden je Berührung",13,accent);body.addView(status);
+        heading(body,"1 · Direkter Haptikkanal");
+        body.addView(label(direct?"Android meldet Audio-Haptik: ja · experimenteller Kanal, kein Audiosignal links/rechts.":
+            "Android meldet Audio-Haptik: nein oder Abfrage fehlgeschlagen.",12,muted));
+        first=new Pad(activity,HapticAudioSession.Mode.DIRECT,direct);
+        body.addView(first,new LinearLayout.LayoutParams(-1,dp(144)));
+        heading(body,"2 · HapticGenerator");
+        body.addView(label(generator?"Android meldet HapticGenerator: ja · ein leiser Ton kann hörbar sein.":
+            "Android meldet HapticGenerator: nein oder Abfrage fehlgeschlagen.",12,muted));
+        second=new Pad(activity,HapticAudioSession.Mode.GENERATOR,generator);
+        body.addView(second,new LinearLayout.LayoutParams(-1,dp(144)));
+        body.addView(label("Nur interner Lautsprecher. Kein Mikrofon, keine Systemlautstärkeänderung. 100 % ist der gewählte Signalpegel, nicht eine gemessene Motorstärke.",12,muted));
+        outer.addView(button("Test stoppen",this::stop),new LinearLayout.LayoutParams(-1,dp(48)));
         d.setContentView(outer);
         d.setOnDismissListener(ignored->{
             stop();
-            if(dialog==d){dialog=null;pad=null;status=null;}
+            if(worker!=null){worker.shutdownNow();worker=null;}
+            if(dialog==d){dialog=null;first=null;second=null;status=null;}
         });
         d.show();
         if(d.getWindow()!=null)d.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT);
-        report(hasMotor?"Bereit – Testfläche oder Impuls antippen":"Kein Vibrationsmotor gemeldet");
     }
-
-    private String surfaceDescription(){
-        return surface.description+(surface.isMagnet()&&!amplitude?
-            "\nOhne Amplitudenregelung: gleichmäßige Vibration mit System-Standardstärke; Abstandsregelung nicht verfügbar.":"");
-    }
-    private void chooseSurface(HapticLabPatterns.Surface option){
-        stop();surface=option;description.setText(surfaceDescription());pad.invalidate();
-        report("Testfläche: "+option.label);
-    }
-    private void heading(LinearLayout body,String text){
-        TextView title=label(text,16,this.text);title.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
-        title.setPadding(dp(4),dp(12),0,dp(3));body.addView(title);
-    }
-    private LinearLayout row(){
-        LinearLayout r=new LinearLayout(activity);r.setGravity(Gravity.CENTER_VERTICAL);
-        r.setBaselineAligned(false);return r;
-    }
+    private LinearLayout column(){LinearLayout l=new LinearLayout(activity);l.setOrientation(LinearLayout.VERTICAL);return l;}
+    private int dp(float v){return Math.round(v*activity.getResources().getDisplayMetrics().density);}
     private TextView label(String value,int sp,int color){
         TextView v=new TextView(activity);v.setText(value);v.setTextSize(sp);v.setTextColor(color);
         v.setPadding(dp(4),dp(4),dp(4),dp(4));return v;
     }
+    private void heading(LinearLayout body,String value){
+        TextView v=label(value,16,text);v.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+        v.setPadding(dp(4),dp(12),0,dp(2));body.addView(v);
+    }
     private Button button(String value,Runnable action){
-        Button b=new Button(activity);b.setText(value);b.setAllCaps(false);b.setTextSize(12);
-        b.setTextColor(text);b.setGravity(Gravity.CENTER);b.setMinHeight(0);b.setMinimumHeight(0);
-        b.setMinWidth(0);b.setMinimumWidth(0);b.setPadding(dp(3),0,dp(3),0);
+        Button v=new Button(activity);v.setText(value);v.setAllCaps(false);v.setTextSize(13);v.setTextColor(text);
+        v.setMinHeight(0);v.setMinimumHeight(0);v.setHapticFeedbackEnabled(false);
         GradientDrawable shape=new GradientDrawable();shape.setColor(panel);shape.setCornerRadius(dp(8));
-        shape.setStroke(dp(1),bg);b.setBackground(shape);
-        b.setHapticFeedbackEnabled(false);
-        b.setOnClickListener(v->action.run());return b;
+        v.setBackground(shape);v.setOnClickListener(ignored->action.run());return v;
     }
-    private void report(String message){if(status!=null)status.setText(message);}
+    private void report(String value){if(status!=null)status.setText(value);}
     private boolean available(){
-        if(dialog==null||!dialog.isShowing()||dialog.getWindow()==null||
-            !dialog.getWindow().getDecorView().hasWindowFocus())return false;
-        if(!hasMotor){report("Kein Motor verfügbar");return false;}
-        if(Settings.System.getInt(activity.getContentResolver(),Settings.System.HAPTIC_FEEDBACK_ENABLED,1)==0){
-            stop();report("Systemhaptik ausgeschaltet");return false;
-        }
-        if(strength==0){stop();report("Stärke 0 % – stumm");return false;}
-        return true;
+        return dialog!=null&&dialog.isShowing()&&dialog.getWindow()!=null&&
+            dialog.getWindow().getDecorView().hasWindowFocus()&&strength>0&&
+            Settings.System.getInt(activity.getContentResolver(),Settings.System.HAPTIC_FEEDBACK_ENABLED,1)!=0;
     }
-    private boolean emit(VibrationEffect effect,long duration,String label,boolean motion){
-        if(!available())return false;
-        long now=android.os.SystemClock.uptimeMillis();
-        if(now-lastStart<45||(motion&&now<busyUntil))return false;
-        try{
-            clearReferenceGuard();
-            motor.cancel();
-            vibrate(effect);
-            lastStart=now;busyUntil=now+duration;
-            report(label+" · angefordert "+strength+" %");
-            return true;
-        }catch(RuntimeException e){report("Effekt konnte nicht gestartet werden");return false;}
-    }
-    private void vibrate(VibrationEffect effect){
-        if(Build.VERSION.SDK_INT>=33){
-            motor.vibrate(effect,new android.os.VibrationAttributes.Builder()
-                .setUsage(android.os.VibrationAttributes.USAGE_TOUCH).build());
-        }else{
-            motor.vibrate(effect,new AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).build());
-        }
-    }
-    /** No timer-driven restart while the requested level is steady. The tick
-     * only checks touch safety and delivers a pending change after rate limiting. */
-    private void playMagnet(MagnetField.Reading reading,long now,long remaining){
-        if(remaining<=0||!available()){stop();return;}
-        try{
-            MagnetOutput.Plan plan=magnetOutput.update(reading,strength,amplitude,now,remaining);
-            switch(plan.kind){
-                case NONE:return;
-                case STOP:
-                    motor.cancel();report("Außerhalb des Annäherungsrings");return;
-                case SNAP:
-                    motor.cancel();
-                    vibrate(VibrationEffect.createOneShot(plan.duration,plan.amplitude));
-                    report("Eingerastet · "+strength+" % · danach Ruhe");return;
-                case HUM:
-                    // Avoid explicit cancel between nonzero amplitude levels.
-                    // One finite effect covers the remainder of the touch.
-                    VibrationEffect effect=plan.hasRamp()?
-                        VibrationEffect.createWaveform(plan.times,plan.amplitudes,-1):
-                        VibrationEffect.createOneShot(plan.duration,plan.amplitude);
-                    vibrate(effect);
-                    report(amplitude?"Annäherung · "+Math.round(plan.amplitude*100f/255f)+" % · Dauervibration":
-                        "Annäherung · konstante Systemstärke");
-                    return;
-            }
-        }catch(RuntimeException e){stop();report("Magneteffekt konnte nicht gestartet werden");}
-    }
-    private void play(HapticLabPatterns.Cue cue,int scale,boolean motion){
-        if(!available())return;
-        int value=Math.round(strength*Math.max(0,Math.min(100,scale))/100f);
-        int[] amplitudes=cue.scaled(value,amplitude);
-        boolean on=false;for(int a:amplitudes)if(a!=0){on=true;break;}
-        if(!on)return;
-        emit(VibrationEffect.createWaveform(cue.times,amplitudes,-1),cue.duration(),
-            cue.label+" ("+value+" %)",motion);
-    }
-    private void addPrimitives(LinearLayout body){
-        int[] ids={VibrationEffect.Composition.PRIMITIVE_CLICK,
-            VibrationEffect.Composition.PRIMITIVE_TICK,VibrationEffect.Composition.PRIMITIVE_LOW_TICK,
-            VibrationEffect.Composition.PRIMITIVE_THUD,VibrationEffect.Composition.PRIMITIVE_SPIN,
-            VibrationEffect.Composition.PRIMITIVE_QUICK_RISE,VibrationEffect.Composition.PRIMITIVE_SLOW_RISE,
-            VibrationEffect.Composition.PRIMITIVE_QUICK_FALL};
-        String[] names={"Klick","Tick","Tiefer Tick","Dumpfer Stoß","Spin","Schneller Anstieg","Langsamer Anstieg","Schneller Abfall"};
-        boolean[] supported=hasMotor?motor.arePrimitivesSupported(ids):new boolean[ids.length];
-        LinearLayout r=null;int shown=0;
-        for(int i=0;i<ids.length;i++){
-            if(!supported[i])continue;
-            final int id=ids[i];final String name=names[i];
-            if(shown%2==0){r=row();body.addView(r);}
-            r.addView(button(name,()->{
-                if(!available())return;
-                try{
-                    VibrationEffect effect=VibrationEffect.startComposition()
-                        .addPrimitive(id,strength/100f).compose();
-                    long duration=Build.VERSION.SDK_INT>=31?motor.getPrimitiveDurations(id)[0]:180;
-                    emit(effect,Math.max(40,duration),name+" (nativ)",false);
-                }catch(RuntimeException e){report("Nativer Effekt nicht verfügbar");}
-            }),new LinearLayout.LayoutParams(0,dp(48),1));
-            shown++;
-        }
-        if(shown==0)body.addView(label("Keine nativen Einzelimpulse gemeldet.",13,muted));
-    }
-    private String audioHapticsSupport(){
-        String playback="nicht verfügbar",generator="nicht verfügbar";
-        if(Build.VERSION.SDK_INT>=29){
-            try{playback=android.media.AudioManager.isHapticPlaybackSupported()?"ja":"nein";}
-            catch(RuntimeException e){playback="Abfrage fehlgeschlagen";}
-        }
-        if(Build.VERSION.SDK_INT>=31){
-            try{generator=android.media.audiofx.HapticGenerator.isAvailable()?"ja":"nein";}
-            catch(RuntimeException e){generator="Abfrage fehlgeschlagen";}
-        }
-        return "Audio-gekoppelte Haptik: "+playback+"\nHapticGenerator: "+generator;
-    }
-    private void clearReferenceGuard(){
-        referenceDeadline=0;referenceHandler.removeCallbacks(referenceGuard);
-    }
-    private void guardReference(){
-        if(referenceDeadline==0)return;
-        if(!available()){stop();return;}
-        long left=referenceDeadline-android.os.SystemClock.uptimeMillis();
-        if(left<=0){clearReferenceGuard();report("Referenz beendet");return;}
-        referenceHandler.postDelayed(referenceGuard,Math.min(50,left));
-    }
-    private void playReference(boolean nativeEnvelope){
+    private void begin(Pad pad,float position){
         stop();
-        if(!available())return;
-        if(nativeEnvelope&&nativeReference==null){report("Native Referenz nicht unterstützt");return;}
-        if(!nativeEnvelope&&!amplitude){report("Amplitudenregelung fehlt");return;}
-        try{
-            VibrationEffect effect;
-            if(nativeEnvelope){
-                effect=Envelope.reference(nativeReference,strength/100f,0f);
-            }else{
-                HapticReferenceRamp.Waveform plan=HapticReferenceRamp.waveform(strength);
-                effect=VibrationEffect.createWaveform(plan.times,plan.amplitudes,-1);
-            }
-            // Exactly one call to vibrate per reference. No timer-driven restarts.
-            long now=android.os.SystemClock.uptimeMillis();
-            vibrate(effect);
-            lastStart=now;busyUntil=now+HapticReferenceRamp.DURATION_MS;
-            referenceDeadline=busyUntil;
-            referenceHandler.postDelayed(referenceGuard,50);
-            report((nativeEnvelope?"Native Hüllkurve":"Einzelne Wellenform")+" · 3 s Anstieg · "+strength+" %");
-        }catch(RuntimeException e){stop();report("Referenz konnte nicht gestartet werden");}
+        if(!pad.supported){report("Diese Technik wird von Android nicht als verfügbar gemeldet");return;}
+        if(!available()||worker==null){report("Haptik ausgeschaltet oder Intensität 0 %");return;}
+        pad.down=true;activePad=pad;
+        final HapticAudioSession[] identity=new HapticAudioSession[1];
+        HapticAudioSession next=new HapticAudioSession(activity,pad.mode,strength,
+            message->main.post(()->{if(session==identity[0])report(message);}),
+            ()->main.post(()->{if(session==identity[0]){session=null;activePad=null;pad.reset();main.removeCallbacks(guard);}}));
+        identity[0]=next;session=next;next.position(position);
+        report((pad.mode==HapticAudioSession.Mode.DIRECT?"Direkter Kanal":"HapticGenerator")+" · Stream wird geöffnet");
+        try{worker.execute(next);}
+        catch(RuntimeException e){stop();report("Test konnte nicht gestartet werden");return;}
+        main.postDelayed(guard,50);
     }
-
-    private void playEnvelope(int from,int to){
-        if(!available()||!envelope)return;
-        try{
-            VibrationEffect effect=Envelope.create(motor,strength/100f,from/100f,to/100f);
-            emit(effect,240,"Hüllkurve "+from+" → "+to+" % Schärfe",false);
-        }catch(RuntimeException e){report("Hüllkurve nicht verfügbar – Einzelimpulse verwenden");}
+    private void checkGuard(){
+        if(session==null)return;
+        if(!available()||activePad==null||!activePad.isShown()||!activePad.hasWindowFocus()){
+            stop();return;
+        }
+        main.postDelayed(guard,50);
     }
-    /** Keep Android 16-only classes out of the older device paths. */
-    private static final class Envelope{
-        static boolean supported(Vibrator v){
-            try{
-                if(!v.areEnvelopeEffectsSupported())return false;
-                android.os.vibrator.VibratorEnvelopeEffectInfo info=v.getEnvelopeEffectInfo();
-                return info!=null&&info.getMaxSize()>=3&&info.getMinControlPointDurationMillis()<=60
-                    &&info.getMaxControlPointDurationMillis()>=60&&info.getMaxDurationMillis()>=240;
-            }catch(RuntimeException e){return false;}
-        }
-        static HapticReferenceRamp.EnvelopePlan referencePlan(Vibrator v){
-            try{
-                if(!v.areEnvelopeEffectsSupported())return null;
-                android.os.vibrator.VibratorEnvelopeEffectInfo info=v.getEnvelopeEffectInfo();
-                if(info==null)return null;
-                return HapticReferenceRamp.envelope(info.getMinControlPointDurationMillis(),
-                    info.getMaxControlPointDurationMillis(),info.getMaxSize(),info.getMaxDurationMillis());
-            }catch(RuntimeException e){return null;}
-        }
-        static VibrationEffect reference(HapticReferenceRamp.EnvelopePlan plan,float intensity,float sharpness){
-            VibrationEffect.BasicEnvelopeBuilder builder=new VibrationEffect.BasicEnvelopeBuilder()
-                .setInitialSharpness(sharpness);
-            for(int i=0;i<plan.times.length;i++)
-                builder.addControlPoint(intensity*plan.intensities[i],sharpness,plan.times[i]);
-            return builder.build();
-        }
-        static VibrationEffect create(Vibrator v,float intensity,float from,float to){
-            long minimum=v.getEnvelopeEffectInfo().getMinControlPointDurationMillis();
-            long rise=Math.max(40,minimum),fall=Math.max(40,minimum);
-            return new VibrationEffect.BasicEnvelopeBuilder().setInitialSharpness(from)
-                .addControlPoint(intensity,from,rise)
-                .addControlPoint(intensity,to,60)
-                .addControlPoint(0f,to,fall).build();
-        }
-    }
-
     private void stop(){
-        clearReferenceGuard();
-        if(pad!=null)pad.reset();
-        if(hasMotor)try{motor.cancel();}catch(RuntimeException ignored){}
-        busyUntil=0;magnetOutput.reset();
+        main.removeCallbacks(guard);
+        if(session!=null){session.cancel();session=null;}
+        activePad=null;
+        if(first!=null)first.reset();
+        if(second!=null)second.reset();
     }
-    @Override public void close(){
-        stop();Dialog d=dialog;if(d!=null)d.dismiss();
-    }
-    private int dp(float n){return Math.round(n*activity.getResources().getDisplayMetrics().density);}
-
+    @Override public void close(){stop();Dialog d=dialog;if(d!=null)d.dismiss();}
     private final class Pad extends View {
-        private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final HapticLabPatterns.Gesture gesture=new HapticLabPatterns.Gesture();
-        private final MagnetField magnet=new MagnetField();
-        private final MagnetTrack track=new MagnetTrack();
-        private final Runnable magnetTick=this::tickMagnet;
-        private final float density=getResources().getDisplayMetrics().density;
-        private boolean down;
-        private float x,y;
-        private MagnetField.Reading magnetReading;
-        Pad(Context context){
-            super(context);setFocusable(true);setHapticFeedbackEnabled(false);
-            setContentDescription("Haptische Testfläche. Mit einem Finger streichen. Einzelimpulse sind darunter als Tasten verfügbar.");
+        final HapticAudioSession.Mode mode;final boolean supported;
+        final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
+        boolean down;float x,y;
+        Pad(Context context,HapticAudioSession.Mode mode,boolean supported){
+            super(context);this.mode=mode;this.supported=supported;
+            setHapticFeedbackEnabled(false);setFocusable(true);
+            setContentDescription((mode==HapticAudioSession.Mode.DIRECT?"Direkter Haptikkanal":"HapticGenerator")+
+                ": horizontale Testbahn mit OK-Ziel rechts");
         }
-        private void signal(HapticLabPatterns.Signal s){if(s!=null)play(s.cue,s.scale,true);}
-        private void updateMagnet(){
-            if(!down||!surface.isMagnet())return;
-            long now=android.os.SystemClock.uptimeMillis();
-            if(!isShown()||!hasWindowFocus()){stop();return;}
-            long remaining=surface.isTrack()?track.remaining(now):magnet.remaining(now);
-            if(remaining<=0){stop();report("5 Sekunden erreicht – Finger neu ansetzen");return;}
-            magnetReading=surface.isTrack()?
-                track.sample(x/density,y/density,getWidth()/density,getHeight()/density,now,surface.trackCurve()):
-                magnet.sample(x/density,y/density,getWidth()/density,getHeight()/density,now);
-            playMagnet(magnetReading,now,remaining);
-            invalidate();
-        }
-        private void tickMagnet(){
-            updateMagnet();
-            if(down&&surface.isMagnet())postDelayed(magnetTick,MagnetOutput.TICK_MS);
-        }
+        void reset(){down=false;invalidate();}
         @Override public boolean onTouchEvent(MotionEvent event){
-            int action=event.getActionMasked();
-            switch(action){
+            switch(event.getActionMasked()){
                 case MotionEvent.ACTION_DOWN:
-                    stop();down=true;x=event.getX();y=event.getY();
+                    if(activePad!=null&&activePad!=this){stop();return true;}
+                    x=event.getX();y=event.getY();
+                    if(getWidth()<=0)return true;
                     getParent().requestDisallowInterceptTouchEvent(true);
-                    if(surface.isMagnet()){
-                        long now=android.os.SystemClock.uptimeMillis();
-                        if(surface.isTrack())track.begin(now);else magnet.begin(now);
-                        tickMagnet();
-                    }else signal(gesture.begin(surface,x/density,y/density,getWidth()/density,getHeight()/density,event.getEventTime()));
-                    invalidate();return true;
+                    begin(this,x/getWidth());invalidate();return true;
                 case MotionEvent.ACTION_MOVE:
-                    if(down&&event.getPointerCount()==1){
+                    if(down&&activePad==this&&session!=null&&event.getPointerCount()==1){
                         x=event.getX();y=event.getY();
-                        if(surface.isMagnet())updateMagnet();
-                        else signal(gesture.move(x/density,y/density,getWidth()/density,getHeight()/density,event.getEventTime()));
-                        invalidate();
+                        if(x<0||x>=getWidth()||y<0||y>=getHeight()){stop();return true;}
+                        session.position(x/getWidth());invalidate();
                     }
                     return true;
                 case MotionEvent.ACTION_POINTER_DOWN:
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_CANCEL:
-                    stop();getParent().requestDisallowInterceptTouchEvent(false);
-                    if(action==MotionEvent.ACTION_UP)performClick();
+                    if(activePad==this)stop();
+                    getParent().requestDisallowInterceptTouchEvent(false);
+                    if(event.getActionMasked()==MotionEvent.ACTION_UP)performClick();
                     return true;
                 default:return true;
             }
         }
         @Override public boolean performClick(){super.performClick();return true;}
-        void reset(){
-            down=false;gesture.stop();magnet.stop();track.stop();magnetReading=null;
-            removeCallbacks(magnetTick);invalidate();
-        }
         @Override protected void onDetachedFromWindow(){
-            if(pad==this)stop();else reset();
+            if(activePad==this)stop();else reset();
             super.onDetachedFromWindow();
         }
-        @Override protected void onDraw(Canvas c){
-            super.onDraw(c);float w=getWidth(),h=getHeight();
+        @Override protected void onDraw(Canvas canvas){
+            super.onDraw(canvas);float w=getWidth(),h=getHeight();
+            if(w<=0||h<=0)return;
+            float target=w*HapticStreamSignal.TARGET;
             paint.setStyle(Paint.Style.FILL);paint.setColor(panel);
-            c.drawRoundRect(0,0,w,h,dp(10),dp(10),paint);
-            if(surface.isTrack()){
-                // Continuous, line-free mist. The sampled gradient approximates
-                // the chosen curve; only the actual snap target has an outline.
-                if(w>0&&h>0){
-                    float target=(float)(w*MagnetTrack.TARGET);
-                    int[] colors=new int[35];float[] stops=new float[35];
-                    for(int i=0;i<colors.length;i++){
-                        double position=i==0?0:i==34?1:
-                            MagnetTrack.START+(MagnetTrack.PLATEAU-MagnetTrack.START)*(i-1)/32.0;
-                        stops[i]=(float)position;
-                        int alpha=(int)Math.round(100*MagnetTrack.intensity(position,surface.trackCurve())/MagnetTrack.PLATEAU_PERCENT);
-                        colors[i]=(accent&0x00ffffff)|(alpha<<24);
-                    }
-                    paint.setColor(accent);paint.setAlpha(255);
-                    paint.setShader(new android.graphics.LinearGradient(0,0,w,0,colors,stops,android.graphics.Shader.TileMode.CLAMP));
-                    c.drawRect(0,0,target,h,paint);paint.setShader(null);
-                    boolean latched=magnetReading!=null&&magnetReading.latched;
-                    paint.setColor(latched?accent:panel);c.drawRect(target,0,w,h,paint);
-                    paint.setStyle(Paint.Style.STROKE);paint.setColor(accent);paint.setStrokeWidth(dp(2));
-                    float inset=Math.min(dp(1),Math.min((w-target)/4f,h/4f));
-                    c.drawRect(target+inset,inset,w-inset,h-inset,paint);
-                    paint.setStyle(Paint.Style.FILL);paint.setColor(latched?bg:text);
-                    paint.setTextAlign(Paint.Align.CENTER);paint.setTextSize(Math.min(dp(18),(w-target)*.55f));
-                    c.drawText("OK",(target+w)/2f,h/2f-(paint.ascent()+paint.descent())/2f,paint);
-                }
-            }else if(surface==HapticLabPatterns.Surface.MAGNET){
-                float cx=w/2f,cy=h/2f;
-                float inner=MagnetField.targetRadius(w/density,h/density)*density;
-                float outer=MagnetField.haloRadius(w/density,h/density)*density;
-                paint.setColor(accent);
-                paint.setShader(new android.graphics.RadialGradient(cx,cy,outer,
-                    new int[]{accent,accent,android.graphics.Color.TRANSPARENT},
-                    new float[]{0f,inner/outer,1f},android.graphics.Shader.TileMode.CLAMP));
-                paint.setAlpha(100);c.drawCircle(cx,cy,outer,paint);paint.setShader(null);paint.setAlpha(255);
-                // Keep the radial mist unchanged, without visual subdivisions
-                // or an outer contour. Only the actual OK target has a border.
-                paint.setStyle(Paint.Style.FILL);paint.setAlpha(255);
-                paint.setColor(magnetReading!=null&&magnetReading.latched?accent:panel);
-                c.drawCircle(cx,cy,inner,paint);
-                paint.setStyle(Paint.Style.STROKE);paint.setColor(accent);paint.setStrokeWidth(dp(2));
-                c.drawCircle(cx,cy,inner,paint);paint.setStyle(Paint.Style.FILL);
-                paint.setColor(magnetReading!=null&&magnetReading.latched?bg:text);
-                paint.setTextAlign(Paint.Align.CENTER);paint.setTextSize(dp(19));c.drawText("OK",cx,cy+dp(6),paint);
-            }else if(surface==HapticLabPatterns.Surface.RELIEF){
-                float cx=w/2f,cy=h/2f,r=Math.min(w,h)*.43f;
-                int[] alphas={65,105,150,225};float[] rings={1f,.78f,.43f,.29f};
-                for(int i=0;i<rings.length;i++){
-                    paint.setColor(accent);paint.setAlpha(alphas[i]);
-                    c.drawCircle(cx,cy,r*rings[i],paint);
-                    paint.setAlpha(255);
-                }
-                paint.setColor(bg);paint.setTextSize(dp(17));paint.setTextAlign(Paint.Align.CENTER);
-                c.drawText("OK",cx,cy+dp(6),paint);
-            }else if(surface==HapticLabPatterns.Surface.TEXTURES){
-                float third=w/3;
-                paint.setColor(accent);paint.setAlpha(110);paint.setStrokeWidth(dp(1));
-                for(float a=third+dp(4);a<third*2;a+=dp(5))c.drawLine(a,dp(22),a,h-dp(26),paint);
-                paint.setStrokeWidth(dp(3));
-                for(float a=third*2+dp(9);a<w;a+=dp(17))c.drawLine(a,dp(22),a,h-dp(26),paint);
-                paint.setAlpha(255);paint.setColor(text);paint.setTextAlign(Paint.Align.CENTER);paint.setTextSize(dp(13));
-                c.drawText("Glatt",third*.5f,h-dp(9),paint);
-                c.drawText("Fein",third*1.5f,h-dp(9),paint);
-                c.drawText("Grob",third*2.5f,h-dp(9),paint);
-            }else{
-                for(int i=0;i<10;i++){
-                    float left=w*i/10f,right=w*(i+1)/10f;
-                    paint.setColor(accent);paint.setAlpha(surface==HapticLabPatterns.Surface.RAMP?30+i*24:115);
-                    c.drawRect(left+dp(1),dp(10),right-dp(1),h-dp(28),paint);
-                    paint.setAlpha(255);paint.setColor(text);paint.setTextSize(dp(12));paint.setTextAlign(Paint.Align.CENTER);
-                    c.drawText(String.valueOf(i+1),(left+right)/2,h-dp(9),paint);
-                }
+            canvas.drawRoundRect(0,0,w,h,dp(8),dp(8),paint);
+            int color=accent&0x00ffffff;
+            paint.setShader(new LinearGradient(0,0,w,0,
+                new int[]{color,color,0x70000000|color,0x70000000|color},
+                new float[]{0,HapticStreamSignal.START,HapticStreamSignal.PLATEAU,1},Shader.TileMode.CLAMP));
+            paint.setAlpha(supported?255:75);canvas.drawRect(0,0,target,h,paint);
+            paint.setShader(null);paint.setAlpha(255);
+            boolean latched=down&&activePad==this&&session!=null&&session.latched();
+            paint.setColor(latched?accent:panel);canvas.drawRect(target,0,w,h,paint);
+            paint.setColor(accent);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(2));
+            canvas.drawRect(target+dp(1),dp(1),w-dp(1),h-dp(1),paint);
+            paint.setStyle(Paint.Style.FILL);paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTextSize(Math.min(dp(18),(w-target)*.55f));paint.setColor(latched?bg:text);
+            canvas.drawText("OK",(target+w)/2,h/2-(paint.ascent()+paint.descent())/2,paint);
+            if(!supported){
+                paint.setTextSize(dp(13));paint.setColor(muted);
+                canvas.drawText("Nicht unterstützt",target/2,h/2,paint);
             }
             if(down){
                 paint.setColor(text);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(2));
-                c.drawCircle(x,y,dp(12),paint);paint.setStyle(Paint.Style.FILL);
+                canvas.drawCircle(x,y,dp(12),paint);paint.setStyle(Paint.Style.FILL);
             }
         }
     }

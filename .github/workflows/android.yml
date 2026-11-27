@@ -85,12 +85,12 @@ jobs:
         run: |
           set -euo pipefail
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist/Sofacockpit-Lab.apk > "$RUNNER_TEMP/lab-badging.txt"
-          grep -E "^package: name='de.sofacockpit.lab' versionCode='25' versionName='0.1.24' " "$RUNNER_TEMP/lab-badging.txt"
+          grep -E "^package: name='de.sofacockpit.lab' versionCode='26' versionName='0.1.25' " "$RUNNER_TEMP/lab-badging.txt"
           grep -F "application-label:'Sofacockpit Lab'" "$RUNNER_TEMP/lab-badging.txt"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Lab-Android-v0.1.24
+          name: Sofacockpit-Lab-Android-v0.1.25
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -105,10 +105,10 @@ jobs:
             echo "Skipping superseded Lab build."
             exit 0
           fi
-          if gh release view sofacockpit-lab-v0.1.24 >/dev/null 2>&1; then
+          if gh release view sofacockpit-lab-v0.1.25 >/dev/null 2>&1; then
             echo "Lab release already exists; never replace a published version."
             exit 0
           fi
-          gh release create sofacockpit-lab-v0.1.24 dist/Sofacockpit-Lab.apk \
-            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.24" \
-            --prerelease --latest=false --notes "Lab v0.1.24: Haptik-Labor mit zwei automatischen Referenzrampen (einmalige Wellenform und native Android-16-Hüllkurve, wenn Gerätegrenzen passen). 3 s Anstieg, 400 ms halten, 300 ms abklingen, genau eine Vibrationsanforderung je Test. Geräteprüfung für audio-gekoppelte Haptik und HapticGenerator über öffentliche APIs, noch kein Audio-Streaming oder Lautstärkeeingriff. Bestehende Testbahnen, Steuerung und Konfiguration unverändert. JVM-Tests für Verlauf und Gerätegrenzen; Gerätetest offen."
+          gh release create sofacockpit-lab-v0.1.25 dist/Sofacockpit-Lab.apk \
+            --target "$GITHUB_SHA" --title "Sofacockpit Lab v0.1.25" \
+            --prerelease --latest=false --notes "Lab v0.1.25: Haptik-Labor reduziert auf gemeinsamen Max-Intensitätsregler und zwei horizontale Echtzeit-Experimente: direkter Haptikkanal (experimentelle AOSP-Kanalmaske, stille L/R-Daten) und HapticGenerator (leiser Ton möglich). Je Berührung ein begrenzter kontinuierlicher PCM-Stream statt neuer Vibrator-Effekte; beide mit 80-%-Plateau und 100-%-Signalrastung. Unterstützung und Ausgabeweg prüfen; Gerätetest offen, keine Garantie für geräuschlose Haptik, tatsächliche Intensität oder Latenz. Alte Testflächen aus der Oberfläche entfernt; Steuerung und Konfiguration unverändert."
