@@ -1,17 +1,5 @@
-# Startprompt für den ersten Sofacockpit-Chat
+# Startprompt für einen Sofacockpit-Entwicklungs-Chat
 
-Lies zuerst die vollständige Projektvorgabe in `MEGAPROMPT.md` und die aktuelle `README.md`. Behandle den Megaprompt als verbindliche Grundlage für Produktumfang, Bedienung, öffentliche Repo-Regeln und den Arbeitsablauf.
+Arbeite am bestehenden Repository `sschermer/Sofacockpit`. Lies zuerst das im ChatGPT-Projekt hinterlegte Rulepaper sowie die aktuelle [MEGAPROMPT.md](MEGAPROMPT.md), [ROADMAP.md](ROADMAP.md) und [README.md](README.md). Der tatsächliche Repository- und nachgewiesene Geräte-/Release-Stand hat Vorrang vor alten Chatbeschreibungen.
 
-Führe danach eine Bestandsaufnahme des Repositories durch. Prüfe insbesondere:
-
-- vorhandene Dateien, Android-Projektstruktur und Build-System
-- Git-Status und letzten Projektstand
-- README, Lizenzdateien und vorhandene Abhängigkeiten
-- ob Android-Code oder wiederverwendbare Tonmaschine-Implementierungen erreichbar sind
-- welche Build-Werkzeuge in der aktuellen Arbeitsumgebung verfügbar sind
-
-Berichte knapp, was bereits vorhanden ist und was noch fehlt. Beginne anschließend mit der ersten kleinen, vorführbaren Iteration des Android-Projekts. Ziel ist zunächst das Grundgerüst der drei horizontal wechselbaren Seiten: **Tonmaschine links**, **Startbildschirm in der Mitte**, **TV-Steuerkreuz rechts**. Der Startbildschirm muss beim Öffnen sichtbar sein. Nutze ein dunkles, klares und touchfreundliches Layout. Verwende für noch nicht integrierte Gerätefunktionen sichtbare Platzhalter und kennzeichne sie nicht als funktionierend.
-
-Baue die App und stelle am Ende dieser Iteration eine installierbare APK bereit, wenn die Umgebung den Build zulässt. Führe passende vorhandene Prüfungen aus. Berichte, welche Teile tatsächlich implementiert und gebaut wurden und welche Funktionen noch nicht mit dem TCL oder der LG S95QR getestet werden konnten. Wenn ein Build an fehlenden Werkzeugen oder Abhängigkeiten scheitert, ermittle die konkrete Ursache und versuche eine passende Lösung innerhalb der verfügbaren Umgebung.
-
-Arbeite direkt im bestehenden Repository und bewahre vorhandene Dateien und Nutzercode. Triff reversible UI- und Projektentscheidungen selbst. Frage nur dann nach, wenn eine Nutzerentscheidung nötig ist, um eine wesentliche Produkt- oder Lizenzentscheidung korrekt zu treffen.
+Bearbeite die nächste offene Roadmap-Aufgabe, sofern der Nutzer keinen anderen konkreten Auftrag nennt. Prüfe den relevanten Bestand und die technische Machbarkeit, implementiere gezielt und erhalte funktionierende Funktionen, Daten und Kopplung. Nutze den vorhandenen Build-/Signaturworkflow. Aktualisiere ROADMAP.md bei jedem relevanten Fortschritt und jeder Test- oder Release-Rückmeldung selbstständig im Repository. Unterscheide Code, Build, Gerätetest und stabile Veröffentlichung. Berichte verifizierte Ergebnisse, Blockaden und den nächsten Schritt.

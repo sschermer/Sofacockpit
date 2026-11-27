@@ -85,7 +85,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Sofacockpit-Android-v1.1.6
+          name: Sofacockpit-Android-v1.1.7
           path: dist/
           if-no-files-found: error
           retention-days: 90
@@ -94,9 +94,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create sofacockpit-v1.1.6 \
+          gh release create sofacockpit-v1.1.7 \
             dist/Sofacockpit.apk dist/*.sofatheme \
             --target "$GITHUB_SHA" \
-            --prerelease \
-            --title "Sofacockpit v1.1.6 (Nativer TCL-App-Start)" \
-            --notes "T-Cast-App-Start über LAN ohne ADB oder zusätzliche TV-App. Dyn und YouTube zuvor am TCL per PowerShell bestätigt; integrierte Version noch zu testen. Plus lädt installierte Apps zur Auswahl; Paketnamen und bekannte Standardlinks bevorzugen den nativen Start. App-Liste aktualisieren, System-Apps optional anzeigen, bestehende Favoriten zuordnen. Alte Deep Links, Favoriten, Sicherungsformat, Google-TV-Kopplung und Soundbar bleiben erhalten. Keine automatische Wiederholung eines Startbefehls."
+            --title "Sofacockpit v1.1.7 (Nativer TCL-App-Start)" \
+            --notes "Stabile Ausgabe auf Basis der am TCL getesteten v1.1.6. Dyn (nach Neuzuordnung), Netflix, YouTube, installierte App-Liste und neuer Favorit vom Nutzer bestätigt. Nativer TCL-App-Start über LAN ohne ADB und ohne zusätzliche TV-App. Roadmap und verbindliche Pflegeanweisungen im Repository ergänzt. Keine funktionalen Änderungen gegenüber v1.1.6; bestehende Kopplung, Favoriten, Sicherung, Soundbar und feste Signatur bleiben unverändert."

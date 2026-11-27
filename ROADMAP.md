@@ -1,0 +1,77 @@
+# Sofacockpit – Roadmap
+
+Stand: 27. November 2026. Maßgebliche Aufgabenliste für alle Entwicklungs-Chats.
+
+Ziel: Die vorhandenen Platzhalter und vereinbarten Funktionslücken Schritt für Schritt schließen. Sofacockpit bleibt eine schlanke, lokale Android-Fernbedienung für TCL Google TV und LG S95QR – möglichst ohne Zusatzsoftware auf dem TV oder dauerhaftes Debugging. Verbindliche Entwicklungsregeln: Rulepaper im ChatGPT-Projekt und [MEGAPROMPT.md](MEGAPROMPT.md). Der tatsächliche Entwicklungsstand ergibt sich aus Code, Build, Gerätetest und Releases.
+
+## Status und Pflege
+
+| Status | Nachweis |
+| --- | --- |
+| Geplant | Noch nicht begonnen |
+| In Entwicklung | Untersuchung oder Umsetzung läuft; ggf. konkrete Blockade dokumentieren |
+| Implementiert | Code vorhanden, relevante automatisierte Tests und Build erfolgreich; Gerätetest ggf. ausstehend |
+| Getestet | Funktion am vorgesehenen Gerät vom Nutzer bestätigt |
+| Abgeschlossen | Gerätetest bestätigt und stabile Veröffentlichung samt APK nachgewiesen |
+
+Nur nach belegtem Fortschritt hochstufen. Ein Code-Commit ohne erfolgreichen Build bleibt in Entwicklung. Abgeschlossene Aufgaben nicht löschen; tatsächliche Version, Datum und Nachweis ergänzen. Fehlgeschlagene Tests und wieder geöffnete Aufgaben ausdrücklich vermerken. Die Zielversionen und Aufwandsangaben sind Planungswerte, keine Zusagen. Technische Abhängigkeiten oder ein neuer Nutzerauftrag können die Reihenfolge ändern; begründen und dokumentieren, nicht stillschweigend umpriorisieren.
+
+## Phase 0 – Stabile Ausgangsversion
+
+| ID | Aufgabe | Zielversion | Status | Nachweis / tatsächliche Version |
+| --- | --- | --- | --- | --- |
+| 0.1 | Nativer TCL-App-Start und Auswahl installierter Apps; stabile Freigabe | 1.1.7 | Getestet | v1.1.6: CI erfolgreich (Tests, Build, feste Signatur); Nutzer bestätigte Dyn nach Neuzuordnung, Netflix, YouTube, Abruf der App-Liste und Hinzufügen eines Favoriten. Stabile v1.1.7 mit unveränderter Funktionslogik vorgesehen; Veröffentlichung noch zu verifizieren. |
+
+[Bestandener CI-Lauf v1.1.6](https://github.com/sschermer/Sofacockpit/actions/runs/45924999804) · [Pre-Release v1.1.6](https://github.com/sschermer/Sofacockpit/releases/tag/sofacockpit-v1.1.6)
+
+Einzelne Detailtests (System-Apps ein-/ausblenden, App-Liste manuell aktualisieren und vollständige Regression aller Bedienelemente) wurden nicht gesondert bestätigt. Das Kernziel der Phase ist am Gerät nachgewiesen.
+
+## Phase 1 – TV-Fernbedienung vervollständigen (1.2.x)
+
+| ID | Aufgabe | Ziel / Abnahmekriterien | Aufwand | Status | Tatsächliche Version / Nachweis |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Tastatur | Smartphone-Texteingabe in TV-Eingabefeldern, ohne dauerhaftes ADB oder Zusatz-App; bestehende Navigation erhalten | Mittel | Geplant | – |
+| 2 | Mauszeigersteuerung | Touchpad für freie Zeigerbewegung und Klick, sofern TV-Schnittstelle dies unterstützt; Pager-Gesten bleiben nutzbar | Mittel | Geplant | – |
+| 3 | Absoluter Lautstärkeregler | Tatsächlichen Pegel direkt setzen; TV/Soundbar-Routing und Rückmeldung prüfen, keine simulierten Werte | Mittel | Geplant | – |
+
+T-Cast ist für App-Starts bestätigt. Texteingabe, Maus und absolute TV-Lautstärke müssen separat am TCL nachgewiesen werden. Die Soundbar-Ansteuerung darf nicht mit TV-Lautstärkebefehlen kollidieren.
+
+## Phase 2 – Soundbar vervollständigen (1.3.x)
+
+| ID | Aufgabe | Ziel / Abnahmekriterien | Aufwand | Status | Tatsächliche Version / Nachweis |
+| --- | --- | --- | --- | --- | --- |
+| 4 | Bass und Höhen | Beide gemeldeten EQ-Werte ändern und bestätigten Status anzeigen; Wertebereiche prüfen | Gering | Geplant | – |
+| 5 | Neural:X und IMAX Enhanced | Beide Optionen steuern und tatsächlichen Status anzeigen; gerätespezifische Verfügbarkeit berücksichtigen | Gering | Geplant | – |
+| 6 | Direkte Soundbar-Stummschaltung | Unabhängig vom TV stummschalten und wieder aktivieren; Status nur bei belastbarer Rückmeldung | Mittel | Geplant | – |
+
+Vorhandene Tonmaschine-Implementierung zuerst prüfen und wiederverwenden. Windows-Unterstützung allein belegt keine Android-Funktion.
+
+## Phase 3 – Datensicherung vervollständigen (1.4.0)
+
+| ID | Aufgabe | Ziel / Abnahmekriterien | Aufwand | Status | Tatsächliche Version / Nachweis |
+| --- | --- | --- | --- | --- | --- |
+| 7 | HDMI-Bezeichnungen sichern | Eigene HDMI-Namen in verschlüsseltem Backup exportieren/importieren; ältere Sicherungen kompatibel halten | Gering | Geplant | – |
+
+## Phase 4 – Bildsteuerung (1.5.x)
+
+| ID | Aufgabe | Ziel / Abnahmekriterien | Aufwand | Status | Tatsächliche Version / Nachweis |
+| --- | --- | --- | --- | --- | --- |
+| 8 | Bildmodus, Helligkeit, Kontrast | Jeweils zuverlässige Abfrage und direkte Änderung am TCL; Schnittstelle und Wertebereiche separat belegen | Hoch | Geplant | – |
+| 9 | Persönliche Bildprofile | Unterstützte Bildparameter speichern, verwalten und wiederherstellen; abhängig von Aufgabe 8 | Mittel | Geplant | – |
+
+Keine Änderung an TV-Systemsoftware, keine erfundenen Parameter. Die technische Machbarkeit ist bislang offen.
+
+## Phase 5 – TV-Systemsteuerung (1.6.x)
+
+| ID | Aufgabe | Ziel / Abnahmekriterien | Aufwand | Status | Tatsächliche Version / Nachweis |
+| --- | --- | --- | --- | --- | --- |
+| 10 | Sleep-Timer | Ausschaltzeit einstellen und ggf. verlässlich gemeldete Restzeit anzeigen | Mittel | Geplant | – |
+| 11 | Energiesparmodus | Unterstützten Energiemodus auslesen und ändern; Wake-on-LAN und Standby-Verhalten separat prüfen | Hoch | Geplant | – |
+
+## Nächste Aufgabe
+
+**1 – Tastatur.** Erst T-Cast-Texteingabe bzw. vorhandene Android-TV-Schnittstelle am Gerät prüfen, danach minimal integrieren. Kein dauerhaftes Debugging und keine zusätzliche TV-App als Standardlösung.
+
+## Änderungsverlauf
+
+- 27.11.2026: Roadmap angelegt. Alle 15 identifizierten Funktionslücken in elf Entwicklungsaufgaben zusammengefasst; Reihenfolge vom Nutzer bestätigt. Nativer TCL-App-Start, App-Liste, Neuzuordnung und neuer Favorit in v1.1.6 am Gerät bestätigt. Stabile Veröffentlichung als v1.1.7 vorgesehen.
